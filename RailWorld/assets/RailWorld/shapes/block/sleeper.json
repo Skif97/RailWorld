@@ -1,0 +1,26 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 48,
+	"textureHeight": 48,
+	"textureSizes": {
+	},
+	"textures": {
+	},
+	"elements": [
+		{
+			"name": "Cube3",
+			"from": [ -2.0, -2.0, -8.0 ], 
+			"to": [ 2.0, 0.0, 8.0 ], 
+			"faces": {
+				"north": { "texture": "#charred", "uv": [ 9.0, 12.0, 23.5, 21.0 ], "autoUv": false, "snapUv": false, "windMode": [-1,-1,-1,-1] },
+				"east": { "texture": "#charred", "uv": [ 0.0, 27.0, 48.0, 33.0 ], "autoUv": false },
+				"south": { "texture": "#charred", "uv": [ 21.0, 4.5, 35.0, 12.5 ], "autoUv": false },
+				"west": { "texture": "#charred", "uv": [ 0.0, 16.5, 48.0, 23.0 ], "autoUv": false },
+				"up": { "texture": "#charred", "uv": [ 0.0, 9.0, 48.0, 21.0 ], "rotation": 90, "autoUv": false },
+				"down": { "texture": "#charred", "uv": [ 0.0, 31.5, 48.0, 44.5 ], "rotation": 270, "autoUv": false }
+			}
+		}
+	]}

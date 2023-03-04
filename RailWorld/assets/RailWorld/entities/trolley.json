@@ -1,0 +1,26 @@
+{
+	"code": "trolley",
+	"class": "EntityTrolley",
+	"attributes": { "airDragFactor: ": 0.005 },
+	"client": {
+		"PitchStep": false,
+		"renderer": "Shape",
+		"shape": { "base": "entity/trolley" },
+		"texture": { "base": "game:block/metal/plate/iron" },
+		"behaviors": [
+			{
+				"code": "controlledphysics",
+				"stepHeight": 0.2
+			},
+			{ "code": "interpolateposition" }
+		]
+	},
+	"server": {
+		"behaviors": [
+			{
+				"code": "controlledphysics",
+				"stepHeight": 0.2
+			}
+		]
+	}
+}

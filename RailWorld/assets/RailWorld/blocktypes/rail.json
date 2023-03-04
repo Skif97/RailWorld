@@ -1,0 +1,44 @@
+{
+    "code": "Rail",
+    "class": "BlockRail",
+    "entityClass": "BlockEntityRail",
+    "shape": { "base": "block/rail" },
+    "creativeinventory": { "general": [ "*" ] },
+    "blockmaterial": "Metal",
+    "drawtype": "Json",
+    "textures": {
+		"iron": { "base": "game:block/metal/plate/iron" },
+		"charred": { "base": "game:block/wood/charred" },
+		"chromium":{"base": "game:block/metal/plate/chromium"},
+    },
+	"attributes": {"AllowGuiDialogRailMenu": true},
+    "faceCullMode": "NeverCull",
+    "resistance": 3.5,
+    "sounds": {
+        "place": "block/ingot",
+        "walk": "walk/stone"
+    },
+    "lightAbsorption": 0,
+    "sidesolid": {
+        "all": false
+    },
+    "sideopaque": {
+        "all": false
+    },
+    "collisionbox": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 0,
+        "x2": 1,
+        "y2": 0.25,
+        "z2": 1
+    },
+    "selectionbox": {
+        "x1": 0,
+        "y1": 0,
+        "z1": 0,
+        "x2": 1,
+        "y2": 1,
+        "z2": 1
+    }
+}

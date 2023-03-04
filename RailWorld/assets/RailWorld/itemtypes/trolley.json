@@ -1,0 +1,72 @@
+{
+
+    "code": "trolley",
+    "class": "ItemTrolley",
+    "maxstacksize": 16,
+    "shape": { "base": "entity/trolley" },
+    "texture": { "base": "game:block/metal/plate/iron" },
+    "creativeinventory": {
+        "general": [ "*" ],
+        "items": [ "*" ],
+        "creatures": [ "*" ]
+    },
+    "guiTransform": {
+        "translation": {
+            "x": 1,
+            "y": 1,
+            "z": 0
+        },
+        "rotation": {
+            "x": -16,
+            "y": 36,
+            "z": 180
+        },
+        "origin": {
+            "x": 0.2,
+            "y": 0.5,
+            "z": 0
+        },
+        "scale": 0.97
+    },
+    "fpHandTransform": {
+        "translation": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+        },
+        "rotation": {
+            "x": 1,
+            "y": 68,
+            "z": 2
+        },
+        "scale": 0.96
+    },
+    "tpHandTransform": {
+        "rotation": {
+            "x": 30,
+            "y": -155,
+            "z": 81
+        },
+        "scale": 0.41
+    },
+    "groundTransform": {
+        "translation": {
+            "x": 0,
+            "y": 0.2,
+            "z": 0
+        },
+        "rotation": {
+            "x": 0,
+            "y": 18,
+            "z": 0
+        },
+        "origin": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5299
+        },
+        "scale": 2.04
+    }
+
+
+}

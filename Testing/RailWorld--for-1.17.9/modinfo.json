@@ -1,0 +1,12 @@
+{
+    "type": "code",
+    "modid": "RailWorld",
+    "name": "RailWorld",
+    "description": "Rails and train",
+    "author": "Skif_97",
+    "version": "1.0.0",
+    "dependency": {
+        "game": "1.17"
+    },
+    "website": ""
+}
