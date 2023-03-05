@@ -8,8 +8,9 @@ using Vintagestory.API.Server;
 using System;
 using Vintagestory.API.Common.Entities;
 using System.Collections.Generic;
+using System.IO;
 
-namespace TrainWorld
+namespace RailWorld
 {
 	public class BlockEntityRail : BlockEntity
 	{
@@ -37,7 +38,17 @@ namespace TrainWorld
 
         }
 
-		public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
+		public List<RailSection> GetRailSections()
+		{
+			return railSections;
+		}
+
+        public RailSection GetRailSection(int num)
+        {
+			return railSections[num];
+        }
+
+        public override bool OnTesselation(ITerrainMeshPool mesher, ITesselatorAPI tessThreadTesselator)
 		{
     
             mesher.AddMeshData(this.totalmesh, 1);
@@ -50,27 +61,27 @@ namespace TrainWorld
 		private void loadOrCreateMesh()
 		{
 
-			//totalmesh = new MeshData(4, 3);
-			totalmesh.Clear();
+			totalmesh = new MeshData(4, 3);
+			//totalmesh.Clear();
             ICoreClientAPI coreClientAPI = this.Api as ICoreClientAPI;
 
 			MeshData rail = ObjectCacheUtil.GetOrCreate<MeshData>(coreClientAPI, "trainworldrailmesh", delegate
 			{
-				Shape shapeRail = Shape.TryGet(this.Api, new AssetLocation("trainworld", "shapes/block/rail.json"));
+				Shape shapeRail = Shape.TryGet(this.Api, new AssetLocation("railworld", "shapes/block/rail.json"));
 				MeshData mesh;
 				coreClientAPI.Tesselator.TesselateShape(ownBlock, shapeRail, out mesh, null, null, null);
 				return mesh;
 			});
 			MeshData test = ObjectCacheUtil.GetOrCreate<MeshData>(coreClientAPI, "trainworldtestmesh", delegate
 			{
-				Shape shapeRail = Shape.TryGet(this.Api, new AssetLocation("trainworld", "shapes/block/test.json"));
+				Shape shapeRail = Shape.TryGet(this.Api, new AssetLocation("railworld", "shapes/block/test.json"));
 				MeshData mesh;
 				coreClientAPI.Tesselator.TesselateShape(ownBlock, shapeRail, out mesh, null, null, null);
 				return mesh;
 			});
 			MeshData sleeper = ObjectCacheUtil.GetOrCreate<MeshData>(coreClientAPI, "trainworldsleepermesh", delegate
 			{
-				Shape shapeRail = Shape.TryGet(coreClientAPI, new AssetLocation("trainworld", "shapes/block/sleeper.json"));
+				Shape shapeRail = Shape.TryGet(coreClientAPI, new AssetLocation("railworld", "shapes/block/sleeper.json"));
 				MeshData mesh;
 				coreClientAPI.Tesselator.TesselateShape(ownBlock, shapeRail, out mesh, null, null, null);
 				return mesh;
@@ -79,53 +90,86 @@ namespace TrainWorld
 
 			for (int slot = 0; railSections.Count > slot && railSections[slot] != null; slot++)
 			{
-
-
-                //float[] rotX = GameMath.SectionsToRotateX(railSection);
-                //float[] rotZ = GameMath.SectionsToRotateX(railSection);
-                //totalmesh = test.Clone();
-                double rad = ModMath.TangentToPitch(railSections[slot].centerCenterTangent);
-				double rad2 = ModMath.TangentToPitch(railSections[slot].leftCenterTangent);
-                double rad3 = ModMath.TangentToPitch(railSections[slot].rightCenterTangent);
-
-
-				//       totalmesh.AddMeshData(sleeper.Clone()
-				//.Scale(new Vec3f(0f, 0f, 0f), 1f, 1f, 1.35f + (float)rnd.NextDouble() / 5f)
-				//.Rotate(new Vec3f(0f, 0f, 0f), 0f, (float)ModMath.TangentToYaw(railSections[slot].centerCenterTangent) + ((float)rnd.NextDouble()/10.4652f)-0.0477773956f, 0f)
-				//.RotateAroundAxis(railSections[slot].centerCenterNormal, rad)
-				//.Translate(railSections[slot].centerCenterOffset.ToVec3f())
-				//.Translate(new Vec3f((float)rnd.NextDouble() / 16f, 0f, (float)rnd.NextDouble() / 16f))
-				//);
-
-				Vec3f sleeperOffset = railSections[slot].centerCenterOffset.ToVec3f();
-
-				//sleeperOffset.Y += 0.09375f;
-
 				totalmesh.AddMeshData(sleeper.Clone()
-                                                 .Scale(new Vec3f(0f, 0f, 0f), 1f, 1f, 1.35f )
-                                                 .Rotate(new Vec3f(0f, 0f, 0f), 0f, (float)ModMath.TangentToYaw(railSections[slot].centerCenterTangent), 0f)
-                                                 .RotateAroundAxis(railSections[slot].centerCenterNormal, rad)
-                                                 .Translate(sleeperOffset)
-												 .Translate(new Vec3f(0f, -0.078125f, 0f))
-												 );
+											 .MatrixTransform(railSections[slot].centerMatrix)
+											 .Translate(railSections[slot].centerCenterOffset.ToVec3f())
+											 .Translate(new Vec3f(0f, -0.078125f, 0f))); ;
 
 
-                totalmesh.AddMeshData(rail.Clone().Scale(new Vec3f(0f, 0f, 0f), (float)railSections[slot].leftlenght, 1f, 1f).Rotate(new Vec3f(0f, 0f, 0f), 0f, (float)ModMath.TangentToYaw(railSections[slot].leftCenterTangent ), 0f).RotateAroundAxis(railSections[slot].leftCenterNormal , rad2).Translate(railSections[slot].leftCenterOffset.ToVec3f() ).Translate(new Vec3f(0f, -0.078125f, 0f)));
-				totalmesh.AddMeshData(rail.Clone().Scale(new Vec3f(0f, 0f, 0f), (float)railSections[slot].rightlenght, 1f, 1f).Rotate(new Vec3f(0f, 0f, 0f), 0f, (float)ModMath.TangentToYaw(railSections[slot].rightCenterTangent), 0f).RotateAroundAxis(railSections[slot].rightCenterNormal, rad3).Translate(railSections[slot].rightCenterOffset.ToVec3f()).Translate(new Vec3f(0f, -0.078125f, 0f)));
+                totalmesh.AddMeshData(rail.Clone()
+                                          .MatrixTransform(railSections[slot].leftMatrix)
+                                          .Translate(railSections[slot].leftCenterOffset.ToVec3f())
+										  .Translate(new Vec3f(0f, -0.078125f, 0f)));
+
+				totalmesh.AddMeshData(rail.Clone()
+                                          .MatrixTransform(railSections[slot].rightMatrix)
+                                          .Translate(railSections[slot].rightCenterOffset.ToVec3f())
+										  .Translate(new Vec3f(0f, -0.078125f, 0f)));
 
 			}
 
+		}
+
+
+
+        public void UpdateConnections(bool UpdateAround = false, List<BlockEntityRail> beRailList = null)
+		{
+			if (beRailList == null) 
+			{
+				beRailList = GetBERailAround(); 
+			}
+			for (int slot = 0; railSections.Count > slot; slot++)
+			{
+				railSections[slot].UpdateConnections(beRailList);
+			}
+			for (int i = 0; i < beRailList.Count && UpdateAround; i++)
+			{
+				beRailList[i].UpdateConnections();
+
+			}
+		}
+
+		public List<BlockEntityRail> GetBERailAround()
+		{
+			List<BlockEntityRail> bentitiesAround = new List<BlockEntityRail>
+			{
+				this
+			};
+
+			for (int i = -1; i < 2; i++)
+			{
+				for (int j = -1; j < 2; j++)
+				{
+					for (int k = -1; k < 2; k++)
+					{
+						BlockPos bp = Pos;
+						bp.X += i;
+						bp.Y += j;
+						bp.Z += k;
+						BlockEntityRail bentity = Api.World.BlockAccessor.GetBlockEntity(bp) as BlockEntityRail;
+						if (bentity != null && bentity.railSections.Count != 0)
+						{
+							bentitiesAround.Add(bentity);
+						}
+					}
+				}
+			}
+
+
+			return bentitiesAround;
 		}
 
 		public void AddSection(ItemStack byItemStack = null) 
 		{
 			if (byItemStack != null)
 			{
-				railSections.Add(new RailSection(byItemStack));
+				railSections.Add(new RailSection(byItemStack, railSections.Count));
+                UpdateConnections(true);
+                MarkDirty(true, null);
+
                 if (Api != null && Api.Side == EnumAppSide.Client)
                 {
-                    this.loadOrCreateMesh();
-                    base.MarkDirty(true, null);
+                   this.loadOrCreateMesh();
                 }
             }
 		}
@@ -135,33 +179,26 @@ namespace TrainWorld
         {
 			if (byItemStack != null)
 			{
-				railSections.Add(new RailSection(byItemStack));
-
-                //Block.CollisionBoxes[0].Y2 = (float)railSections[0].centerCenterOffset.Y + 0.09375f;
-                //Block.SelectionBoxes[0].Y2 = (float)railSections[0].centerCenterOffset.Y + 0.09375f;
-                ICoreAPI api = this.Api;
-                if (api != null && api.Side == EnumAppSide.Client)
-                {
-                    this.loadOrCreateMesh();
-                    base.MarkDirty(true, null);
-                }
+				AddSection(byItemStack);
             }
 			base.OnBlockPlaced(byItemStack);
         }
 
         public override void FromTreeAttributes(ITreeAttribute tree, IWorldAccessor worldForResolving)
         {
-			for (int slot = 0; tree.TryGetDouble(string.Format("{0}.position.X", slot)) != null; slot++) 
+			railSections.Clear();
+
+            for (int slot = 0; tree.TryGetDouble(string.Format("{0}.position.X", slot)) != null; slot++) 
 			{
 				railSections.Add(new RailSection(tree, slot));
 			}
 
 			
 			ICoreAPI api = this.Api;
-			if (api != null && api.Side == EnumAppSide.Client)
+            MarkDirty(true, null);
+            if (api != null && api.Side == EnumAppSide.Client)
 			{
 				this.loadOrCreateMesh();
-				base.MarkDirty(true, null);
 			}
 			base.FromTreeAttributes(tree, worldForResolving);
 		}
@@ -176,7 +213,7 @@ namespace TrainWorld
 
 			for(int slot = 0; railSections.Count > slot; slot++) 
 			{
-				railSections[slot].ToTreeAttribute(tree, slot);
+				railSections[slot].ToTreeAttribute(tree);
 			}
 
 			

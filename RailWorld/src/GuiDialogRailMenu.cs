@@ -7,7 +7,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Client;
 using Vintagestory.API.Config;
 
-namespace TrainWorld
+namespace RailWorld
 {
     internal sealed class GuiDialogRailMenu : GuiDialog
     {

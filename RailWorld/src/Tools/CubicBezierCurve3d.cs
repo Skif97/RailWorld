@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Vintagestory.API.MathTools;
 
-namespace TrainWorld
+namespace RailWorld
 {
     public struct PointOnBezierCurve
     {

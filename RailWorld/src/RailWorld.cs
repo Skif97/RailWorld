@@ -9,7 +9,7 @@ using System;
 using Vintagestory.API.Common.Entities;
 using ProtoBuf;
 
-namespace TrainWorld
+namespace RailWorld
 {
 	
 
@@ -27,7 +27,7 @@ namespace TrainWorld
 
 	}
 
-	public class TrainWorld : ModSystem
+	public class RailWorld : ModSystem
 	{
 		public const int sectiontPerBlock = 3;
 		static ICoreClientAPI _capi;

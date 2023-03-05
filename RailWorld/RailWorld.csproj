@@ -4,11 +4,11 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<GameVersion>1.17.9</GameVersion>
+		<GameVersion>1.17.10</GameVersion>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<AssetsPath>$(SolutionDir)/$(AssemblyName)/assets</AssetsPath>
+		<AssetsPath>$(SolutionDir)/$(AssemblyName)/assets/</AssetsPath>
 	</PropertyGroup>
 
 	<PropertyGroup Label="UserMacros">
@@ -67,16 +67,15 @@
 			<Private>false</Private>
 		</Reference>
 		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Mods\VSSurvivalMod.dll">
+			<Private>false</Private>  
+		</Reference>
+    		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\protobuf-net.dll">
 			<Private>false</Private>
 		</Reference>
 	</ItemGroup>
 
 	<ItemGroup>
 		<Folder Include="assets\RailWorld\" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <PackageReference Include="protobuf-net" Version="3.2.8" />
 	</ItemGroup>
 
 

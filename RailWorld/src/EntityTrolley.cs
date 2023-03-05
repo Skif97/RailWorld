@@ -9,7 +9,7 @@ using Vintagestory.GameContent;
 using System;
 using Vintagestory.API.Common.Entities;
 
-namespace TrainWorld
+namespace RailWorld
 {
 
 	public class EntityTrolley : EntityAgent, IRenderer
@@ -23,18 +23,24 @@ namespace TrainWorld
 
 		private bool applyGravity = false;
 
-		public override bool ApplyGravity
+        private bool isInteractable = true;
+        
+        private RailSection nextRailSection;
+        private RailSection currentRailSection;
+        private RailSection previousRailSection;
+
+        public override bool ApplyGravity
 		{
 			get { return applyGravity; }
+
 
 		}
 
 
 
-
-		public override bool IsInteractable
+        public override bool IsInteractable
 		{
-			get { return true; }
+			get { return isInteractable; }
 		}
 
 		public override float MaterialDensity
@@ -76,6 +82,7 @@ namespace TrainWorld
 			
 		}
 
+		//public override bool
 		public override void OnCollided()
 		{
 			base.OnCollided();
@@ -128,9 +135,14 @@ namespace TrainWorld
 			//this.
 		}
 
+		public void CheckRail() 
+		{
 
-		
+		}
 
 
-	}
+
+
+
+    }
 }

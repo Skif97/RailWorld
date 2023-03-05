@@ -7,9 +7,9 @@ using Vintagestory.API.Datastructures;
 using Vintagestory.API.Server;
 using System;
 using Vintagestory.API.Common.Entities;
+using System.Collections.Generic;
 
-
-namespace TrainWorld
+namespace RailWorld
 {
 	public class ItemTrolley : Item
 	{
@@ -53,12 +53,34 @@ namespace TrainWorld
 			Entity entity = byEntity.World.ClassRegistry.CreateEntity(entityType);
 			if (entity != null)
 			{
-				entity.ServerPos.X = (double)((float)(blockSel.Position.X + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.X)) + 0.5f);
-				entity.ServerPos.Y = (double)(blockSel.Position.Y + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.Y));
-				entity.ServerPos.Z = (double)((float)(blockSel.Position.Z + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.Z)) + 0.5f);
-				//float degr2 = (float)byEntity.World.Rand.NextDouble() * 2f * 3.1415927f;
-				//entity.ServerPos.Yaw = degr2;
+				BlockPos pos = blockSel.Position.Copy();
+                if (byEntity.World.BlockAccessor.GetBlock(pos).Id == byEntity.World.GetBlock(new AssetLocation("railworld", "rail")).Id)
+                {
+                    BlockEntityRail bentity = byEntity.World.BlockAccessor.GetBlockEntity(pos) as BlockEntityRail;
+                    if (bentity != null)
+                    {
+						List<RailSection> railSections = bentity.GetRailSections();
 
+                        if (railSections.Count != 0) 
+						{
+							int railslot = (int)((railSections.Count - 1f) / 2f);
+							entity.ServerPos.X = railSections[railslot].centerСenterPos.X;
+                            entity.ServerPos.Y = railSections[railslot].centerСenterPos.Y;
+                            entity.ServerPos.Z = railSections[railslot].centerСenterPos.Z;
+                            entity.ServerPos.Pitch = railSections[railslot].centerPitch;
+                            entity.ServerPos.Roll = railSections[railslot].centerRoll;
+                            entity.ServerPos.Yaw = railSections[railslot].centerYaw;
+
+                        }
+                    }
+                }
+				else 
+				{
+                    entity.ServerPos.X = blockSel.Position.X + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.X) + 0.5f;
+                    entity.ServerPos.Y = blockSel.Position.Y + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.Y);
+                    entity.ServerPos.Z = blockSel.Position.Z + (blockSel.DidOffset ? 0 : blockSel.Face.Normali.Z) + 0.5f;
+					entity.ServerPos.Yaw = byEntity.BodyYaw;
+                }
 				
 				entity.Pos.SetFrom(entity.ServerPos);
 				entity.PositionBeforeFalling.Set(entity.ServerPos.X, entity.ServerPos.Y, entity.ServerPos.Z);

@@ -8,14 +8,15 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
+using Vintagestory.API.Util;
 
-namespace TrainWorld
+namespace RailWorld
 {
     public class ModMath
     {
 
 
-        public static CubicBezierCurve3d CotrolPointSercherForArc(Vec3d position, double yaw, double radius, double arcLenghtRad, bool right, double cur, int slope = 0)
+        public static CubicBezierCurve3d CotrolPointSercherForArc(Vec3d position, double yaw, double radius, double arcLenghtRad, bool left, double cur, int slope = 0)
         {
             Vec3d firstPoint;
             Vec3d secondPoint;
@@ -32,13 +33,13 @@ namespace TrainWorld
             Vec3d radiusVec = firstPointDirectVec.Clone();
 
 
-            if (right)
+            if (left)
             {
-                radiusVec.RotateAroundY(Math.PI / 2);
+                radiusVec.RotateAroundY(-Math.PI / 2);
             }
             else
             {
-                radiusVec.RotateAroundY(-Math.PI / 2);
+                radiusVec.RotateAroundY(Math.PI / 2);
             }
 
 
@@ -48,13 +49,13 @@ namespace TrainWorld
 
             arcCenter.Sub(radiusVec.X, 0f, radiusVec.Z);
 
-            if (right)
+            if (left)
             {
-                radiusVec.RotateAroundY(-arcLenghtRad);
+                radiusVec.RotateAroundY(arcLenghtRad);
             }
             else
             {
-                radiusVec.RotateAroundY(arcLenghtRad);
+                radiusVec.RotateAroundY(-arcLenghtRad);
             }
 
             fourthPoint = arcCenter.Clone();
@@ -64,13 +65,13 @@ namespace TrainWorld
             fourthPointDirectVec = radiusVec.Clone();
             fourthPointDirectVec.Normalize();
 
-            if (right)
+            if (left)
             {
-                fourthPointDirectVec.RotateAroundY(Math.PI / 2);
+                fourthPointDirectVec.RotateAroundY(-Math.PI / 2);
             }
             else
             {
-                fourthPointDirectVec.RotateAroundY(-Math.PI / 2);
+                fourthPointDirectVec.RotateAroundY(Math.PI / 2);
             }
 
             firstPoint = DirectionVectorPositionCorrection(firstPoint, firstPointDirectVec, true);
@@ -210,25 +211,7 @@ namespace TrainWorld
         }
 
 
-        public static List<RailSection> GenerateRailSections(List<PointOnBezierCurve> pointsOnCurve, double trackWidth)
-        {
-
-
-            List<RailSection> railSections = new List<RailSection>();
-
-            for (int i = 0; i < pointsOnCurve.Count - 2; i+=2)
-            {
-                //if (pointsOnCurve[i].position.X == pointsOnCurve[i + 1].position.X && pointsOnCurve[i].position.Z == pointsOnCurve[i + 1].position.Z)
-                //{
-                //}
-                RailSection raillSection = new RailSection(pointsOnCurve[i], pointsOnCurve[i + 1], pointsOnCurve[i+2], trackWidth);
-
-                railSections.Add(raillSection);
-            }
-            
-
-            return railSections;
-        }
+        
 
         public static double TangentToYaw(Vec3d tangent)
         {
@@ -243,26 +226,40 @@ namespace TrainWorld
             return Math.Asin(tangent.Y / tangent.Length());
         }
 
-        public static void ShowTheOutline(EntityAgent byEntity, CubicBezierCurve3d position, double th, int HighlightSlotId)
+        public static CubicBezierCurve3d CotrolPointSercherForStraight(Vec3d position, double yaw, double lenght, double cur, int slope = 0)
         {
-            byEntity.World.HighlightBlocks(byEntity.World.PlayerByUid(((EntityPlayer)byEntity).PlayerUID), HighlightSlotId, new List<BlockPos>(), new List<int>(), EnumHighlightBlocksMode.Absolute, EnumHighlightShape.Arbitrary);
-            List<BlockPos> blocks = new List<BlockPos>();
-            List<int> colors = new List<int>();
-            BresenHam.PlotCubicBezierWidth(position.x0, position.z0, position.x1, position.z1, position.x2, position.z2, position.x3, position.z3, th,
-            delegate (double x, double z, double aa)
-            {
-                if (aa >= 0.55)
-                {
-                    blocks.Add(new BlockPos((int)x, (int)position.y0, (int)z));
-                    colors.Add(ColorUtil.ColorFromRgba(215, 94, 94, 120));
-                }
-                else
-                {
-                    blocks.Add(new BlockPos((int)x, (int)position.y0, (int)z));
-                    colors.Add(ColorUtil.ColorFromRgba(215, 215, 94, 120));
-                }
-            });
-            byEntity.World.HighlightBlocks(byEntity.World.PlayerByUid(((EntityPlayer)byEntity).PlayerUID), HighlightSlotId, blocks, colors, EnumHighlightBlocksMode.Absolute, EnumHighlightShape.Arbitrary);
+            Vec3d firstPoint;
+            Vec3d secondPoint;
+            Vec3d thirdPoint;
+            Vec3d fourthPoint;
+
+            Vec3d firstPointDirectVec;
+            Vec3d fourthPointDirectVec;
+
+
+            firstPoint = CorrectionPositionToCenterBlockXZ(position);
+            firstPointDirectVec = GetDirectionVectorXZ(yaw).Normalize();
+
+            secondPoint = firstPoint.AddCopy(firstPointDirectVec.MulCopy(lenght / 2f * 0.8f));
+
+            fourthPoint = CorrectionPositionToCenterBlockXZ(firstPoint.AddCopy(firstPointDirectVec.MulCopy(lenght)));
+
+            fourthPointDirectVec = firstPointDirectVec.Clone().NegateVec();
+
+            thirdPoint = fourthPoint.AddCopy(fourthPointDirectVec.MulCopy(lenght / 2f * 0.8f));
+
+            firstPoint = DirectionVectorPositionCorrection(firstPoint, firstPointDirectVec, true);
+
+            fourthPoint = DirectionVectorPositionCorrection(fourthPoint, fourthPointDirectVec, true);
+
+            position.Y += 0.171875f;
+
+            return new CubicBezierCurve3d(firstPoint.X, position.Y, firstPoint.Z,
+                                          secondPoint.X, position.Y, secondPoint.Z,
+                                          thirdPoint.X, position.Y + slope, thirdPoint.Z,
+                                          fourthPoint.X, position.Y + slope, fourthPoint.Z,
+                                          1f, cur, cur, 1f);
+
         }
 
 
@@ -285,6 +282,41 @@ namespace TrainWorld
             double Z = tree.GetDouble(name + ".Z", 0f);
             return new Vec3d(X, Y, Z);
         }
+
+
+        public static ITreeAttribute SetDoubleArray16(this ITreeAttribute tree, string name, double[] array)
+        {
+
+            for(int i = 0; i < 16; i++) 
+            {
+                if (array.GetLength(0)<i) 
+                {
+                    return tree;
+                }
+                tree.SetDouble(name + i, array[i]);
+            }
+
+            return tree;
+        }
+
+        public static double[] GetDoubleArray16(this ITreeAttribute tree, string name)
+        {
+            double[] array = new double[16];
+            for (int i = 0; i < 16 ; i++)
+            {
+                if (tree.TryGetDouble(name + i) != null) 
+                {
+                    array[i] = tree.GetDouble(name + i);
+                }
+                else 
+                {
+                    array[i] = 0;
+                }
+            }
+
+            return array;
+        }
+
     }
     
 }

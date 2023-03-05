@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using Vintagestory.API.Client;
 using Vintagestory.API.MathTools;
 
-namespace TrainWorld
+namespace RailWorld
 {
     public static class MeshDataExtension
     {
