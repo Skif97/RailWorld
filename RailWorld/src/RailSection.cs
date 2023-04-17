@@ -149,7 +149,7 @@ namespace RailWorld
             Quaterniond.RotateY(quat1, quat1, leftYaw);
             Quaterniond.SetAxisAngle(quat2, leftCenterNormal.ToDoubleArray(), leftPitch);
 
-            Quaterniond.Mul(quat1, quat2, quat1);
+            Quaterniond.Multiply(quat1, quat2, quat1);
 
             Mat4d.FromQuat(leftMatrix, quat1);
 
@@ -161,7 +161,7 @@ namespace RailWorld
             Quaterniond.RotateY(quat1, quat1, rightYaw);
             Quaterniond.SetAxisAngle(quat2, rightCenterNormal.ToDoubleArray(), rightPitch);
 
-            Quaterniond.Mul(quat1, quat2, quat1);
+            Quaterniond.Multiply(quat1, quat2, quat1);
 
             Mat4d.FromQuat(rightMatrix, quat1);
 
@@ -173,22 +173,32 @@ namespace RailWorld
             Quaterniond.RotateY(quat1, quat1, centerYaw);
             Quaterniond.SetAxisAngle(quat2, centerCenterNormal.ToDoubleArray(), centerPitch);
 
-            Quaterniond.Mul(quat1, quat2, quat1);
+            Quaterniond.Multiply(quat1, quat2, quat1);
 
             Mat4d.FromQuat(centerMatrix, quat1);
 
-            float[] eulerAngles = Quaterniond.ToEulerAngles(quat1);
-            
-            this.centerPitch = eulerAngles[2];
-            this.centerYaw = eulerAngles[1];
-            this.centerRoll = eulerAngles[0];
 
+            float[] eulerAngles = Quaterniond_Extensions.MatrixToEulerAngles(centerMatrix);
+
+            //float[] eulerAngles = Quaterniond.ToEulerAngles(quat1);
+            //float[] eulerAngles = Quaterniond_Extensions.ToEulerAngles(quat1);
+            //if (eulerAngles[1] > 0) { }
+            this.centerYaw = eulerAngles[0] ;
+            //this.centerPitch = 0f;
+            //this.centerRoll = 0f;
+
+            this.centerYaw = eulerAngles[1];
+            this.centerPitch = eulerAngles[2];
+            //this.centerRoll = eulerAngles[0];
+            //this.centerYaw = (float)centerYaw;
+            //this.centerPitch = (float)centerPitch;
+            //this.centerRoll = eulerAngles[2];
 
 
             //centerYaw = ModMath.TangentToYaw(centerCenterTangent) + (rnd.NextDouble() / 10.4652f) - 0.0477773956f;
 
 
-            
+
             double rndnum = api.World.Rand.NextDouble() / 2f ;
             centerScale = new Vec3d(1f, 1f, (trackWidth * (1.9f + rndnum)));
             //centerScale = new Vec3d(1f, 1f, (trackWidth * 1.5f));

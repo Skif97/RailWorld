@@ -9,6 +9,8 @@ using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.Util;
+using System.Numerics;
+using System.Drawing.Drawing2D;
 
 namespace RailWorld
 {
@@ -262,6 +264,89 @@ namespace RailWorld
 
         }
 
+
+    }
+
+
+
+
+    public static class Quaterniond_Extensions
+    {
+        public static float[] ToEulerAngles(this double[] quaternion)
+        {
+            // Извлекаем компоненты кватерниона
+            double qw = quaternion[0];
+            double qx = quaternion[1];
+            double qy = quaternion[2];
+            double qz = quaternion[3];
+
+            double sqw = qw * qw;
+            double sqx = qx * qx;
+            double sqy = qy * qy;
+            double sqz = qz * qz;
+
+            double yaw;
+            double pitch;
+            double roll;
+
+            // roll (x-axis rotation)
+            double sinr_cosp = 2f * (qw * qx + qy * qz);
+            double cosr_cosp = 1f - 2f * (sqx + sqy);
+            roll = Math.Atan2(sinr_cosp, cosr_cosp);
+
+            // pitch (y-axis rotation)
+            double sinp = 2f * (qw * qy - qz * qx);
+            if (Math.Abs(sinp) >= 1f)
+            {
+                pitch = Math.PI / 2f * Math.Sign(sinp); // use 90 degrees if out of range
+            }
+            else
+            {
+                pitch = Math.Asin(sinp);
+            }
+
+            // yaw (z-axis rotation)
+            double siny_cosp = 2f * (qw * qz + qx * qy);
+            double cosy_cosp = 1f - 2f * (sqy + sqz);
+            yaw = Math.Atan2(siny_cosp, cosy_cosp);
+
+
+
+            // Приводим углы в диапазон от 0 до 2π радиан
+           // yaw = NormalizeAngle(yaw);
+           // pitch = NormalizeAngle(pitch);
+           // roll = NormalizeAngle(roll);
+
+            // Возвращаем углы Эйлера в векторе
+            return new float[] { (float)yaw, (float)pitch, (float)roll };
+        }
+
+        private static double NormalizeAngle(double angle)
+        {
+            while (angle < 0f)
+            {
+                angle += 2 * Math.PI;
+            }
+            while (angle >= 2 * Math.PI)
+            {
+                angle -= 2 * Math.PI;
+            }
+            return angle;
+        }
+
+        public static float[] MatrixToEulerAngles(this double[] matrix)
+        {
+            double yaw = Math.Atan2(-matrix[2], matrix[0]);
+            double pitch = Math.Asin(matrix[1]);
+            double roll = Math.Atan2(-matrix[9], matrix[10]);
+
+            // Приводим углы к нужному диапазону
+            //yaw = NormalizeAngle(yaw);
+            // pitch = NormalizeAngle(pitch);
+            // roll = NormalizeAngle(roll);
+
+            return new float[] { (float)yaw, (float)pitch, (float)roll };
+        }
 
     }
 

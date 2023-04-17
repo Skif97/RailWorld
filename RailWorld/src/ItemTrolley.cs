@@ -67,9 +67,14 @@ namespace RailWorld
 							entity.ServerPos.X = railSections[railslot].centerСenterPos.X;
                             entity.ServerPos.Y = railSections[railslot].centerСenterPos.Y;
                             entity.ServerPos.Z = railSections[railslot].centerСenterPos.Z;
+
+                            //entity.ServerPos.Yaw = railSections[railslot].centerYaw;
+                            //entity.ServerPos.Pitch = railSections[railslot].centerPitch;
+                            //entity.ServerPos.Roll = railSections[railslot].centerRoll;
+
+                            entity.ServerPos.Yaw = railSections[railslot].centerYaw;
                             entity.ServerPos.Pitch = railSections[railslot].centerPitch;
                             entity.ServerPos.Roll = railSections[railslot].centerRoll;
-                            entity.ServerPos.Yaw = railSections[railslot].centerYaw;
 
                         }
                     }
