@@ -130,5 +130,6 @@ namespace RailWorld
 				}
 			}.Append(base.GetHeldInteractionHelp(inSlot));
 		}
+
 	}
 }

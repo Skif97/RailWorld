@@ -19,9 +19,18 @@ namespace RailWorld
 
 		public int RenderRange => 999;
 
-		public double ForwardSpeed = 0.0;
+		public double Speed = 0.0;
+		public double MaxSpeedInAir = 80.0; //метров в секунду характерно для угловатой формы
+		private double AccelerationOfGravity = 0.0; //берется из текущей железнодорожной секции
 
-		private bool applyGravity = false;
+		private double trolleyMass = 300;
+		private double cargoWeight = 0.0;
+
+		private RailSection CurrentRailSection = null;
+
+		private bool OnRail = false;
+
+		private bool applyGravity = true;
 
         private bool isInteractable = true;
         
@@ -69,9 +78,7 @@ namespace RailWorld
 			Properties.KnockbackResistance = 0.95f;
 			hasRepulseBehavior = true;
 
-			
-			
-			 touchDistanceSq = (double)Math.Max(0.001f, SelectionBox.XSize);
+			touchDistanceSq = (double)Math.Max(0.001f, SelectionBox.XSize);
 
 
 		}
@@ -82,7 +89,6 @@ namespace RailWorld
 			
 		}
 
-		//public override bool
 		public override void OnCollided()
 		{
 			base.OnCollided();
@@ -108,9 +114,9 @@ namespace RailWorld
 			//Pos.Pitch = 0f;
 			//Pos.Yaw = 0f;
 			//Pos.Roll = (float)-Math.PI / 180 * 30;
-			Pos.Roll = 0f;
-			ServerPos.Pitch = 0f;
-			ServerPos.Yaw = 0f;
+			//Pos.Roll = 0f;
+			//ServerPos.Pitch = 0f;
+			//ServerPos.Yaw = 0f;
 			//ServerPos.X = Pos.X + 1D;
 			//ServerPos.Y = Pos.Y + 1D;
 			//ServerPos.Roll = (float)-Math.PI / 180 * 30;
@@ -126,6 +132,19 @@ namespace RailWorld
         }
         public override void OnGameTick(float dt)
 		{
+			double resistance = 1.0;
+            if (OnRail) 
+			{
+
+			}
+            else 
+			{
+                if (this.World.BlockAccessor.GetBlock(Pos.AsBlockPos).Id==0) 
+				{
+
+				}
+			}
+
 			//ServerPos.X = Pos.X + 0.01D;
 			base.OnGameTick(dt);
 			onPhysicsTickCallback(dt);
@@ -134,6 +153,17 @@ namespace RailWorld
 			//this.onPhysicsTickCallback;
 			//this.
 		}
+
+		private double GetAirResistance() 
+		{
+			return 
+		}
+
+		private double GetGroundResistance()
+		{
+
+		}
+
 
 		public void CheckRail() 
 		{
