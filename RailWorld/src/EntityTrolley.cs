@@ -19,12 +19,13 @@ namespace RailWorld
 
 		public int RenderRange => 999;
 
+		
 		public double Speed = 0.0;
-		public double MaxSpeedInAir = 80.0; //метров в секунду характерно для угловатой формы
+		public double FreeFallSpeed = 80.0; //метров в секунду характерно для угловатой формы
 		private double AccelerationOfGravity = 0.0; //берется из текущей железнодорожной секции
-
-		private double trolleyMass = 300;
-		private double cargoWeight = 0.0;
+		private double OwnRollingResistance = 0.98; //узлы вагонетки не идеальны поэтому расходуется часть енергии
+		private double RoadRollingResistance; // берется из пути
+		private bool Brake = false;
 
 		private RailSection CurrentRailSection = null;
 
@@ -104,6 +105,10 @@ namespace RailWorld
 
 		private void onPhysicsTickCallback(float dtFac)
 		{
+
+
+
+
 			ServerPos.X = ServerPos.X + (ForwardSpeed * dtFac);
 			ServerPos.Y = ServerPos.Y + (ForwardSpeed * dtFac);
 		}
@@ -132,6 +137,7 @@ namespace RailWorld
         }
         public override void OnGameTick(float dt)
 		{
+
 			double resistance = 1.0;
             if (OnRail) 
 			{
@@ -156,6 +162,7 @@ namespace RailWorld
 
 		private double GetAirResistance() 
 		{
+			Api.World.
 			return 
 		}
 
