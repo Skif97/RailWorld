@@ -354,9 +354,12 @@ namespace RailWorld
     {
         public static ITreeAttribute SetVec3d(this ITreeAttribute tree, string name, Vec3d vec)
         {
-            tree.SetDouble(name + ".X", vec.X);
-            tree.SetDouble(name + ".Y", vec.Y);
-            tree.SetDouble(name + ".Z", vec.Z);
+            if(vec != null) 
+            {
+                tree.SetDouble(name + ".X", vec.X);
+                tree.SetDouble(name + ".Y", vec.Y);
+                tree.SetDouble(name + ".Z", vec.Z);
+            }
             return tree;
         }
 

@@ -63,12 +63,6 @@ namespace RailWorld
         public Vec3d rightScale;
         public Vec3d centerScale;
 
-        public Vec3d nextSectionBlock;
-        public int nextSectionSlot;
-
-        public Vec3d previousSectionBlock;
-        public int previousSectionSlot;
-
         public Vec3d switchOffsetLeft;
         public Vec3d switchOffsetRight;
 
@@ -76,12 +70,43 @@ namespace RailWorld
         public double[] rightMatrix;
         public double[] centerMatrix;
 
+        //first derection
+        public Vec3d FDStart;
+        public Vec3d FDEnd;
+        public Vec3d FDVector;
+        public double FDResistance;
+        public double FDAcceleration;
+        public Vec3d FDNextSectionBlock;
+        public int FDNextSectionSlot;
+
+        //second derection
+        public Vec3d SDStart;
+        public Vec3d SDEnd;
+        public Vec3d SDVector;
+        public double SDResistance;
+        public double SDAcceleration;
+        public Vec3d SDNextSectionBlock;
+        public int SDNextSectionSlot;
+
+        double sectionLength;
         public RailSection(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
         {
             double trackRadius = trackWidth / 2;
 
             centerStartPos = pointsOnCurveStart.position.Clone();
             centerEndPos = pointsOnCurveEnd.position.Clone();
+
+            FDStart = centerStartPos;
+            FDEnd = centerEndPos;
+            FDVector = FDEnd.SubCopy(FDStart);
+            FDResistance = 0.01f;
+
+            SDEnd = centerStartPos;
+            SDStart = centerEndPos;
+            SDVector = SDEnd.SubCopy(SDStart);
+            SDResistance = 0.01f;
+
+            sectionLength = centerStartPos.DistanceTo(centerEndPos);
 
             //centerСenterPos = centerStartPos.AverageCopy(centerEndPos);
             centerСenterPos = pointsOnCurveCenter.position.Clone();
@@ -203,13 +228,6 @@ namespace RailWorld
             centerScale = new Vec3d(1f, 1f, (trackWidth * (1.9f + rndnum)));
             //centerScale = new Vec3d(1f, 1f, (trackWidth * 1.5f));
 
-
-            nextSectionBlock = position.Clone();
-            nextSectionSlot = 0;
-
-            previousSectionBlock = position.Clone();
-            previousSectionSlot = 0;
-
             switchOffsetLeft = new Vec3d(0f, 0f, 0f);
             switchOffsetRight = new Vec3d(0f, 0f, 0f);
 
@@ -253,11 +271,11 @@ namespace RailWorld
             rightLenght = tree.GetDouble(string.Format("{0}.rightLenght", slotNumberInBLock));
 
 
-            nextSectionBlock = tree.GetVec3d(string.Format("{0}.nextSectionBlock", slotNumberInBLock));
-            nextSectionSlot = tree.GetInt(string.Format("{0}.nextSectionSlot", slotNumberInBLock));
+            FDNextSectionBlock = tree.GetVec3d(string.Format("{0}.FDNextSectionBlock", slotNumberInBLock));
+            FDNextSectionSlot = tree.GetInt(string.Format("{0}.FDNextSectionSlot", slotNumberInBLock));
 
-            previousSectionBlock = tree.GetVec3d(string.Format("{0}.previousSectionBlock", slotNumberInBLock));
-            previousSectionSlot = tree.GetInt(string.Format("{0}.previousSectionSlot", slotNumberInBLock));
+            SDNextSectionBlock = tree.GetVec3d(string.Format("{0}.SDNextSectionBlock", slotNumberInBLock));
+            SDNextSectionSlot = tree.GetInt(string.Format("{0}.SDNextSectionSlot", slotNumberInBLock));
 
             switchOffsetLeft = tree.GetVec3d(string.Format("{0}.switchOffsetleft", slotNumberInBLock));
             switchOffsetRight = tree.GetVec3d(string.Format("{0}.switchOffsetright", slotNumberInBLock));
@@ -282,6 +300,18 @@ namespace RailWorld
             leftMatrix = tree.GetDoubleArray16(string.Format("{0}.leftMatrix", slotNumberInBLock));
             rightMatrix = tree.GetDoubleArray16(string.Format("{0}.rightMatrix", slotNumberInBLock));
             centerMatrix = tree.GetDoubleArray16(string.Format("{0}.centerMatrix", slotNumberInBLock));
+
+            FDStart = tree.GetVec3d(string.Format("{0}.FDStart", slotNumberInBLock));
+            FDEnd = tree.GetVec3d(string.Format("{0}.FDEnd", slotNumberInBLock));
+            FDVector = tree.GetVec3d(string.Format("{0}.FDVector", slotNumberInBLock));
+            FDResistance = tree.GetDouble(string.Format("{0}.FDResistance", slotNumberInBLock));
+            FDAcceleration = tree.GetDouble(string.Format("{0}.FDAcceleration", slotNumberInBLock));
+
+            SDStart = tree.GetVec3d(string.Format("{0}.SDStart", slotNumberInBLock));
+            SDEnd = tree.GetVec3d(string.Format("{0}.SDEnd", slotNumberInBLock));
+            SDVector = tree.GetVec3d(string.Format("{0}.SDVector", slotNumberInBLock));
+            SDResistance = tree.GetDouble(string.Format("{0}.SDResistance", slotNumberInBLock));
+            SDAcceleration = tree.GetDouble(string.Format("{0}.SDAcceleration", slotNumberInBLock));
         }
 
         public RailSection(ItemStack itemStack, int slot)
@@ -305,18 +335,18 @@ namespace RailWorld
                 {
                     if (beRail.Pos.ToVec3i() != position.ToVec3i() || i != slotNumberInBLock)
                     {
-                        if (beRail.GetRailSections()[i].centerStartPos.Equals(centerEndPos))
+                        if (FDEnd.Equals(beRail.GetRailSections()[i].FDStart) || FDEnd.Equals(beRail.GetRailSections()[i].SDStart))
                         {
-                            nextSectionBlock = beRail.Pos.ToVec3d();
-                            nextSectionSlot = i;
+                            FDNextSectionBlock = beRail.Pos.ToVec3d();
+                            FDNextSectionSlot = i;
                             break;
 
                         }
 
-                        if (beRail.GetRailSections()[i].centerEndPos.Equals(centerStartPos))
+                        if (SDEnd.Equals(beRail.GetRailSections()[i].FDStart) || SDEnd.Equals(beRail.GetRailSections()[i].SDStart))
                         {
-                            previousSectionBlock = beRail.Pos.ToVec3d();
-                            previousSectionSlot = i;
+                            SDNextSectionBlock = beRail.Pos.ToVec3d();
+                            SDNextSectionSlot = i;
                             break;
                         }
                     }
@@ -368,11 +398,11 @@ namespace RailWorld
             tree.SetDouble(string.Format("{0}.leftLenght", slotNumberInBLock), leftLenght);
             tree.SetDouble(string.Format("{0}.rightLenght", slotNumberInBLock), rightLenght);
 
-            tree.SetVec3d(string.Format("{0}.nextSectionBlock", slotNumberInBLock), nextSectionBlock);
-            tree.SetInt(string.Format("{0}.slotAfterStartPos", slotNumberInBLock), nextSectionSlot);
+            tree.SetVec3d(string.Format("{0}.FDNextSectionBlock", slotNumberInBLock), FDNextSectionBlock);
+            tree.SetInt(string.Format("{0}.FDNextSectionSlot", slotNumberInBLock), FDNextSectionSlot);
 
-            tree.SetVec3d(string.Format("{0}.previousSectionBlock", slotNumberInBLock), previousSectionBlock);
-            tree.SetInt(string.Format("{0}.slotAfterEndPos", slotNumberInBLock), previousSectionSlot);
+            tree.SetVec3d(string.Format("{0}.SDNextSectionBlock", slotNumberInBLock), SDNextSectionBlock);
+            tree.SetInt(string.Format("{0}.SDNextSectionSlot", slotNumberInBLock), SDNextSectionSlot);
 
             tree.SetVec3d(string.Format("{0}.switchOffsetleft", slotNumberInBLock), switchOffsetLeft);
             tree.SetVec3d(string.Format("{0}.switchOffsetright", slotNumberInBLock), switchOffsetRight);
@@ -396,6 +426,18 @@ namespace RailWorld
             tree.SetDoubleArray16(string.Format("{0}.leftMatrix", slotNumberInBLock), leftMatrix);
             tree.SetDoubleArray16(string.Format("{0}.rightMatrix", slotNumberInBLock), rightMatrix);
             tree.SetDoubleArray16(string.Format("{0}.centerMatrix", slotNumberInBLock), centerMatrix);
+
+            tree.SetVec3d(string.Format("{0}.FDStart", slotNumberInBLock), FDStart);
+            tree.SetVec3d(string.Format("{0}.FDEnd", slotNumberInBLock), FDEnd);
+            tree.SetVec3d(string.Format("{0}.FDVector", slotNumberInBLock), FDVector);
+            tree.SetDouble(string.Format("{0}.FDResistance", slotNumberInBLock), FDResistance);
+            tree.SetDouble(string.Format("{0}.FDAcceleration", slotNumberInBLock), FDAcceleration);
+
+            tree.SetVec3d(string.Format("{0}.SDStart", slotNumberInBLock), SDStart);
+            tree.SetVec3d(string.Format("{0}.SDEnd", slotNumberInBLock), SDEnd);
+            tree.SetVec3d(string.Format("{0}.SDVector", slotNumberInBLock), SDVector);
+            tree.SetDouble(string.Format("{0}.SDResistance", slotNumberInBLock), SDResistance);
+            tree.SetDouble(string.Format("{0}.SDAcceleration", slotNumberInBLock), SDAcceleration);
 
         }
     }

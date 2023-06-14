@@ -23,14 +23,9 @@ namespace RailWorld
 
         public double Speed = 0.0;
         public double FreeFallSpeed = 80.0; //метров в секунду характерно для угловатой формы
-        private double AccelerationOfGravity = 0.0; //берется из текущей железнодорожной секции
-        private double OwnRollingResistance = 0.98; //узлы вагонетки не идеальны поэтому расходуется часть енергии
-        private double RoadRollingResistance; // берется из пути
         private bool Brake = false;
-        private int SkeepEveryRailSection = 0; //настройка для оптимизации, если будет съедать много ресурсов
-                                               //можно пропускать просчёт каких то секций на больших скоростях, ихи при большом количестве секцций
 
-        private RailSection CurrentRailSection = null;
+        public RailSection CurrentRailSection = null;
 
         private bool OnRail = false;
 
@@ -38,9 +33,8 @@ namespace RailWorld
 
         private bool isInteractable = true;
 
-        private RailSection nextRailSection;
         private RailSection currentRailSection;
-        private RailSection previousRailSection;
+
 
         public override bool ApplyGravity
         {
@@ -90,7 +84,8 @@ namespace RailWorld
         public override void OnEntitySpawn()
         {
             base.OnEntitySpawn();
-
+            currentRailSection = GetReilSec(this.Attributes.GetVec3d("currentSectionBlock"), this.Attributes.GetInt("currentSectionSlot"));
+            Speed = 1f;
         }
 
         public override void OnCollided()
@@ -106,14 +101,62 @@ namespace RailWorld
 
 
 
-        private void onPhysicsTickCallback(float dtFac)
+        private void onPhysicsTickCallback(double dt)
         {
+            if (dt > 0)
+            {
+                EntityPos trolleyPosition = this.Pos;
+                double startSpeed = this.Speed;
+                if (currentRailSection != null)
+                {
+                    while (true)
+                    {
+                        double accelerationOnRail = 0.01f;
+                        double resistance = 0.5f;
+
+                        int dirIndex = GetDirection(this.Pos.GetViewVector().ToVec3d());
+
+                        Vec3d endPoint = GetEndPointOnSections(dirIndex);
+                        Vec3d dirvec = GetDirectionVector(dirIndex);
+                        double distanceToEnd = trolleyPosition.DistanceTo(endPoint);
+                        double totalAcceleration = TotalAccelerationOnDistance(distanceToEnd, accelerationOnRail, resistance);
+                        double totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
+                        double totalTime = TotalTravelTime(startSpeed, totalSpeed, totalAcceleration);
+                        if (totalTime < dt)
+                        {
+                            trolleyPosition.SetPos(endPoint);
+                            startSpeed = totalSpeed;
+                            dt = dt - totalTime;
+                            currentRailSection = GetNextReilSec(dirIndex);
+
+                        }
+                        else
+                        {
+                            double distance = TotalDistanceOnTimeInterval(startSpeed, dt, totalAcceleration);
+                            totalAcceleration = TotalAccelerationOnDistance(distance, accelerationOnRail, resistance);
+                            totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
+                            startSpeed = totalSpeed;
+                            dirvec.Normalize();
+                            dirvec. Mul(distance);
+                            trolleyPosition.SetPos(trolleyPosition.XYZ.AddCopy(dirvec));
+                            break;
+                        }
+                        
+                    }
+                }
+                
+                if(Api.Side == EnumAppSide.Client) 
+                {
+                    this.Pos = trolleyPosition;
+                }
+                else 
+                {
+                    this.ServerPos = trolleyPosition;
+                }
+                this.Speed = startSpeed;
 
 
-
-
-            ServerPos.X = ServerPos.X + (ForwardSpeed * dtFac);
-            ServerPos.Y = ServerPos.Y + (ForwardSpeed * dtFac);
+            }
         }
 
 
@@ -138,33 +181,13 @@ namespace RailWorld
         {
             base.OnFallToGround(motionY);
         }
+
         public override void OnGameTick(float dt)
-        {
-            // сначала считаем итоговую скорость для текущей секции рельс, потом отталкиваясь от времени считаем пройденную дистанцию
-            // если дистанция больше текущей секции, берем следующую секцию, если больше следующей тогда пересчитываем скорость для этой секции
-            // и отнимаем дистанцию, и идем так до тех пор пока не найдем нужную окончательную секцию 
-            // после чего ищем место на секции где окажемся
-            // переназначаем текущую секцию для вагонетки, обновляем положение
-            double resistance = 1.0;
-            if (OnRail)
-            {
+        {           
 
-            }
-            else
-            {
-                if (this.World.BlockAccessor.GetBlock(Pos.AsBlockPos).Id == 0)
-                {
-
-                }
-            }
-
-            //ServerPos.X = Pos.X + 0.01D;
             base.OnGameTick(dt);
             onPhysicsTickCallback(dt);
 
-            //this.ForwardSpeed = .
-            //this.onPhysicsTickCallback;
-            //this.
         }
 
 
@@ -199,99 +222,85 @@ namespace RailWorld
 
         }
 
-
         private Vec3d GetEndPointOnSections(int directionIndex)
         {
-            if (directionIndex == 0)
-            { return currentRailSection.firstDirectionEndPoint; }
-            return currentRailSection.secondDirectionEndPoint;
+            if (directionIndex == 1)
+            { 
+                return currentRailSection.FDEnd ; 
+            }
+            else 
+            {
+                return currentRailSection.SDEnd;
+            }
         }
 
         private Vec3d GetDirectionVector(int directionIndex)
         {
-            if (directionIndex == 0)
-            { return currentRailSection.firstDirectionVector; }
-            return currentRailSection.secondDirectionVector;
+            if (directionIndex == 1)
+            { 
+                return currentRailSection.FDVector; 
+            }
+            else 
+            {
+                return currentRailSection.SDVector;
+            }
         }
 
         private int GetDirection(Vec3d directionVector)
         {
-            if (currentRailSection.firstDirectionVector.X * directionVector.X +
-                currentRailSection.firstDirectionVector.Y * directionVector.Y +
-                currentRailSection.firstDirectionVector.Z * directionVector.Z >= 0)
-            { return 0; }
-            return 1;
+            if (currentRailSection.FDVector.X * directionVector.X +
+                currentRailSection.FDVector.Y * directionVector.Y +
+                currentRailSection.FDVector.Z * directionVector.Z >= 0)
+            { 
+                return 1; 
+            }
+            else 
+            {
+                return 2;
+            }
         }
 
         private RailSection GetNextReilSec(int directionIndex)
         {
-            if (directionIndex == 0)
-            { this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(currentRailSection.sectionBlockAfterFirstDirection.ToBlockPos()).GetRailSection(currentRailSection.sectionSlotAfterFirstDirection) }
-            return 1;
-        }
-
-        private void SpeedUpdateTotal(double dt)
-        {
-            //сначала пересчитать скорость и дистанцию вдоль всей секции и если итоговое время прохода вписывается в рамки заканчиваем проход
-            if (dt > 0)
+            BlockEntityRail BERail;
+            if (directionIndex == 1)
             {
-                EntityPos trolleyPosition = this.Pos;
-                double startSpeed = this.Speed;
-                while (true)
+                BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(currentRailSection.FDNextSectionBlock.ToBlockPos());
+                if (BERail != null) 
                 {
-                    if (currentRailSection != null)
-                    {
-                        double accelerationOnRail = 0.2f;
-                        double resistance = 0.01f;
-
-                        int dirIndex = GetDirection(this.Pos.GetViewVector().ToVec3d());
-
-                        Vec3d endPoint = GetEndPointOnSections(dirIndex);
-                        Vec3d dirvec = GetDirectionVector(dirIndex);
-                        double distanceToEnd = trolleyPosition.DistanceTo(endPoint);
-                        double totalAcceleration = TotalAccelerationOnDistance(distanceToEnd, accelerationOnRail, resistance);
-                        double totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
-                        double totalTime = TotalTravelTime(startSpeed, totalSpeed, totalAcceleration);
-                        if (totalTime < dt)
-                        {
-                            trolleyPosition.SetPos(endPoint);
-                            startSpeed = totalSpeed;
-                            dt = dt - totalTime;
-
-                        }
-                        else
-                        {
-                            double distance = TotalDistanceOnTimeInterval(startSpeed, dt, totalAcceleration);
-                            totalAcceleration = TotalAccelerationOnDistance(distance, accelerationOnRail, resistance);
-                            totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
-                            startSpeed = totalSpeed;
-                            dirvec.Normalize();
-                            dirvec.Mul(distance);
-                            trolleyPosition.SetPos(trolleyPosition.XYZ.AddCopy(dirvec));
-                            break;
-                        }
-                    }
-
+                    return BERail.GetRailSection(currentRailSection.FDNextSectionSlot);
                 }
-
-                this.Pos = trolleyPosition;
-                this.Speed = startSpeed;
-
-
+               
             }
-
+            else 
+            {
+                BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(currentRailSection.SDNextSectionBlock.ToBlockPos());
+                if (BERail != null)
+                {
+                    return BERail.GetRailSection(currentRailSection.SDNextSectionSlot);
+                }
+            }
+            return null;
         }
 
-
-
-
-        public void CheckRail()
+        private RailSection GetReilSec(Vec3d pos, int slot)
         {
-
+          
+            if(pos != null && slot != null) 
+            {
+                BlockEntityRail BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(pos.ToBlockPos());
+                if(BERail != null) 
+                {
+                    RailSection rs = BERail.GetRailSection(slot);
+                    if(rs != null) 
+                    {
+                        return rs;
+                    }
+                }
+            }
+            return null;
+                   
         }
-
-
-
 
 
     }
