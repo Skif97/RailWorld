@@ -76,7 +76,7 @@ namespace RailWorld
         public double[] rightMatrix;
         public double[] centerMatrix;
 
-        public RailSection(ICoreAPI api,  PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
+        public RailSection(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
         {
             double trackRadius = trackWidth / 2;
 
@@ -183,7 +183,7 @@ namespace RailWorld
             //float[] eulerAngles = Quaterniond.ToEulerAngles(quat1);
             //float[] eulerAngles = Quaterniond_Extensions.ToEulerAngles(quat1);
             //if (eulerAngles[1] > 0) { }
-            this.centerYaw = eulerAngles[0] ;
+            this.centerYaw = eulerAngles[0];
             //this.centerPitch = 0f;
             //this.centerRoll = 0f;
 
@@ -199,7 +199,7 @@ namespace RailWorld
 
 
 
-            double rndnum = api.World.Rand.NextDouble() / 2f ;
+            double rndnum = api.World.Rand.NextDouble() / 2f;
             centerScale = new Vec3d(1f, 1f, (trackWidth * (1.9f + rndnum)));
             //centerScale = new Vec3d(1f, 1f, (trackWidth * 1.5f));
 
@@ -286,7 +286,7 @@ namespace RailWorld
 
         public RailSection(ItemStack itemStack, int slot)
         {
-    
+
             FromTreeAttribute(itemStack.Attributes);
             slotNumberInBLock = slot;
         }
@@ -310,7 +310,7 @@ namespace RailWorld
                             nextSectionBlock = beRail.Pos.ToVec3d();
                             nextSectionSlot = i;
                             break;
-                            
+
                         }
 
                         if (beRail.GetRailSections()[i].centerEndPos.Equals(centerStartPos))
@@ -399,5 +399,5 @@ namespace RailWorld
 
         }
     }
-   
+
 }
