@@ -14,6 +14,8 @@
 			"name": "Cube3",
 			"from": [ -2.0, -2.0, -8.0 ], 
 			"to": [ 2.0, 0.0, 8.0 ], 
+			"rotationOrigin": [ 0.0, 0.0, 0.0 ],
+			"rotationY": 90.0,
 			"faces": {
 				"north": { "texture": "#charred", "uv": [ 9.0, 12.0, 23.5, 21.0 ], "autoUv": false, "snapUv": false, "windMode": [-1,-1,-1,-1] },
 				"east": { "texture": "#charred", "uv": [ 0.0, 27.0, 48.0, 33.0 ], "autoUv": false },

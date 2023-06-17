@@ -217,15 +217,13 @@ namespace RailWorld
 
         public static double TangentToYaw(Vec3d tangent)
         {
-            Vec2d atan = new Vec2d(tangent.X, tangent.Z).Normalize();
-
-            return Math.PI - Math.Atan2(atan.Y, atan.X);
+            return Math.Atan2(tangent.X, tangent.Z);
         }
 
         public static double TangentToPitch(Vec3d tangent)
         {
-
-            return Math.Asin(tangent.Y / tangent.Length());
+            double length = Math.Sqrt(tangent.X * tangent.X + tangent.Z * tangent.Z);
+            return Math.Atan2(tangent.Y, length);
         }
 
         public static CubicBezierCurve3d CotrolPointSercherForStraight(Vec3d position, double yaw, double lenght, double cur, int slope = 0)
@@ -313,9 +311,9 @@ namespace RailWorld
 
 
             // Приводим углы в диапазон от 0 до 2π радиан
-           // yaw = NormalizeAngle(yaw);
-           // pitch = NormalizeAngle(pitch);
-           // roll = NormalizeAngle(roll);
+            yaw = NormalizeAngle(yaw);
+            pitch = NormalizeAngle(pitch);
+            roll = NormalizeAngle(roll);
 
             // Возвращаем углы Эйлера в векторе
             return new float[] { (float)yaw, (float)pitch, (float)roll };

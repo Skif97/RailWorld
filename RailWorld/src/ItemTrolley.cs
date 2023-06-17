@@ -72,7 +72,7 @@ namespace RailWorld
                             //entity.ServerPos.Pitch = railSections[railslot].centerPitch;
                             //entity.ServerPos.Roll = railSections[railslot].centerRoll;
 
-                            entity.ServerPos.Yaw = railSections[railslot].centerYaw;
+                           // entity.ServerPos.Yaw = railSections[railslot].centerYaw;
                             //entity.ServerPos.Pitch = railSections[railslot].centerPitch;
                             //entity.ServerPos.Roll = railSections[railslot].centerRoll;
                             entity.Attributes.SetVec3d("currentSectionBlock", pos.ToVec3d());

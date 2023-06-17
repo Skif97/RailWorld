@@ -71,7 +71,7 @@ namespace RailWorld
         public double[] centerMatrix;
 
         //first derection
-        public Vec3d FDStart;
+        //public Vec3d FDStart;
         public Vec3d FDEnd;
         public Vec3d FDVector;
         public double FDResistance;
@@ -80,7 +80,7 @@ namespace RailWorld
         public int FDNextSectionSlot;
 
         //second derection
-        public Vec3d SDStart;
+       // public Vec3d SDStart;
         public Vec3d SDEnd;
         public Vec3d SDVector;
         public double SDResistance;
@@ -96,15 +96,14 @@ namespace RailWorld
             centerStartPos = pointsOnCurveStart.position.Clone();
             centerEndPos = pointsOnCurveEnd.position.Clone();
 
-            FDStart = centerStartPos;
-            FDEnd = centerEndPos;
-            FDVector = FDEnd.SubCopy(FDStart);
-            FDResistance = 0.01f;
 
+            FDEnd = centerEndPos;
             SDEnd = centerStartPos;
-            SDStart = centerEndPos;
-            SDVector = SDEnd.SubCopy(SDStart);
+            FDResistance = 0.01f;
             SDResistance = 0.01f;
+            FDVector = FDEnd.SubCopy(SDEnd).Normalize();
+            SDVector = SDEnd.SubCopy(FDEnd).Normalize();
+            
 
             sectionLength = centerStartPos.DistanceTo(centerEndPos);
 
@@ -203,21 +202,23 @@ namespace RailWorld
             Mat4d.FromQuat(centerMatrix, quat1);
 
 
-            float[] eulerAngles = Quaterniond_Extensions.MatrixToEulerAngles(centerMatrix);
+            //float[] eulerAngles = Quaterniond_Extensions.MatrixToEulerAngles(centerMatrix);
 
-            //float[] eulerAngles = Quaterniond.ToEulerAngles(quat1);
+            float[] eulerAngles = Quaterniond.ToEulerAngles(quat1);
             //float[] eulerAngles = Quaterniond_Extensions.ToEulerAngles(quat1);
             //if (eulerAngles[1] > 0) { }
-            this.centerYaw = eulerAngles[0];
+           // this.centerYaw = eulerAngles[0];
             //this.centerPitch = 0f;
             //this.centerRoll = 0f;
 
-            this.centerYaw = eulerAngles[1];
-            this.centerPitch = eulerAngles[2];
-            //this.centerRoll = eulerAngles[0];
-            //this.centerYaw = (float)centerYaw;
-            //this.centerPitch = (float)centerPitch;
-            //this.centerRoll = eulerAngles[2];
+            //this.centerYaw = eulerAngles[1];
+            //this.centerYaw += (float)(Math.PI / 2f);
+            //this.centerPitch = eulerAngles[2];
+            //this.centerPitch += (float)(Math.PI / 2f);
+           // this.centerRoll = eulerAngles[0];
+            this.centerYaw = (float)centerYaw;
+            this.centerPitch = (float)centerPitch;
+            this.centerRoll = 0f;
 
 
             //centerYaw = ModMath.TangentToYaw(centerCenterTangent) + (rnd.NextDouble() / 10.4652f) - 0.0477773956f;
@@ -301,13 +302,13 @@ namespace RailWorld
             rightMatrix = tree.GetDoubleArray16(string.Format("{0}.rightMatrix", slotNumberInBLock));
             centerMatrix = tree.GetDoubleArray16(string.Format("{0}.centerMatrix", slotNumberInBLock));
 
-            FDStart = tree.GetVec3d(string.Format("{0}.FDStart", slotNumberInBLock));
+            //FDStart = tree.GetVec3d(string.Format("{0}.FDStart", slotNumberInBLock));
             FDEnd = tree.GetVec3d(string.Format("{0}.FDEnd", slotNumberInBLock));
             FDVector = tree.GetVec3d(string.Format("{0}.FDVector", slotNumberInBLock));
             FDResistance = tree.GetDouble(string.Format("{0}.FDResistance", slotNumberInBLock));
             FDAcceleration = tree.GetDouble(string.Format("{0}.FDAcceleration", slotNumberInBLock));
 
-            SDStart = tree.GetVec3d(string.Format("{0}.SDStart", slotNumberInBLock));
+            //SDStart = tree.GetVec3d(string.Format("{0}.SDStart", slotNumberInBLock));
             SDEnd = tree.GetVec3d(string.Format("{0}.SDEnd", slotNumberInBLock));
             SDVector = tree.GetVec3d(string.Format("{0}.SDVector", slotNumberInBLock));
             SDResistance = tree.GetDouble(string.Format("{0}.SDResistance", slotNumberInBLock));
@@ -333,23 +334,53 @@ namespace RailWorld
             {
                 for (int i = 0; i < beRail.GetRailSections().Count; i++)
                 {
-                    if (beRail.Pos.ToVec3i() != position.ToVec3i() || i != slotNumberInBLock)
+                    if (beRail.Pos.ToVec3i() == position.ToVec3i() && i == slotNumberInBLock)
                     {
-                        if (FDEnd.Equals(beRail.GetRailSections()[i].FDStart) || FDEnd.Equals(beRail.GetRailSections()[i].SDStart))
-                        {
-                            FDNextSectionBlock = beRail.Pos.ToVec3d();
-                            FDNextSectionSlot = i;
-                            break;
-
-                        }
-
-                        if (SDEnd.Equals(beRail.GetRailSections()[i].FDStart) || SDEnd.Equals(beRail.GetRailSections()[i].SDStart))
-                        {
-                            SDNextSectionBlock = beRail.Pos.ToVec3d();
-                            SDNextSectionSlot = i;
-                            break;
-                        }
+                        break;
                     }
+
+                    if (FDEnd.Equals(beRail.GetRailSections()[i].SDEnd))
+                    {
+                        FDNextSectionBlock = beRail.Pos.ToVec3d();
+                        FDNextSectionSlot = i;
+                        beRail.GetRailSections()[i].SDNextSectionBlock = position;
+                        beRail.GetRailSections()[i].SDNextSectionSlot = slotNumberInBLock;
+                    }
+                    if (SDEnd.Equals(beRail.GetRailSections()[i].FDEnd))
+                    {
+                        SDNextSectionBlock = beRail.Pos.ToVec3d();
+                        SDNextSectionSlot = i;
+                        beRail.GetRailSections()[i].FDNextSectionBlock = position;
+                        beRail.GetRailSections()[i].FDNextSectionSlot = slotNumberInBLock;
+                    }
+
+                    if (FDEnd.Equals(beRail.GetRailSections()[i].FDEnd))
+                    {
+                        FDNextSectionBlock = beRail.Pos.ToVec3d();
+                        FDNextSectionSlot = i;
+                        beRail.GetRailSections()[i].FDNextSectionBlock = position;
+                        beRail.GetRailSections()[i].FDNextSectionSlot = slotNumberInBLock;
+                    }
+
+                    if (SDEnd.Equals(beRail.GetRailSections()[i].SDEnd))
+                    {
+                        SDNextSectionBlock = beRail.Pos.ToVec3d();
+                        SDNextSectionSlot = i;
+                        beRail.GetRailSections()[i].SDNextSectionBlock = position;
+                        beRail.GetRailSections()[i].SDNextSectionSlot = slotNumberInBLock;
+                    }
+
+
+
+                    //if (SDEnd.Equals(beRail.GetRailSections()[i].SDStart) || SDEnd.Equals(beRail.GetRailSections()[i].FDStart))
+                    //{
+                    //    SDNextSectionBlock = beRail.Pos.ToVec3d();
+                    //    SDNextSectionSlot = i;
+                    //    beRail.GetRailSections()[i].FDNextSectionBlock = position;
+                    //    beRail.GetRailSections()[i].FDNextSectionSlot = slotNumberInBLock;
+
+                    //    break;
+                    //}
                 }
             }
         }
@@ -427,13 +458,13 @@ namespace RailWorld
             tree.SetDoubleArray16(string.Format("{0}.rightMatrix", slotNumberInBLock), rightMatrix);
             tree.SetDoubleArray16(string.Format("{0}.centerMatrix", slotNumberInBLock), centerMatrix);
 
-            tree.SetVec3d(string.Format("{0}.FDStart", slotNumberInBLock), FDStart);
+            //tree.SetVec3d(string.Format("{0}.FDStart", slotNumberInBLock), FDStart);
             tree.SetVec3d(string.Format("{0}.FDEnd", slotNumberInBLock), FDEnd);
             tree.SetVec3d(string.Format("{0}.FDVector", slotNumberInBLock), FDVector);
             tree.SetDouble(string.Format("{0}.FDResistance", slotNumberInBLock), FDResistance);
             tree.SetDouble(string.Format("{0}.FDAcceleration", slotNumberInBLock), FDAcceleration);
 
-            tree.SetVec3d(string.Format("{0}.SDStart", slotNumberInBLock), SDStart);
+            //tree.SetVec3d(string.Format("{0}.SDStart", slotNumberInBLock), SDStart);
             tree.SetVec3d(string.Format("{0}.SDEnd", slotNumberInBLock), SDEnd);
             tree.SetVec3d(string.Format("{0}.SDVector", slotNumberInBLock), SDVector);
             tree.SetDouble(string.Format("{0}.SDResistance", slotNumberInBLock), SDResistance);

@@ -20,16 +20,14 @@ namespace RailWorld
 
         public int RenderRange => 999;
 
-
-        public double Speed = 0.0;
-        public double FreeFallSpeed = 80.0; //метров в секунду характерно для угловатой формы
+        private Vec3d dirvec= new Vec3d();
+        public double Speed = 0f;
+        public double FreeFallSpeed = 80.0f; //метров в секунду характерно для угловатой формы
         private bool Brake = false;
-
-        public RailSection CurrentRailSection = null;
 
         private bool OnRail = false;
 
-        private bool applyGravity = true;
+        private bool applyGravity = false;
 
         private bool isInteractable = true;
 
@@ -58,9 +56,10 @@ namespace RailWorld
 
 
         public void OnRenderFrame(float dt, EnumRenderStage stage)
-        {
-
+        { 
+        
         }
+            
 
         public void Dispose()
         {
@@ -84,8 +83,10 @@ namespace RailWorld
         public override void OnEntitySpawn()
         {
             base.OnEntitySpawn();
-            currentRailSection = GetReilSec(this.Attributes.GetVec3d("currentSectionBlock"), this.Attributes.GetInt("currentSectionSlot"));
-            Speed = 1f;
+            if(Api.Side == EnumAppSide.Server) 
+            {
+                currentRailSection = GetReilSec(this.Attributes.GetVec3d("currentSectionBlock"), this.Attributes.GetInt("currentSectionSlot"));
+            }
         }
 
         public override void OnCollided()
@@ -101,63 +102,84 @@ namespace RailWorld
 
 
 
-        private void onPhysicsTickCallback(double dt)
+        private void onServerPhysicsTickCallback(double dt)
         {
+            //dt = dt / 1000f;
             if (dt > 0)
             {
-                EntityPos trolleyPosition = this.Pos;
+                Vec3d trolleyPosition = this.ServerPos.XYZ;
                 double startSpeed = this.Speed;
-                if (currentRailSection != null)
+                if(Speed == 0f) 
                 {
-                    while (true)
+                    dirvec = this.ServerPos.GetViewVector().ToVec3d();
+                }
+                int dirIndex;
+                Vec3d endPoint;
+                double distance;
+                double totalSpeed = 0f;
+                double totalTime; 
+                double accelerationOnRail = 0.20f;
+               // double resistance = 0.001f;
+
+                while (true)
+                {
+                    if (currentRailSection != null)
                     {
-                        double accelerationOnRail = 0.01f;
-                        double resistance = 0.5f;
-
-                        int dirIndex = GetDirection(this.Pos.GetViewVector().ToVec3d());
-
-                        Vec3d endPoint = GetEndPointOnSections(dirIndex);
-                        Vec3d dirvec = GetDirectionVector(dirIndex);
-                        double distanceToEnd = trolleyPosition.DistanceTo(endPoint);
-                        double totalAcceleration = TotalAccelerationOnDistance(distanceToEnd, accelerationOnRail, resistance);
-                        double totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
-                        double totalTime = TotalTravelTime(startSpeed, totalSpeed, totalAcceleration);
-                        if (totalTime < dt)
+                        dirIndex = GetDirection(dirvec);
+                        dirvec = GetDirectionVector(dirIndex);
+                        endPoint = GetEndPointOnSections(dirIndex);
+                        distance = trolleyPosition.DistanceTo(endPoint);
+                        totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
+                        totalTime = TotalTravelTime(startSpeed, totalSpeed, accelerationOnRail);
+                        if (totalTime > dt)
                         {
-                            trolleyPosition.SetPos(endPoint);
+                            distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
+                            totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
                             startSpeed = totalSpeed;
-                            dt = dt - totalTime;
-                            currentRailSection = GetNextReilSec(dirIndex);
 
-                        }
-                        else
-                        {
-                            double distance = TotalDistanceOnTimeInterval(startSpeed, dt, totalAcceleration);
-                            totalAcceleration = TotalAccelerationOnDistance(distance, accelerationOnRail, resistance);
-                            totalSpeed = TotalSpeedOnDistance(startSpeed, totalAcceleration);
-                            startSpeed = totalSpeed;
                             dirvec.Normalize();
-                            dirvec. Mul(distance);
-                            trolleyPosition.SetPos(trolleyPosition.XYZ.AddCopy(dirvec));
+                            dirvec.Mul(distance);
+                            trolleyPosition.Add(dirvec);
                             break;
                         }
-                        
+
+                        startSpeed = totalSpeed;
+
+                        trolleyPosition = endPoint;
+                        var currentRailSection2 = GetNextReilSec(dirIndex);
+                       // var currentRailSection3 = currentRailSection;
+                        currentRailSection = currentRailSection2;
+                        dt = dt - totalTime;
+                    }
+                    else
+                    {
+                        startSpeed = 0f;
+                        break;
                     }
                 }
-                
-                if(Api.Side == EnumAppSide.Client) 
+                if(Api.Side == EnumAppSide.Server) 
                 {
-                    this.Pos = trolleyPosition;
+                    if (currentRailSection != null)
+                    {
+                        this.ServerPos.Yaw = currentRailSection.centerYaw;
+                        
+                        this.ServerPos.Pitch = currentRailSection.centerPitch;
+
+                        this.ServerPos.Roll = currentRailSection.centerRoll;
+                    }
+                    this.ServerPos.SetPos(trolleyPosition);
+
+                    this.Speed = totalSpeed;
                 }
-                else 
-                {
-                    this.ServerPos = trolleyPosition;
-                }
-                this.Speed = startSpeed;
+
 
 
             }
         }
+
+        //public bool UpdateSpeedPosOnRailSec ()
+        //{
+        //}
 
 
         public override void OnInteract(EntityAgent byEntity, ItemSlot slot, Vec3d hitPosition, EnumInteractMode mode)
@@ -172,8 +194,8 @@ namespace RailWorld
             //ServerPos.Y = Pos.Y + 1D;
             //ServerPos.Roll = (float)-Math.PI / 180 * 30;
             //this.Attributes.SetBool("rotateWhenFalling", false);
-            applyGravity = applyGravity ? false : true;
-            //ForwardSpeed = 0.5f;
+           // applyGravity = applyGravity ? false : true;
+
             base.OnInteract(byEntity, slot, hitPosition, mode);
         }
 
@@ -186,27 +208,17 @@ namespace RailWorld
         {           
 
             base.OnGameTick(dt);
-            onPhysicsTickCallback(dt);
-
+            if(Api.Side == EnumAppSide.Server) 
+            {
+                onServerPhysicsTickCallback(dt);
+            }
         }
 
-
-        private double TotalAccelerationOnDistance(double distance, double acceleration, double movementResistance)
+        private double TotalSpeedOnDistance(double startspeed, double distance, double acceleration) 
         {
-            //a = 2as*(1 - μ)
-            return 2 * acceleration * distance * (1 - movementResistance);
-        }
+            //v = √(u^2 + 2as)
+            return Math.Sqrt(startspeed * startspeed + 2f * acceleration * distance);
 
-        private double TotalSpeedOnDistance(double startspeed, double distance, double acceleration, double speedRetentionFactor)
-        {
-            //v = √(u^2 + aTotal)
-            return Math.Sqrt(Math.Pow(startspeed, 2) + TotalAccelerationOnDistance(distance, acceleration, speedRetentionFactor));
-        }
-
-        private double TotalSpeedOnDistance(double startspeed, double totalAcceleration)
-        {
-            //v = √(u^2 + 2as*(1 - μ))
-            return Math.Sqrt(Math.Pow(startspeed, 2) + totalAcceleration);
         }
 
         private double TotalTravelTime(double startSpeed, double endSpeed, double totalAcceleration)
@@ -215,12 +227,20 @@ namespace RailWorld
             return (endSpeed - startSpeed) / totalAcceleration;
         }
 
-        private double TotalDistanceOnTimeInterval(double startSpeed, double timeInterval, double totalAcceleration)
+        private double TotalDistanceOnTimeInterval(double startSpeed, double timeInterval, double acceleration)
         {
             //s = u * t_sec + 0.5a * t_sec^2
-            return startSpeed * timeInterval + 0.5f * totalAcceleration * timeInterval * timeInterval;
+            return startSpeed * timeInterval + 0.5f * acceleration * timeInterval * timeInterval;
 
         }
+
+
+
+
+
+        
+
+        
 
         private Vec3d GetEndPointOnSections(int directionIndex)
         {
@@ -248,13 +268,14 @@ namespace RailWorld
 
         private int GetDirection(Vec3d directionVector)
         {
+
             if (currentRailSection.FDVector.X * directionVector.X +
                 currentRailSection.FDVector.Y * directionVector.Y +
                 currentRailSection.FDVector.Z * directionVector.Z >= 0)
-            { 
-                return 1; 
+            {
+                return 1;
             }
-            else 
+            else
             {
                 return 2;
             }
@@ -265,7 +286,7 @@ namespace RailWorld
             BlockEntityRail BERail;
             if (directionIndex == 1)
             {
-                BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(currentRailSection.FDNextSectionBlock.ToBlockPos());
+                BERail = (BlockEntityRail)this.Api.World.BlockAccessor.GetBlockEntity(currentRailSection.FDNextSectionBlock.ToBlockPos());
                 if (BERail != null) 
                 {
                     return BERail.GetRailSection(currentRailSection.FDNextSectionSlot);
@@ -274,7 +295,7 @@ namespace RailWorld
             }
             else 
             {
-                BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(currentRailSection.SDNextSectionBlock.ToBlockPos());
+                BERail = (BlockEntityRail)this.Api.World.BlockAccessor.GetBlockEntity(currentRailSection.SDNextSectionBlock.ToBlockPos());
                 if (BERail != null)
                 {
                     return BERail.GetRailSection(currentRailSection.SDNextSectionSlot);
@@ -286,7 +307,7 @@ namespace RailWorld
         private RailSection GetReilSec(Vec3d pos, int slot)
         {
           
-            if(pos != null && slot != null) 
+            if(pos != null ) 
             {
                 BlockEntityRail BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(pos.ToBlockPos());
                 if(BERail != null) 

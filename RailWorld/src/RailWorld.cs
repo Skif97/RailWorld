@@ -96,7 +96,8 @@ namespace RailWorld
 		private bool ToggleGuiDialogRailMenu(KeyCombination keyCombination)
 		{
 			ItemStack mystack = _capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
-			if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+			
+			if (mystack != null && mystack.ItemAttributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
 			{
 				if (_dialog is null) _dialog = new GuiDialogRailMenu(_capi);
 				if (!_dialog.IsOpened()) return _dialog.TryOpen();

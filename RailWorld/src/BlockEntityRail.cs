@@ -122,31 +122,28 @@ namespace RailWorld
 			{
 				railSections[slot].UpdateConnections(beRailList);
 			}
-			for (int i = 0; i < beRailList.Count && UpdateAround; i++)
-			{
-				beRailList[i].UpdateConnections();
+			//for (int i = 0; i < beRailList.Count && UpdateAround; i++)
+			//{
+			//	beRailList[i].UpdateConnections();
 
-			}
+			//}
 		}
 
 		public List<BlockEntityRail> GetBERailAround()
 		{
-			List<BlockEntityRail> bentitiesAround = new List<BlockEntityRail>
-			{
-				this
-			};
+			List<BlockEntityRail> bentitiesAround = new List<BlockEntityRail>();
 
-			for (int i = -1; i < 2; i++)
+			for (int i = -2; i < 3; i++)
 			{
-				for (int j = -1; j < 2; j++)
+				for (int j = -2; j < 3; j++)
 				{
-					for (int k = -1; k < 2; k++)
+					for (int k = -2; k < 3; k++)
 					{
-						BlockPos bp = Pos;
+						Vec3d bp = Pos.ToVec3d();
 						bp.X += i;
 						bp.Y += j;
 						bp.Z += k;
-						BlockEntityRail bentity = Api.World.BlockAccessor.GetBlockEntity(bp) as BlockEntityRail;
+						BlockEntityRail bentity = Api.World.BlockAccessor.GetBlockEntity(bp.ToBlockPos()) as BlockEntityRail;
 						if (bentity != null && bentity.railSections.Count != 0)
 						{
 							bentitiesAround.Add(bentity);
