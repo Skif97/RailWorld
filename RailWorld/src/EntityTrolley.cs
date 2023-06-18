@@ -20,7 +20,7 @@ namespace RailWorld
 
         public int RenderRange => 999;
 
-        private Vec3d dirvec= new Vec3d();
+        private Vec3d DirVec = new Vec3d();
         public double Speed = 0f;
         public double FreeFallSpeed = 80.0f; //метров в секунду характерно для угловатой формы
         private bool Brake = false;
@@ -104,136 +104,127 @@ namespace RailWorld
 
         private void onServerPhysicsTickCallback(double dt)
         {
-            //dt = dt / 1000f;
-            if (dt > 0)
+            while (dt > 0f)
             {
-                Vec3d trolleyPosition = this.ServerPos.XYZ;
-                double startSpeed = this.Speed;
-               if(Speed == 0f) 
-               {
-                    dirvec = ModMath.YawToVec(this.ServerPos.Yaw);
-               }
-
-                //if(Speed < 0f) 
-                //{
-                //    Speed*=-1;
-                //    dirvec.Negate();
-                //}
-                int dirIndex;
-                Vec3d endPoint;
-                double distance;
-                double totalSpeed = 0f;
-                double totalTime; 
-                double accelerationOnRail = 0.00f;
-               // double resistance = 0.001f;
-
-                while (true)
+                if (currentRailSection != null)
                 {
-                    if (currentRailSection != null)
+                    int dirIndex;
+                    double accelerationOnRail;
+                    Vec3d endPoint;
+                    double distance;
+                    double totalSpeed;
+                    double totalTime;
+                    double timeToZeroSpeed;
+
+
+                    if (Speed == 0f) //ищем правильное направление движения при нулевой сторости, если скорость не нулевая, то вектор остаётся прежним
                     {
- 
-                        dirIndex = GetDirection(dirvec);
-                        if (dirIndex ==1) 
+                        if (currentRailSection.FDAcceleration > 0f)
                         {
-                            accelerationOnRail = currentRailSection.FDAcceleration;
+                            DirVec = currentRailSection.FDVector.Clone();
                         }
-                        else 
+                        else if (currentRailSection.SDAcceleration > 0f)
                         {
-                            accelerationOnRail = currentRailSection.SDAcceleration;
+                            DirVec = currentRailSection.SDVector.Clone();
                         }
+                        //else
+                        //{
+                        //    DirVec = ModMath.YawToVec(this.ServerPos.Yaw);
+                        //    return;
+                        //}
+                    }
 
+                    DirVec.Normalize();
 
-                        accelerationOnRail -= currentRailSection.SDResistance;
-                        
+                    dirIndex = GetDirection(DirVec); // ищем нужное ускорение из жд секции, нужно спрятать под капот
 
-                        dirvec = GetDirectionVector(dirIndex);
-                        endPoint = GetEndPointOnSections(dirIndex);
-                        distance = trolleyPosition.DistanceTo(endPoint);
-                        totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
-                        if (totalSpeed < 0f) 
-                        {
-                            double timeToZeroSpeed = TotalTravelTimeToZeroSpeed(startSpeed, accelerationOnRail);
-                            if(timeToZeroSpeed > dt) 
-                            {
-                                distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
-                                totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
-                                startSpeed = totalSpeed;
-
-                                dirvec.Normalize();
-                                dirvec.Mul(distance);
-                                trolleyPosition.Add(dirvec);
-                                break;
-                            }
-                            else 
-                            {
-                                distance = TotalDistanceOnTimeInterval(startSpeed, timeToZeroSpeed, accelerationOnRail);
-                                totalSpeed = 0f;
-                                startSpeed = totalSpeed;
-
-                                dirvec.Normalize();
-                                dirvec.Mul(distance);
-                                trolleyPosition.Add(dirvec);
-                                dirvec.Negate();
-                                dt = dt - timeToZeroSpeed;
-                                break;
-
-
-                            }
-                        }
-                        else 
-                        {
-                            totalTime = TotalTravelTime(startSpeed, totalSpeed, accelerationOnRail);
-                            if (totalTime > dt)
-                            {
-                                distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
-                                totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
-                                startSpeed = totalSpeed;
-
-                                dirvec.Normalize();
-                                dirvec.Mul(distance);
-                                trolleyPosition.Add(dirvec);
-                                break;
-                            }
-                        }
-                        
-
-                        startSpeed = totalSpeed;
-
-                        trolleyPosition = endPoint;
-                        var currentRailSection2 = GetNextReilSec(dirIndex);
-                       // var currentRailSection3 = currentRailSection;
-                        currentRailSection = currentRailSection2;
-                        dt = dt - totalTime;
+                    if (dirIndex == 1)
+                    {
+                        accelerationOnRail = currentRailSection.FDAcceleration;
                     }
                     else
                     {
-                        startSpeed = 0f;
-                        break;
+                        accelerationOnRail = currentRailSection.SDAcceleration;
                     }
-                }
-                if(Api.Side == EnumAppSide.Server) 
-                {
-                    if (currentRailSection != null)
+
+                    accelerationOnRail -= currentRailSection.SDResistance; //корректируем ускорение
+
+
+                    endPoint = GetEndPointOnSections(dirIndex);
+                    distance = ServerPos.DistanceTo(endPoint);
+                    totalSpeed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
+
+                    if (totalSpeed == 0f) 
                     {
-                        this.ServerPos.Yaw = currentRailSection.centerYaw;
-                        
-                        this.ServerPos.Pitch = currentRailSection.centerPitch;
-
-                        this.ServerPos.Roll = currentRailSection.centerRoll;
+                        return;
                     }
-                    this.ServerPos.SetPos(trolleyPosition);
 
-                    this.Speed = totalSpeed;
+                    if (totalSpeed < 0f) //если скорость в конце участка отрицательная
+                    {
+                        timeToZeroSpeed = TotalTravelTimeToZeroSpeed(Speed, accelerationOnRail); //ищем время для прохождения участка
+                        if (timeToZeroSpeed > dt) // если нехватает времени чтобы достичь точку с нулевой скоростью, ищем точку до неё
+                        {
+                            distance = TotalDistanceOnTimeInterval(Speed, dt, accelerationOnRail);
+                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
+                            DirVec = GetDirectionVector(dirIndex).Normalize();
+                            DirVec.Mul(distance);
+                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
+                            dt = 0f;
+                        }
+                        else // если времени больше  то останавливаемся в нулевой точке 
+                        {
+                            distance = TotalDistanceOnTimeInterval(Speed, timeToZeroSpeed, accelerationOnRail);
+                            Speed = 0f;
+                            DirVec = GetDirectionVector(dirIndex).Normalize();
+                            DirVec.Mul(distance);
+                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
+                            dt -= timeToZeroSpeed;
+                            dt--;
+                        }
+                    }
+                    else // если скорость положительная
+                    {
+                        totalTime = TotalTravelTime(Speed, totalSpeed, accelerationOnRail); //ищем время для прохождения участка
+                        if (totalTime > dt) // если нехватает времени чтобы достичь конечную точку, ищем точку до неё
+                        {
+                            distance = TotalDistanceOnTimeInterval(Speed, dt, accelerationOnRail);
+                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
+                            DirVec = GetDirectionVector(dirIndex).Normalize();
+                            DirVec.Mul(distance);
+                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
+                            dt = 0f;
+                        }
+                        else // если время хватает обновляет данные, становимся в эту точку
+                        {
+                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
+                            ServerPos.SetPos(endPoint);
+                            dt -= totalTime;
+                            currentRailSection = GetNextReilSec(dirIndex);
+                        }
+                    }
+
+
                 }
-
-
-
+                else
+                {
+                    if (Speed != 0f)
+                    {
+                    
+                        dt= 0f;
+                        //тут описать движение по инерции вне рельс
+                    }
+                    dt = 0f;
+                }
             }
+            if (currentRailSection!=null) 
+            {
+                ServerPos.Yaw = currentRailSection.centerYaw;
+                ServerPos.Pitch = currentRailSection.centerPitch;
+                ServerPos.Roll = currentRailSection.centerRoll;
+            }
+
         }
 
-        //public bool UpdateSpeedPosOnRailSec ()
-        //{
-        //}
 
 
         public override void OnInteract(EntityAgent byEntity, ItemSlot slot, Vec3d hitPosition, EnumInteractMode mode)
@@ -327,11 +318,11 @@ namespace RailWorld
         {
             if (directionIndex == 1)
             { 
-                return currentRailSection.FDVector; 
+                return currentRailSection.FDVector.Clone(); 
             }
             else 
             {
-                return currentRailSection.SDVector;
+                return currentRailSection.SDVector.Clone();
             }
         }
 

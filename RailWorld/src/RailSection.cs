@@ -99,8 +99,8 @@ namespace RailWorld
 
             FDEnd = centerEndPos;
             SDEnd = centerStartPos;
-            FDResistance = 0.3f;
-            SDResistance = 0.3f;
+            FDResistance = 0.5f;
+            SDResistance = 0.5f;
             FDVector = FDEnd.SubCopy(SDEnd).Normalize();
             SDVector = SDEnd.SubCopy(FDEnd).Normalize();
             
