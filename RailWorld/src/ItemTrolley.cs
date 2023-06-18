@@ -67,12 +67,12 @@ namespace RailWorld
 							entity.ServerPos.X = railSections[railslot].centerСenterPos.X;
                             entity.ServerPos.Y = railSections[railslot].centerСenterPos.Y;
                             entity.ServerPos.Z = railSections[railslot].centerСenterPos.Z;
-
+                            entity.ServerPos.Yaw = byEntity.BodyYaw;
                             //entity.ServerPos.Yaw = railSections[railslot].centerYaw;
                             //entity.ServerPos.Pitch = railSections[railslot].centerPitch;
                             //entity.ServerPos.Roll = railSections[railslot].centerRoll;
 
-                           // entity.ServerPos.Yaw = railSections[railslot].centerYaw;
+                            // entity.ServerPos.Yaw = railSections[railslot].centerYaw;
                             //entity.ServerPos.Pitch = railSections[railslot].centerPitch;
                             //entity.ServerPos.Roll = railSections[railslot].centerRoll;
                             entity.Attributes.SetVec3d("currentSectionBlock", pos.ToVec3d());
@@ -92,6 +92,7 @@ namespace RailWorld
 				entity.Pos.SetFrom(entity.ServerPos);
 				entity.PositionBeforeFalling.Set(entity.ServerPos.X, entity.ServerPos.Y, entity.ServerPos.Z);
 				entity.Attributes.SetString("origin", "playerplaced");
+				entity.Pos.Yaw = byEntity.BodyYaw;
 
 				//JsonObject attributes = this.Attributes;
 				//if (attributes != null && attributes.IsTrue("setGuardedEntityAttribute"))

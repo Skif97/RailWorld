@@ -99,8 +99,8 @@ namespace RailWorld
 
             FDEnd = centerEndPos;
             SDEnd = centerStartPos;
-            FDResistance = 0.01f;
-            SDResistance = 0.01f;
+            FDResistance = 0.3f;
+            SDResistance = 0.3f;
             FDVector = FDEnd.SubCopy(SDEnd).Normalize();
             SDVector = SDEnd.SubCopy(FDEnd).Normalize();
             
@@ -219,6 +219,17 @@ namespace RailWorld
             this.centerYaw = (float)centerYaw;
             this.centerPitch = (float)centerPitch;
             this.centerRoll = 0f;
+            //this.FDAcceleration = 9.2f;
+           // if (this.centerPitch<Math.PI) 
+           // {
+               // this.FDAcceleration = 9.8f * Math.Sin(this.centerPitch);
+           // }
+          //  else 
+          //  {
+          //      this.FDAcceleration = 9.8f * Math.Sin(Math.PI -this.centerPitch);
+          //  }
+            this.SDAcceleration = 9.8f * Math.Sin(this.centerPitch);
+            this.FDAcceleration = this.SDAcceleration * -1f;
 
 
             //centerYaw = ModMath.TangentToYaw(centerCenterTangent) + (rnd.NextDouble() / 10.4652f) - 0.0477773956f;

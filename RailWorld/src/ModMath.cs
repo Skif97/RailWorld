@@ -212,8 +212,17 @@ namespace RailWorld
             return new Vec3d(baseblock.XInt + 0.5f, baseblock.Y, baseblock.ZInt + 0.5f);
         }
 
+        public static Vec3d YawToVec(double yaw)
+        {
+            // Вычисление компонент вектора
+            double x = Math.Cos(yaw);
+            double z = Math.Sin(yaw);
+            double y = 0f;
 
-        
+            // Возвращаем вектор направления
+            return new Vec3d(x, y, z);
+        }
+
 
         public static double TangentToYaw(Vec3d tangent)
         {

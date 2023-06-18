@@ -109,39 +109,93 @@ namespace RailWorld
             {
                 Vec3d trolleyPosition = this.ServerPos.XYZ;
                 double startSpeed = this.Speed;
-                if(Speed == 0f) 
-                {
-                    dirvec = this.ServerPos.GetViewVector().ToVec3d();
-                }
+               if(Speed == 0f) 
+               {
+                    dirvec = ModMath.YawToVec(this.ServerPos.Yaw);
+               }
+
+                //if(Speed < 0f) 
+                //{
+                //    Speed*=-1;
+                //    dirvec.Negate();
+                //}
                 int dirIndex;
                 Vec3d endPoint;
                 double distance;
                 double totalSpeed = 0f;
                 double totalTime; 
-                double accelerationOnRail = 0.40f;
+                double accelerationOnRail = 0.00f;
                // double resistance = 0.001f;
 
                 while (true)
                 {
                     if (currentRailSection != null)
                     {
+ 
                         dirIndex = GetDirection(dirvec);
+                        if (dirIndex ==1) 
+                        {
+                            accelerationOnRail = currentRailSection.FDAcceleration;
+                        }
+                        else 
+                        {
+                            accelerationOnRail = currentRailSection.SDAcceleration;
+                        }
+
+
+                        accelerationOnRail -= currentRailSection.SDResistance;
+                        
+
                         dirvec = GetDirectionVector(dirIndex);
                         endPoint = GetEndPointOnSections(dirIndex);
                         distance = trolleyPosition.DistanceTo(endPoint);
                         totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
-                        totalTime = TotalTravelTime(startSpeed, totalSpeed, accelerationOnRail);
-                        if (totalTime > dt)
+                        if (totalSpeed < 0f) 
                         {
-                            distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
-                            totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
-                            startSpeed = totalSpeed;
+                            double timeToZeroSpeed = TotalTravelTimeToZeroSpeed(startSpeed, accelerationOnRail);
+                            if(timeToZeroSpeed > dt) 
+                            {
+                                distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
+                                totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
+                                startSpeed = totalSpeed;
 
-                            dirvec.Normalize();
-                            dirvec.Mul(distance);
-                            trolleyPosition.Add(dirvec);
-                            break;
+                                dirvec.Normalize();
+                                dirvec.Mul(distance);
+                                trolleyPosition.Add(dirvec);
+                                break;
+                            }
+                            else 
+                            {
+                                distance = TotalDistanceOnTimeInterval(startSpeed, timeToZeroSpeed, accelerationOnRail);
+                                totalSpeed = 0f;
+                                startSpeed = totalSpeed;
+
+                                dirvec.Normalize();
+                                dirvec.Mul(distance);
+                                trolleyPosition.Add(dirvec);
+                                dirvec.Negate();
+                                dt = dt - timeToZeroSpeed;
+                                break;
+
+
+                            }
                         }
+                        else 
+                        {
+                            totalTime = TotalTravelTime(startSpeed, totalSpeed, accelerationOnRail);
+                            if (totalTime > dt)
+                            {
+                                distance = TotalDistanceOnTimeInterval(startSpeed, dt, accelerationOnRail);
+                                totalSpeed = TotalSpeedOnDistance(startSpeed, distance, accelerationOnRail);
+                                startSpeed = totalSpeed;
+
+                                dirvec.Normalize();
+                                dirvec.Mul(distance);
+                                trolleyPosition.Add(dirvec);
+                                break;
+                            }
+                        }
+                        
 
                         startSpeed = totalSpeed;
 
@@ -217,7 +271,16 @@ namespace RailWorld
         private double TotalSpeedOnDistance(double startspeed, double distance, double acceleration) 
         {
             //v = √(u^2 + 2as)
-            return Math.Sqrt(startspeed * startspeed + 2f * acceleration * distance);
+            double squareTotalSpeed = startspeed * startspeed + 2f * acceleration * distance;
+            if (squareTotalSpeed < 0) 
+            {
+                return -1f;
+            }
+            else 
+            {
+                return Math.Sqrt(squareTotalSpeed);
+            }
+            
 
         }
 
@@ -225,6 +288,12 @@ namespace RailWorld
         {
             //t = (v - u) / a
             return (endSpeed - startSpeed) / totalAcceleration;
+        }
+
+        private double TotalTravelTimeToZeroSpeed(double startSpeed, double totalAcceleration)
+        {
+            //t = -u / a
+            return -startSpeed / totalAcceleration;
         }
 
         private double TotalDistanceOnTimeInterval(double startSpeed, double timeInterval, double acceleration)
