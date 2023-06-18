@@ -338,15 +338,19 @@ namespace RailWorld
                     {
                         break;
                     }
-
-                    if (FDEnd.Equals(beRail.GetRailSections()[i].SDEnd))
+                    
+                    if ((Math.Round(FDEnd.X, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.X, 1)) &&
+                        (Math.Round(FDEnd.Y, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.Y, 1)) &&
+                        (Math.Round(FDEnd.Z, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.Z, 1)))
                     {
                         FDNextSectionBlock = beRail.Pos.ToVec3d();
                         FDNextSectionSlot = i;
                         beRail.GetRailSections()[i].SDNextSectionBlock = position;
                         beRail.GetRailSections()[i].SDNextSectionSlot = slotNumberInBLock;
                     }
-                    if (SDEnd.Equals(beRail.GetRailSections()[i].FDEnd))
+                    if ((Math.Round(SDEnd.X, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.X, 1)) &&
+                        (Math.Round(SDEnd.Y, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.Y, 1)) &&
+                        (Math.Round(SDEnd.Z, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.Z, 1)))
                     {
                         SDNextSectionBlock = beRail.Pos.ToVec3d();
                         SDNextSectionSlot = i;
@@ -354,7 +358,9 @@ namespace RailWorld
                         beRail.GetRailSections()[i].FDNextSectionSlot = slotNumberInBLock;
                     }
 
-                    if (FDEnd.Equals(beRail.GetRailSections()[i].FDEnd))
+                    if ((Math.Round(FDEnd.X, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.X, 1)) &&
+                        (Math.Round(FDEnd.Y, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.Y, 1)) &&
+                        (Math.Round(FDEnd.Z, 1) == Math.Round(beRail.GetRailSections()[i].FDEnd.Z, 1)))
                     {
                         FDNextSectionBlock = beRail.Pos.ToVec3d();
                         FDNextSectionSlot = i;
@@ -362,7 +368,9 @@ namespace RailWorld
                         beRail.GetRailSections()[i].FDNextSectionSlot = slotNumberInBLock;
                     }
 
-                    if (SDEnd.Equals(beRail.GetRailSections()[i].SDEnd))
+                    if ((Math.Round(SDEnd.X, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.X, 1)) &&
+                        (Math.Round(SDEnd.Y, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.Y, 1)) &&
+                        (Math.Round(SDEnd.Z, 1) == Math.Round(beRail.GetRailSections()[i].SDEnd.Z, 1)))
                     {
                         SDNextSectionBlock = beRail.Pos.ToVec3d();
                         SDNextSectionSlot = i;

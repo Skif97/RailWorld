@@ -118,7 +118,7 @@ namespace RailWorld
                 double distance;
                 double totalSpeed = 0f;
                 double totalTime; 
-                double accelerationOnRail = 0.20f;
+                double accelerationOnRail = 0.40f;
                // double resistance = 0.001f;
 
                 while (true)
