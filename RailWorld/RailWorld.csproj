@@ -1,10 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFramework>net461</TargetFramework>
+		<TargetFramework>net7</TargetFramework>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<GameVersion>1.18.5</GameVersion>
+		<GameVersion>1.18.8</GameVersion>
 	</PropertyGroup>
 
 	<PropertyGroup>
