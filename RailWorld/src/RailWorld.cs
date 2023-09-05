@@ -36,8 +36,9 @@ namespace RailWorld
 		static IClientNetworkAPI _cnapi;
 		GuiDialog _dialog;
 
-		
-		public override bool ShouldLoad(EnumAppSide forSide)
+		SystemClientBuildRails sysBR;
+
+        public override bool ShouldLoad(EnumAppSide forSide)
 		{
 			return true;
 		}
@@ -56,9 +57,11 @@ namespace RailWorld
 			api.Input.SetHotKeyHandler("openrailmenu", ToggleGuiDialogRailMenu);
 
 			RegisterClientChannel(api.Network);
-		}
+            sysBR = new SystemClientBuildRails(api);
 
-		
+        }
+
+	
 
 		public override void StartServerSide(ICoreServerAPI api)
 		{

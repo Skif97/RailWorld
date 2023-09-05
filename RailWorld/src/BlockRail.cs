@@ -17,6 +17,8 @@ namespace RailWorld
             
         }
 
+
+
         public override void OnBeforeRender(ICoreClientAPI capi, ItemStack itemstack, EnumItemRenderTarget target, ref ItemRenderInfo renderinfo)
         {
             //Vec3f playerpos = capi.World.Player.Entity.Pos.AsBlockPos.ToVec3f();
