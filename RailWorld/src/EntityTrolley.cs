@@ -13,7 +13,7 @@ using System.IO;
 namespace RailWorld
 {
 
-    public class EntityTrolley :  Entity, IRenderer, IDisposable, IMountableSupplier
+    public class EntityTrolley :  EntityAgent
     {
 
         public double RenderOrder => 0;
@@ -53,18 +53,18 @@ namespace RailWorld
             get { return 30000f; }
         }
 
-        public IMountable[] MountPoints => throw new NotImplementedException();
+        //public IMountable[] MountPoints => throw new NotImplementedException();
 
-        public void OnRenderFrame(float dt, EnumRenderStage stage)
-        { 
+        //public void OnRenderFrame(float dt, EnumRenderStage stage)
+        //{ 
         
-        }
+        //}
             
 
-        public void Dispose()
-        {
+        //public void Dispose()
+        //{
 
-        }
+        //}
 
 
 
@@ -383,14 +383,14 @@ namespace RailWorld
                    
         }
 
-        public bool IsMountedBy(Entity entity)
-        {
-            throw new NotImplementedException();
-        }
+        //public bool IsMountedBy(Entity entity)
+        //{
+        //    throw new NotImplementedException();
+        //}
 
-        public Vec3f GetMountOffset(Entity entity)
-        {
-            throw new NotImplementedException();
-        }
+        //public Vec3f GetMountOffset(Entity entity)
+        //{
+        //    throw new NotImplementedException();
+        //}
     }
 }

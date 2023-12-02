@@ -12,6 +12,7 @@ using System.Threading.Tasks.Dataflow;
 using Vintagestory.API.MathTools;
 using System.Drawing;
 using System.Collections.Generic;
+using Vintagestory.Common;
 
 namespace RailWorld
 {
@@ -28,6 +29,7 @@ namespace RailWorld
             this.capi = capi;
             Initialize();
             this.capi.Event.RegisterRenderer(this, EnumRenderStage.OIT);
+     
         }
         public double RenderOrder
         {
@@ -89,108 +91,154 @@ namespace RailWorld
                         BlockEntity ble = capi.World.Player.CurrentBlockSelection.Block.GetBlockEntity<BlockEntityRail>(capi.World.Player.CurrentBlockSelection);
                         if (ble != null) 
                         {
-                            if (((BlockEntityRail)ble).GetRailSections().Count>0) 
-                            {
-                                SelectionCube = new MeshData(24, 36, false, false, true, false);
+                            Vec3d from = capi.World.Player.Entity.Pos.XYZ.Clone().Add(capi.World.Player.Entity.LocalEyePos);
+                            Vec3d to = capi.World.Player.Entity.Pos.GetViewVector().ToVec3d();
+                            Ray ray = new Ray();
+                            ray.dir = to;
+                            ray.origin = from;
+                            OBBIntersectionTest intersectionTest = new OBBIntersectionTest();
+                            intersectionTest.LoadRayAndPos(ray);
 
-                                RailSection rs = ((BlockEntityRail)ble).GetRailSection(0);
-
-                                int color = ColorUtil.ToRgba(150, (int)(GuiStyle.ActiveButtonTextColor[2] * 255.0),
-                                                 (int)(GuiStyle.ActiveButtonTextColor[1] * 255.0),
-                                                 (int)(GuiStyle.ActiveButtonTextColor[0] * 255.0));
-                                float[] shadings = CubeMeshUtil.DefaultBlockSideShadingsByFacing;
-                                color = ColorUtil.ColorMultiply3(color, shadings[0]);
-                                //0, 1
-                                SelectionCube.AddVertex((float)rs.leftStartOffset.X, (float)rs.leftStartOffset.Y - 0.15f, (float)rs.leftStartOffset.Z, color);
-                                SelectionCube.AddVertex((float)rs.leftStartOffset.X, (float)rs.leftStartOffset.Y + 0.08f, (float)rs.leftStartOffset.Z, color);
-                                //2, 3
-                                SelectionCube.AddVertex((float)rs.leftEndOffset.X, (float)rs.leftEndOffset.Y - 0.15f, (float)rs.leftEndOffset.Z, color);
-                                SelectionCube.AddVertex((float)rs.leftEndOffset.X, (float)rs.leftEndOffset.Y + 0.08f, (float)rs.leftEndOffset.Z, color);
-                                //4, 5
-                                SelectionCube.AddVertex((float)rs.rightEndOffset.X, (float)rs.rightEndOffset.Y - 0.15f, (float)rs.rightEndOffset.Z, color);
-                                SelectionCube.AddVertex((float)rs.rightEndOffset.X, (float)rs.rightEndOffset.Y + 0.08f, (float)rs.rightEndOffset.Z, color);
-                                //6, 7
-                                SelectionCube.AddVertex((float)rs.rightStartOffset.X, (float)rs.rightStartOffset.Y - 0.15f, (float)rs.rightStartOffset.Z, color);
-                                SelectionCube.AddVertex((float)rs.rightStartOffset.X, (float)rs.rightStartOffset.Y + 0.08f, (float)rs.rightStartOffset.Z, color);
-                                
-
-
-                                SelectionCube.AddIndex(0); //лево
-                                SelectionCube.AddIndex(3);
-                                SelectionCube.AddIndex(1);
-
-                                SelectionCube.AddIndex(0);
-                                SelectionCube.AddIndex(3);
-                                SelectionCube.AddIndex(2);
-
-                                SelectionCube.AddIndex(4); //право
-                                SelectionCube.AddIndex(7);
-                                SelectionCube.AddIndex(5);
-
-                                SelectionCube.AddIndex(4);
-                                SelectionCube.AddIndex(7);
-                                SelectionCube.AddIndex(6);
-
-                                SelectionCube.AddIndex(2); //зад 
-                                SelectionCube.AddIndex(5);
-                                SelectionCube.AddIndex(3);
-
-                                SelectionCube.AddIndex(2);
-                                SelectionCube.AddIndex(5);
-                                SelectionCube.AddIndex(4);
-
-                                SelectionCube.AddIndex(6); //перед 
-                                SelectionCube.AddIndex(1);
-                                SelectionCube.AddIndex(7);
-
-                                SelectionCube.AddIndex(6);
-                                SelectionCube.AddIndex(1);
-                                SelectionCube.AddIndex(0);
-
-                                SelectionCube.AddIndex(2); //низ 
-                                SelectionCube.AddIndex(6);
-                                SelectionCube.AddIndex(0);
-
-                                SelectionCube.AddIndex(2);
-                                SelectionCube.AddIndex(6);
-                                SelectionCube.AddIndex(4);
-
-                                SelectionCube.AddIndex(3); //верх 
-                                SelectionCube.AddIndex(7);
-                                SelectionCube.AddIndex(1);
-
-                                SelectionCube.AddIndex(3);
-                                SelectionCube.AddIndex(7);
-                                SelectionCube.AddIndex(5);
-
-                            }
-                            //Vec3d offset = capi.World.Player.CurrentBlockSelection.FullPosition;
                             Vec3d offset = capi.World.Player.CurrentBlockSelection.Position.ToVec3d();
-                            // SelectionCube.xyz[0] += 0.0011f;
-                            // SelectionCube.RotateD(0.08f, -0.04f, 0.08f);
-                            capi.Render.UpdateMesh(meshRef, SelectionCube);
-
-                            ShaderProgramBlockhighlights prog = ShaderPrograms.Blockhighlights;
-                            prog.Use();
                             Vec3d playerPos = capi.World.Player.Entity.CameraPos;
 
-
-                            if (meshRef != null)
+                            for (int i = 0; ((BlockEntityRail)ble).GetRailSections().Count > i; i++)
                             {
+                                if (((BlockEntityRail)ble).GetRailSections().Count > 0)
+                                {
+                                    SelectionCube = new MeshData(24, 36, false, false, true, false);
 
-                                capi.Render.GlPushMatrix();
-                                capi.Render.GlLoadMatrix(capi.Render.CameraMatrixOrigin);
-                                prog.NightVisonStrength = 5;
-                                BlockPos bpos = capi.World.Player.CurrentBlockSelection.Position;
-                                //capi.Render.GlTranslate(bpos.X, bpos.Y, bpos.Z);
-                                capi.Render.GlTranslate((double)((float)((double)offset.X - playerPos.X)), (double)((float)((double)offset.Y - playerPos.Y)), (double)((float)((double)offset.Z - playerPos.Z)));
-                                prog.ProjectionMatrix = capi.Render.CurrentProjectionMatrix;
-                                prog.ModelViewMatrix = capi.Render.CurrentModelviewMatrix;
-                                capi.Render.RenderMesh(meshRef);
-                                capi.Render.GlPopMatrix();
+                                    RailSection rs = ((BlockEntityRail)ble).GetRailSection(i);
+
+                                    int color = ColorUtil.ToRgba(150, (int)(GuiStyle.ActiveButtonTextColor[2] * 255.0),
+                                                     (int)(GuiStyle.ActiveButtonTextColor[1] * 255.0),
+                                                     (int)(GuiStyle.ActiveButtonTextColor[0] * 255.0));
+                                    float[] shadings = CubeMeshUtil.DefaultBlockSideShadingsByFacing;
+                                    color = ColorUtil.ColorMultiply3(color, shadings[0]);
+                                    //0, 1
+                                    SelectionCube.AddVertex((float)rs.leftStartOffset.X, (float)rs.leftStartOffset.Y - 0.15f, (float)rs.leftStartOffset.Z, color);
+                                    SelectionCube.AddVertex((float)rs.leftStartOffset.X, (float)rs.leftStartOffset.Y + 0.08f, (float)rs.leftStartOffset.Z, color);
+                                    //2, 3
+                                    SelectionCube.AddVertex((float)rs.leftEndOffset.X, (float)rs.leftEndOffset.Y - 0.15f, (float)rs.leftEndOffset.Z, color);
+                                    SelectionCube.AddVertex((float)rs.leftEndOffset.X, (float)rs.leftEndOffset.Y + 0.08f, (float)rs.leftEndOffset.Z, color);
+                                    //4, 5
+                                    SelectionCube.AddVertex((float)rs.rightEndOffset.X, (float)rs.rightEndOffset.Y - 0.15f, (float)rs.rightEndOffset.Z, color);
+                                    SelectionCube.AddVertex((float)rs.rightEndOffset.X, (float)rs.rightEndOffset.Y + 0.08f, (float)rs.rightEndOffset.Z, color);
+                                    //6, 7
+                                    SelectionCube.AddVertex((float)rs.rightStartOffset.X, (float)rs.rightStartOffset.Y - 0.15f, (float)rs.rightStartOffset.Z, color);
+                                    SelectionCube.AddVertex((float)rs.rightStartOffset.X, (float)rs.rightStartOffset.Y + 0.08f, (float)rs.rightStartOffset.Z, color);
+
+
+
+                                    SelectionCube.AddIndex(0); //лево
+                                    SelectionCube.AddIndex(3);
+                                    SelectionCube.AddIndex(1);
+
+                                    SelectionCube.AddIndex(0);
+                                    SelectionCube.AddIndex(3);
+                                    SelectionCube.AddIndex(2);
+
+                                    SelectionCube.AddIndex(4); //право
+                                    SelectionCube.AddIndex(7);
+                                    SelectionCube.AddIndex(5);
+
+                                    SelectionCube.AddIndex(4);
+                                    SelectionCube.AddIndex(7);
+                                    SelectionCube.AddIndex(6);
+
+                                    SelectionCube.AddIndex(2); //зад 
+                                    SelectionCube.AddIndex(5);
+                                    SelectionCube.AddIndex(3);
+
+                                    SelectionCube.AddIndex(2);
+                                    SelectionCube.AddIndex(5);
+                                    SelectionCube.AddIndex(4);
+
+                                    SelectionCube.AddIndex(6); //перед 
+                                    SelectionCube.AddIndex(1);
+                                    SelectionCube.AddIndex(7);
+
+                                    SelectionCube.AddIndex(6);
+                                    SelectionCube.AddIndex(1);
+                                    SelectionCube.AddIndex(0);
+
+                                    SelectionCube.AddIndex(2); //низ 
+                                    SelectionCube.AddIndex(6);
+                                    SelectionCube.AddIndex(0);
+
+                                    SelectionCube.AddIndex(2);
+                                    SelectionCube.AddIndex(6);
+                                    SelectionCube.AddIndex(4);
+
+                                    SelectionCube.AddIndex(3); //верх 
+                                    SelectionCube.AddIndex(7);
+                                    SelectionCube.AddIndex(1);
+
+                                    SelectionCube.AddIndex(3);
+                                    SelectionCube.AddIndex(7);
+                                    SelectionCube.AddIndex(5);
+
+                                }
+                                MeshData SelectionCube2 = SelectionCube.Clone();
+                                SelectionCube.Translate(new Vec3f(((float)(offset.X)), ((float)(offset.Y)), ((float)(offset.Z))));
+                                
+                               
+                                if (true)
+                                {
+                                    SelectionCube.Translate(new Vec3f((float)-playerPos.X, (float)-playerPos.Y, (float)-playerPos.Z));
+                                    capi.Render.UpdateMesh(meshRef, SelectionCube);
+                                    ShaderProgramBlockhighlights prog = ShaderPrograms.Blockhighlights;
+                                    prog.Use();
+                                    if (meshRef != null)
+                                    {
+
+                                        capi.Render.GlPushMatrix();
+
+                                        capi.Render.GlLoadMatrix(capi.Render.CameraMatrixOrigin);
+                                        prog.NightVisonStrength = 5;
+                                        //BlockPos bpos = capi.World.Player.CurrentBlockSelection.Position;
+                                        //capi.Render.GlTranslate(bpos.X, bpos.Y, bpos.Z);
+                                       // capi.Render.GlTranslate((double)((float)((double) - playerPos.X)), (double)((float)((double) - playerPos.Y)), (double)((float)((double) - playerPos.Z)));
+                                        prog.ProjectionMatrix = capi.Render.CurrentProjectionMatrix;
+                                        prog.ModelViewMatrix = capi.Render.CurrentModelviewMatrix;
+                                        capi.Render.RenderMesh(meshRef);
+                                        capi.Render.GlPopMatrix();
+                                    }
+
+                                    prog.Stop();
+                                }
+                                if (true)
+                                {
+                                    if (SelectionCube != null)
+                                    {
+                                        capi.Render.UpdateMesh(meshRef, intersectionTest.TransformMesh(SelectionCube2));
+                                    }
+                                    //capi.Render.UpdateMesh(meshRef, intersectionTest.TransformMesh(SelectionCube2));
+                                    ShaderProgramBlockhighlights prog = ShaderPrograms.Blockhighlights;
+                                    prog.Use();
+                                    if (meshRef != null)
+                                    {
+
+                                        capi.Render.GlPushMatrix();
+                                        capi.Render.GlLoadMatrix(Mat4d.Create());
+
+                                        //capi.Render.GlLoadMatrix(capi.Render.CameraMatrixOrigin);
+                                        prog.NightVisonStrength = 5;
+                                        //BlockPos bpos = capi.World.Player.CurrentBlockSelection.Position;
+                                        //capi.Render.GlTranslate(bpos.X, bpos.Y, bpos.Z);
+                                        // capi.Render.GlTranslate((double)((float)((double) - playerPos.X)), (double)((float)((double) - playerPos.Y)), (double)((float)((double) - playerPos.Z)));
+                                        prog.ProjectionMatrix = capi.Render.CurrentProjectionMatrix;
+                                        prog.ModelViewMatrix = capi.Render.CurrentModelviewMatrix;
+                                        capi.Render.RenderMesh(meshRef);
+                                        capi.Render.GlPopMatrix();
+                                    }
+
+                                    prog.Stop();
+                                }
+
                             }
 
-                            prog.Stop();
+                            
                         }
                     }
 

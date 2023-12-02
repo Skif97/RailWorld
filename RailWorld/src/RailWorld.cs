@@ -29,7 +29,7 @@ namespace RailWorld
 
 	public class RailWorld : ModSystem
 	{
-		public const int sectiontPerBlock = 3;
+		public const int sectiontPerBlock = 2;
 		static ICoreClientAPI _capi;
 		static ICoreServerAPI _sapi;
 		static IServerNetworkAPI _snapi;
