@@ -24,7 +24,7 @@ namespace RailWorld
 
         private double[] rayTransMat;
 
-        public BlockPos pos = new BlockPos();
+        public BlockPos pos = new BlockPos(0);
 
 
         public void LoadRayAndPos(Line3D line3d)

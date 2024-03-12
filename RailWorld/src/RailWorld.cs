@@ -30,13 +30,16 @@ namespace RailWorld
 	public class RailWorld : ModSystem
 	{
 		public const int sectiontPerBlock = 2;
-		static ICoreClientAPI _capi;
-		static ICoreServerAPI _sapi;
+		static internal ICoreAPI coreAPI;
+        static internal ICoreClientAPI _capi;
+		static internal ICoreServerAPI _sapi;
 		static IServerNetworkAPI _snapi;
 		static IClientNetworkAPI _cnapi;
 		GuiDialog _dialog;
 
+
 		SystemClientBuildRails sysBR;
+
 
         public override bool ShouldLoad(EnumAppSide forSide)
 		{
@@ -47,6 +50,8 @@ namespace RailWorld
 		{
 			base.StartClientSide(api);
 		   _capi = api;
+
+			
 			
 			api.Input.RegisterHotKey(
 			  "openrailmenu",
@@ -114,6 +119,7 @@ namespace RailWorld
 
 		public override void Start(ICoreAPI api)
         {
+            coreAPI = api;
             base.Start(api);
 			api.RegisterBlockClass("BlockRail", typeof(BlockRail));
 			api.RegisterBlockEntityClass("BlockEntityRail", typeof(BlockEntityRail));

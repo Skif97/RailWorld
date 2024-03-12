@@ -31,7 +31,7 @@ namespace RailWorld
 
         private bool isInteractable = true;
 
-        private RailSection currentRailSection;
+        private RailSectionClient currentRailSection;
 
 
         public override bool ApplyGravity
@@ -341,7 +341,7 @@ namespace RailWorld
             }
         }
 
-        private RailSection GetNextReilSec(int directionIndex)
+        private RailSectionClient GetNextReilSec(int directionIndex)
         {
             BlockEntityRail BERail;
             if (directionIndex == 1)
@@ -364,7 +364,7 @@ namespace RailWorld
             return null;
         }
 
-        private RailSection GetReilSec(Vec3d pos, int slot)
+        private RailSectionClient GetReilSec(Vec3d pos, int slot)
         {
           
             if(pos != null ) 
@@ -372,7 +372,7 @@ namespace RailWorld
                 BlockEntityRail BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(pos.ToBlockPos());
                 if(BERail != null) 
                 {
-                    RailSection rs = BERail.GetRailSection(slot);
+                    RailSectionClient rs = BERail.GetRailSection(slot);
                     if(rs != null) 
                     {
                         return rs;

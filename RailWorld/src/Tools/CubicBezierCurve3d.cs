@@ -10,8 +10,8 @@ namespace RailWorld
     public struct PointOnBezierCurve
     {
         public Vec3d position;
-        public Vec3d tangent;
-        public Vec3d normal;
+        public Vec3f tangent;
+        public Vec3f normal;
 
     }
 
@@ -268,8 +268,8 @@ namespace RailWorld
             int step = 0;
 
             point.position = InterpolationWithWeight(0f);
-            point.tangent = Derivative(0f);
-            point.normal = new Vec3d(-point.tangent.Z, 0, point.tangent.X).Normalize();
+            point.tangent = Derivative(0f).ToVec3f();
+            point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
             pointsList.Add(point);
             step++;
             Vec3d prevPos = point.position;
@@ -282,15 +282,15 @@ namespace RailWorld
                 prevPos = point.position;
                 if (totalLenght > pieceLength * step) 
                 {
-                    point.tangent = Derivative(timeNext);
-                    point.normal = new Vec3d(-point.tangent.Z, 0, point.tangent.X).Normalize();
+                    point.tangent = Derivative(timeNext).ToVec3f();
+                    point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
                     pointsList.Add(point);
                     step++;
                 }
             }
             point.position = InterpolationWithWeight(1f);
-            point.tangent = Derivative(1f);
-            point.normal = new Vec3d(-point.tangent.Z, 0, point.tangent.X).Normalize();
+            point.tangent = Derivative(1f).ToVec3f();
+            point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
             pointsList.Add(point);
             step++;
             return pointsList;

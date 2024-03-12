@@ -8,6 +8,9 @@
 	"textureSizes": {
 	},
 	"textures": {
+		"iron": { "base": "game:block/metal/plate/iron" },
+		"charred": { "base": "game:block/wood/charred" },
+		"chromium":{"base": "game:block/metal/plate/chromium"},
 	},
 	"elements": [
 		{

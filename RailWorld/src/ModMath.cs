@@ -17,6 +17,20 @@ namespace RailWorld
     public class ModMath
     {
 
+        public static Vec3i FindChunk(double X, double Y, double Z)
+        {
+            int size = RailWorld.coreAPI.World.BlockAccessor.ChunkSize;
+            return new Vec3i((int)Math.Truncate(X / size), (int)Math.Truncate(Y / size), (int)Math.Truncate(Z / size));
+        }
+
+        public static Vec3i FindChunk(Vec3d pos)
+        {
+            int size = RailWorld.coreAPI.World.BlockAccessor.ChunkSize;
+            return new Vec3i((int)Math.Truncate(pos.X / size), (int)Math.Truncate(pos.Y / size), (int)Math.Truncate(pos.Z / size));
+        }
+
+
+
 
         public static CubicBezierCurve3d CotrolPointSercherForArc(Vec3d position, double yaw, double radius, double arcLenghtRad, bool left, double cur, int slope = 0)
         {
@@ -413,5 +427,7 @@ namespace RailWorld
         }
 
     }
+
+
     
 }

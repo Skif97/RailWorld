@@ -6,90 +6,148 @@ using System.Threading.Tasks;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
+using ProtoBuf;
 
 namespace RailWorld
 {
-    public class RailSection
+    [ProtoContract(SkipConstructor = true)]
+    public class RailSectionClient
     {
+        [ProtoMember(1)]
         public int slotNumberInBLock = 0;
+        [ProtoMember(2)]
         public Vec3d position;
-
+        
+        [ProtoMember(3)]
         public Vec3d centerStartPos;
+        [ProtoMember(4)]
         public Vec3d centerСenterPos;
+        [ProtoMember(5)]
         public Vec3d centerEndPos;
+        [ProtoMember(6)]
 
         public Vec3d centerStartOffset;
+        [ProtoMember(7)]
         public Vec3d centerCenterOffset;
+        [ProtoMember(8)]
         public Vec3d centerEndOffset;
+        [ProtoMember(9)]
 
-        public Vec3d centerStartTangent;
+        public Vec3f centerStartTangent;
+        [ProtoMember(10)]
         public Vec3d centerCenterTangent;
-        public Vec3d centerEndTangent;
+        [ProtoMember(11)]
+        public Vec3f centerEndTangent;
+        [ProtoMember(12)]
 
-        public Vec3d centerStartNormal;
+        public Vec3f centerStartNormal;
+        [ProtoMember(13)]
         public Vec3d centerCenterNormal;
-        public Vec3d centerEndNormal;
+        [ProtoMember(14)]
+        public Vec3f centerEndNormal;
+        [ProtoMember(15)]
 
         public Vec3d leftStartOffset;
+        [ProtoMember(16)]
         public Vec3d leftCenterOffset;
+        [ProtoMember(17)]
         public Vec3d leftEndOffset;
+        [ProtoMember(18)]
 
         public Vec3d leftCenterTangent;
+        [ProtoMember(19)]
         public Vec3d leftCenterNormal;
+        [ProtoMember(20)]
 
         public Vec3d rightStartOffset;
+        [ProtoMember(21)]
         public Vec3d rightCenterOffset;
+        [ProtoMember(22)]
         public Vec3d rightEndOffset;
+        [ProtoMember(23)]
 
         public Vec3d rightCenterTangent;
+        [ProtoMember(24)]
         public Vec3d rightCenterNormal;
+        [ProtoMember(25)]
 
         public double rightLenght;
+        [ProtoMember(26)]
         public double leftLenght;
+        [ProtoMember(27)]
 
         public float leftYaw = 0f;
+        [ProtoMember(28)]
         public float leftPitch = 0f;
+        [ProtoMember(29)]
         public float leftRoll = 0f;
+        [ProtoMember(30)]
 
         public float rightYaw = 0f;
+        [ProtoMember(31)]
         public float rightPitch = 0f;
+        [ProtoMember(32)]
         public float rightRoll = 0f;
+        [ProtoMember(33)]
 
         public float centerYaw = 0f;
+        [ProtoMember(34)]
         public float centerPitch = 0f;
+        [ProtoMember(35)]
         public float centerRoll = 0f;
+        [ProtoMember(36)]
 
         public Vec3d leftScale;
+        [ProtoMember(37)]
         public Vec3d rightScale;
+        [ProtoMember(38)]
         public Vec3d centerScale;
+        [ProtoMember(39)]
 
         public Vec3d switchOffsetLeft;
+        [ProtoMember(40)]
         public Vec3d switchOffsetRight;
+        [ProtoMember(41)]
 
         public double[] leftMatrix;
+        [ProtoMember(42)]
         public double[] rightMatrix;
+        [ProtoMember(43)]
         public double[] centerMatrix;
 
         //first derection
         //public Vec3d FDStart;
+        [ProtoMember(44)]
         public Vec3d FDEnd;
+        [ProtoMember(45)]
         public Vec3d FDVector;
+        [ProtoMember(46)]
         public double FDResistance;
+        [ProtoMember(47)]
         public double FDAcceleration;
+        [ProtoMember(48)]
         public Vec3d FDNextSectionBlock;
+        [ProtoMember(49)]
         public int FDNextSectionSlot;
 
         //second derection
-       // public Vec3d SDStart;
+        // public Vec3d SDStart;
+        [ProtoMember(50)]
         public Vec3d SDEnd;
+        [ProtoMember(51)]
         public Vec3d SDVector;
+        [ProtoMember(52)]
         public double SDResistance;
+        [ProtoMember(53)]
         public double SDAcceleration;
+        [ProtoMember(54)]
         public Vec3d SDNextSectionBlock;
+        [ProtoMember(55)]
         public int SDNextSectionSlot;
+        [ProtoMember(56)]
 
         double sectionLength;
-        public RailSection(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
+        public RailSectionClient(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
         {
             double trackRadius = trackWidth / 2;
 
@@ -126,11 +184,11 @@ namespace RailWorld
             centerCenterNormal.Y = 0f;
             centerCenterNormal.Normalize();
 
-            leftStartOffset = centerStartOffset.AddXZCopy(centerStartNormal.MulCopy(trackRadius));
-            rightStartOffset = centerStartOffset.AddXZCopy(centerStartNormal.MulCopy(trackRadius).NegateVec());
+            leftStartOffset = centerStartOffset.AddXZCopy(centerStartNormal.ToVec3d().MulCopy(trackRadius));
+            rightStartOffset = centerStartOffset.AddXZCopy(centerStartNormal.ToVec3d().MulCopy(trackRadius).NegateVec());
 
-            leftEndOffset = centerEndOffset.AddXZCopy(centerEndNormal.MulCopy(trackRadius));
-            rightEndOffset = centerEndOffset.AddXZCopy(centerEndNormal.MulCopy(trackRadius).NegateVec());
+            leftEndOffset = centerEndOffset.AddXZCopy(centerEndNormal.ToVec3d().MulCopy(trackRadius));
+            rightEndOffset = centerEndOffset.AddXZCopy(centerEndNormal.ToVec3d().MulCopy(trackRadius).NegateVec());
 
             leftCenterOffset = leftStartOffset.AverageCopy(leftEndOffset);
             rightCenterOffset = rightStartOffset.AverageCopy(rightEndOffset);
@@ -257,13 +315,13 @@ namespace RailWorld
             centerCenterOffset = tree.GetVec3d(string.Format("{0}.centerCenterOffset", slotNumberInBLock));
             centerEndOffset = tree.GetVec3d(string.Format("{0}.centerEndOffset", slotNumberInBLock));
 
-            centerStartTangent = tree.GetVec3d(string.Format("{0}.centerStartTangent", slotNumberInBLock));
+            centerStartTangent = tree.GetVec3d(string.Format("{0}.centerStartTangent", slotNumberInBLock)).ToVec3f();
             centerCenterTangent = tree.GetVec3d(string.Format("{0}.centerCenterTangent", slotNumberInBLock));
-            centerEndTangent = tree.GetVec3d(string.Format("{0}.centerEndTangent", slotNumberInBLock));
+            centerEndTangent = tree.GetVec3d(string.Format("{0}.centerEndTangent", slotNumberInBLock)).ToVec3f();
 
-            centerStartNormal = tree.GetVec3d(string.Format("{0}.centerStartNormal", slotNumberInBLock));
+            centerStartNormal = tree.GetVec3d(string.Format("{0}.centerStartNormal", slotNumberInBLock)).ToVec3f();
             centerCenterNormal = tree.GetVec3d(string.Format("{0}.centerCenterNormal", slotNumberInBLock));
-            centerEndNormal = tree.GetVec3d(string.Format("{0}.centerEndNormal", slotNumberInBLock));
+            centerEndNormal = tree.GetVec3d(string.Format("{0}.centerEndNormal", slotNumberInBLock)).ToVec3f();
 
             leftStartOffset = tree.GetVec3d(string.Format("{0}.leftStartOffset", slotNumberInBLock));
             leftCenterOffset = tree.GetVec3d(string.Format("{0}.leftCenterOffset", slotNumberInBLock));
@@ -326,14 +384,14 @@ namespace RailWorld
             SDAcceleration = tree.GetDouble(string.Format("{0}.SDAcceleration", slotNumberInBLock));
         }
 
-        public RailSection(ItemStack itemStack, int slot)
+        public RailSectionClient(ItemStack itemStack, int slot)
         {
 
             FromTreeAttribute(itemStack.Attributes);
             slotNumberInBLock = slot;
         }
 
-        public RailSection(ITreeAttribute tree, int slot)
+        public RailSectionClient(ITreeAttribute tree, int slot)
         {
             slotNumberInBLock = slot;
             FromTreeAttribute(tree);
@@ -423,13 +481,13 @@ namespace RailWorld
             tree.SetVec3d(string.Format("{0}.centerCenterOffset", slotNumberInBLock), centerCenterOffset);
             tree.SetVec3d(string.Format("{0}.centerEndOffset", slotNumberInBLock), centerEndOffset);
 
-            tree.SetVec3d(string.Format("{0}.centerStartTangent", slotNumberInBLock), centerStartTangent);
+            tree.SetVec3d(string.Format("{0}.centerStartTangent", slotNumberInBLock), centerStartTangent.ToVec3d());
             tree.SetVec3d(string.Format("{0}.centerCenterTangent", slotNumberInBLock), centerCenterTangent);
-            tree.SetVec3d(string.Format("{0}.centerEndTangent", slotNumberInBLock), centerEndTangent);
+            tree.SetVec3d(string.Format("{0}.centerEndTangent", slotNumberInBLock), centerEndTangent.ToVec3d());
 
-            tree.SetVec3d(string.Format("{0}.centerStartNormal", slotNumberInBLock), centerStartNormal);
+            tree.SetVec3d(string.Format("{0}.centerStartNormal", slotNumberInBLock), centerStartNormal.ToVec3d());
             tree.SetVec3d(string.Format("{0}.centerCenterNormal", slotNumberInBLock), centerCenterNormal);
-            tree.SetVec3d(string.Format("{0}.centerEndNormal", slotNumberInBLock), centerEndNormal);
+            tree.SetVec3d(string.Format("{0}.centerEndNormal", slotNumberInBLock), centerEndNormal.ToVec3d());
 
             tree.SetVec3d(string.Format("{0}.leftStartOffset", slotNumberInBLock), leftStartOffset);
             tree.SetVec3d(string.Format("{0}.leftCenterOffset", slotNumberInBLock), leftCenterOffset);

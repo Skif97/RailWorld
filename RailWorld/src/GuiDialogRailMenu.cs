@@ -62,10 +62,10 @@ namespace RailWorld
             bgBounds.WithChildren(leftColumn);
             SingleComposer = capi.Gui.CreateCompo("Train World: Selecting the type of rails to be placed", dialogBounds)
             .AddShadedDialogBG(bgBounds)
-            .AddButton("Single block", OnClickSingleBlockButton, singleBlockButton, EnumButtonStyle.Normal, EnumTextOrientation.Center, "SingleBlockButton")
-            .AddButton("Turn 90 deg", OnClickTurnButton90, turnButton90, EnumButtonStyle.Normal, EnumTextOrientation.Center, "Turn90Button")
-            .AddButton("Turn 45 deg", OnClickTurnButton45, turnButton45, EnumButtonStyle.Normal, EnumTextOrientation.Center, "Turn45Button")
-            .AddButton("Straight", OnClickStraightButton, straightButton, EnumButtonStyle.Normal, EnumTextOrientation.Center, "StraightButton")
+            .AddButton("Single block", OnClickSingleBlockButton, singleBlockButton, EnumButtonStyle.Normal, "SingleBlockButton")
+            .AddButton("Turn 90 deg", OnClickTurnButton90, turnButton90, EnumButtonStyle.Normal,  "Turn90Button")
+            .AddButton("Turn 45 deg", OnClickTurnButton45, turnButton45, EnumButtonStyle.Normal, "Turn45Button")
+            .AddButton("Straight", OnClickStraightButton, straightButton, EnumButtonStyle.Normal, "StraightButton")
 
             .AddStaticText("Radius/Length", CairoFont.ButtonText(), radiusLengthText, "RadiusLengthText")
             .AddSlider(OnNewRadiusLengthSliderValue, radiusLengthSlider, "RadiusLengthSlider")
@@ -73,8 +73,8 @@ namespace RailWorld
             .AddStaticText("Climb/Descent", CairoFont.ButtonText(), climbDescentText, "ClimbDescentText")
             .AddSlider(OnNewClimbDescentSliderValue, climbDescentSlider, "ClimbDescentSlider")
     
-            .AddButton("Left", OnClickButtonLeft, leftButton, EnumButtonStyle.Normal, EnumTextOrientation.Center, "LeftButton")
-            .AddButton("Right", OnClickButtonRight, rightButton, EnumButtonStyle.Normal, EnumTextOrientation.Center, "RightButton");
+            .AddButton("Left", OnClickButtonLeft, leftButton, EnumButtonStyle.Normal, "LeftButton")
+            .AddButton("Right", OnClickButtonRight, rightButton, EnumButtonStyle.Normal, "RightButton");
             SingleComposer.GetSlider("RadiusLengthSlider").SetValues(railLengRad, 4, 150, 1);
             SingleComposer.GetSlider("ClimbDescentSlider").SetValues(railClimDes, -20, 20, 1);
             SingleComposer.GetButton(railDirection + "Button").SetActive(true);

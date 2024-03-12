@@ -59,7 +59,7 @@ namespace RailWorld
                     BlockEntityRail bentity = byEntity.World.BlockAccessor.GetBlockEntity(pos) as BlockEntityRail;
                     if (bentity != null)
                     {
-						List<RailSection> railSections = bentity.GetRailSections();
+						List<RailSectionClient> railSections = bentity.GetRailSections();
 
                         if (railSections.Count != 0) 
 						{

@@ -4,12 +4,16 @@ using Vintagestory.API.MathTools;
 using System;
 using System.Collections.Generic;
 using Vintagestory.API.Server;
+using Vintagestory.Common;
+using static System.Collections.Specialized.BitVector32;
+using Vintagestory.API.Config;
+using Vintagestory.Server;
 
 namespace RailWorld
 {
     public class BlockRail : Block
     {
-        List<RailSection> sections;
+        List<RailSectionClient> sections;
 
         public override void OnLoaded(ICoreAPI api)
         {
@@ -96,98 +100,133 @@ namespace RailWorld
         }
 
 
-        public  List<RailSection> GenerateRailSections(List<PointOnBezierCurve> pointsOnCurve, double trackWidth)
-        {
-            List<RailSection> railSections = new List<RailSection>();
-
-            for (int i = 0; i < pointsOnCurve.Count - 2; i += 2)
-            {
-                RailSection raillSection = new RailSection(api, pointsOnCurve[i], pointsOnCurve[i + 1], pointsOnCurve[i + 2], trackWidth);
-                railSections.Add(raillSection);
-            }
-            return railSections;
-        }
 
         public override bool DoPlaceBlock(IWorldAccessor world, IPlayer byPlayer, BlockSelection blockSel, ItemStack byItemStack)
         {
-
+          
             //return base.DoPlaceBlock(world, byPlayer, blockSel, byItemStack);
 
             if ((blockSel == null) || (byPlayer == null)) { return false; }
-
-            string railMode;
-            int railLengRad;
-            int railClimDes;
-            string railDirection;
-            bool left;
-
-            ItemStack mystack = byPlayer.InventoryManager.ActiveHotbarSlot.Itemstack;
-            if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (world.Api.Side == EnumAppSide.Server)
             {
-                railMode = mystack.Attributes.GetString("railMode", "SingleBlock");
-                railLengRad = mystack.Attributes.GetInt("railLengRad", 30);
-                railClimDes = mystack.Attributes.GetInt("railClimDes", 0);
-                railDirection = mystack.Attributes.GetString("railDirection", "Left");
+                string railMode;
+                int railLengRad;
+                int railClimDes;
+                string railDirection;
+                bool left;
 
-            }
-            else
-            {
-                return false;
-            }
-
-            if (railDirection == "Left")
-            {
-                left = true;
-            }
-            else
-            {
-                left = false;
-            }
-
-            CubicBezierCurve3d cotrolPoints;
-
-
-            if (railMode == "Turn90")
-            {
-                cotrolPoints = ModMath.CotrolPointSercherForArc(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, Math.PI / 2, left, 0.8f, railClimDes);
-            }
-            else if (railMode == "Turn45")
-            {
-                cotrolPoints = ModMath.CotrolPointSercherForArc(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, Math.PI / 4, left, 0.8f, railClimDes);
-            }
-            else if (railMode == "Straight")
-            {
-                cotrolPoints = ModMath.CotrolPointSercherForStraight(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, 0.8f, railClimDes);
-            }
-            else
-            {
-                cotrolPoints = ModMath.CotrolPointSercherForStraight(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, 1f, 0.8f, railClimDes);
-            }
-
-            sections = GenerateRailSections(cotrolPoints.CutIntoEqualPieces(1f / (RailWorld.sectiontPerBlock * 2)), 0.78f);
-
-            for (int j = 0; j < sections.Count; j++)
-            {
-                ItemStack itemStackRailSec = sections[j].ToItemStackAttributes();
-                BlockPos pos = new BlockPos((int)sections[j].position.X, (int)sections[j].position.Y, (int)sections[j].position.Z);
-                if (world.BlockAccessor.GetBlock(pos).Id == world.GetBlock(new AssetLocation("railworld", "rail")).Id)
+                ItemStack mystack = byPlayer.InventoryManager.ActiveHotbarSlot.Itemstack;
+                if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
                 {
-                    BlockEntityRail bentity = world.BlockAccessor.GetBlockEntity(pos) as BlockEntityRail;
-                    if (bentity != null)
-                    {
-                        bentity.AddSection(itemStackRailSec);
-                    }
+                    railMode = mystack.Attributes.GetString("railMode", "SingleBlock");
+                    railLengRad = mystack.Attributes.GetInt("railLengRad", 30);
+                    railClimDes = mystack.Attributes.GetInt("railClimDes", 0);
+                    railDirection = mystack.Attributes.GetString("railDirection", "Left");
+
                 }
                 else
                 {
-                    world.BlockAccessor.SetBlock(world.GetBlock(new AssetLocation("railworld", "rail")).Id, sections[j].position.ToBlockPos(), itemStackRailSec);
+                    return false;
                 }
 
-                //world.BlockAccessor.GetChunkAtBlockPos(positions[j].position.X, positions[j].position.Y, positions[j].position.Z).MarkModified();
+                if (railDirection == "Left")
+                {
+                    left = true;
+                }
+                else
+                {
+                    left = false;
+                }
+
+                CubicBezierCurve3d cotrolPoints;
+
+
+                if (railMode == "Turn90")
+                {
+                    cotrolPoints = ModMath.CotrolPointSercherForArc(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, Math.PI / 2, left, 0.8f, railClimDes);
+                }
+                else if (railMode == "Turn45")
+                {
+                    cotrolPoints = ModMath.CotrolPointSercherForArc(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, Math.PI / 4, left, 0.8f, railClimDes);
+                }
+                else if (railMode == "Straight")
+                {
+                    cotrolPoints = ModMath.CotrolPointSercherForStraight(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, railLengRad, 0.8f, railClimDes);
+                }
+                else
+                {
+                    cotrolPoints = ModMath.CotrolPointSercherForStraight(blockSel.Position.ToVec3d(), byPlayer.Entity.Pos.Yaw, 1f, 0.8f, railClimDes);
+                }
+
+                sections = GenerateRailSections(cotrolPoints.CutIntoEqualPieces(0.25f), 0.78f); //размер в 2 раза меньше так как на одну секцию нужно 2 кусочка
+
+                Dictionary<Vec3i, List<RailSectionClient>> ModDataInChunks = new Dictionary<Vec3i, List<RailSectionClient>>();
+                List<RailSectionClient> railSections = null;
+                for (int i = 0; i < sections.Count; i++)
+                {
+                    Vec3i ChunkAddres = ModMath.FindChunk(sections[i].position.X, sections[i].position.Y, sections[i].position.Z);
+                    
+                    if (!ModDataInChunks.ContainsKey(ChunkAddres))
+                    {
+                        IWorldChunk currentChunk = world.BlockAccessor.GetChunk(ChunkAddres.X, ChunkAddres.Y, ChunkAddres.Z);
+                        railSections = currentChunk.GetModdata<List<RailSectionClient>>("RailSections", null);
+                        ModDataInChunks.Add(ChunkAddres, railSections);
+                    }
+                    railSections = railSections != null ? railSections : new List<RailSectionClient>();
+                    //ItemStack itemStackRailSec = sections[j].ToItemStackAttributes();
+                    //BlockPos pos = new BlockPos((int)sections[j].position.X, (int)sections[j].position.Y, (int)sections[j].position.Z);
+
+
+                    //if (world.BlockAccessor.GetBlock(pos).Id == world.GetBlock(new AssetLocation("railworld", "rail")).Id)
+                    //{
+                    //    BlockEntityRail bentity = world.BlockAccessor.GetBlockEntity(pos) as BlockEntityRail;
+                    //    if (bentity != null)
+                    //    {
+                    railSections.Add(sections[i]);
+                    //        bentity.AddSection(itemStackRailSec);
+                    //    }
+                    //}
+                    //else
+                    //{
+                    //    world.BlockAccessor.SetBlock(world.GetBlock(new AssetLocation("railworld", "rail")).Id, sections[j].position.ToBlockPos(), itemStackRailSec);
+                    //}  
+                    ModDataInChunks[ChunkAddres]= railSections;
+                }
+                foreach (var railList in ModDataInChunks)
+                {
+                    world.BlockAccessor.GetChunk(railList.Key.X, railList.Key.Y, railList.Key.Z).SetModdata<List<RailSectionClient>>("RailSections", railList.Value);
+                }
+                return true;
 
             }
             return true;
+        }
 
+        private int GetFreeIndex(Dictionary<int, RailSectionServer> railSectionInChunk)
+        {
+            int index = 0;
+            while (railSectionInChunk.ContainsKey(index))
+            {
+                index++;
+            }
+            return index;
+        }
+
+        public List<RailSectionClient> GenerateRailSections(List<PointOnBezierCurve> pointsOnCurve, double trackWidth)
+        {
+            //List<RailSectionServer> railSectionsServer = new List<RailSectionServer>();
+            List<RailSectionClient> railSections = new List<RailSectionClient>();
+
+            for (int i = 0; i < pointsOnCurve.Count - 2; i += 2)
+            {
+                Vec3i ChunkAddres = ModMath.FindChunk(pointsOnCurve[i + 1].position);
+
+
+                RailSectionServer railSectionsServer = new RailSectionServer(ChunkAddres, 0, (float)trackWidth, pointsOnCurve[i], pointsOnCurve[i + 1], pointsOnCurve[i + 2]);
+                RailSectionClient raillSection = new RailSectionClient(api, pointsOnCurve[i], pointsOnCurve[i + 1], pointsOnCurve[i + 2], trackWidth);
+                railSections.Add(raillSection);
+            }
+            return railSections;
         }
 
     }

@@ -1,0 +1,53 @@
+{
+	code: "alidade",
+	class: "BlockClutter",
+	entityBehaviors: [ { name: "ShapeFromAttributes" } ],
+	behaviors: [
+		{ name: "WrenchOrientable", properties: { "hideInteractionHelpInSurvival": true } }
+	],	
+	attributes: {
+		shapeBasePath: "block/clutter",
+		canChisel: false,
+			wood: {
+		overrideTextureGroups: {
+				mossy: { base: "block/wood/debarked/mossy" },
+				aged: { base: "block/wood/debarked/aged" },
+				agedplanks: { base: "block/wood/planks/aged/generic1" },
+				veryaged: { base: "block/wood/debarked/veryagedrotten" },
+				charred: { base: "block/wood/charred" },
+			},
+			metal: {
+				rusty: { base: "block/metal/corroded/rusty1" },
+				iron: { base: "block/metal/tarnished/iron" },
+				corroded: { base: "block/metal/corroded/normal2" },
+				tarnishedcopper: { base: "block/metal/tarnished/copper1" },
+				bronze: { base: "block/metal/tarnished/tarnished-bronze" },
+				brass: { base: "block/metal/tarnished/brass" },
+			},
+			rubble: {
+				"cracked": { base: "block/stone/rubble/cracked1" },
+				"crackedcobblestone": { base: "block/stone/cobblestone-cracked/granite1" },
+				"dirtygravel-wetverydark": { base: "block/stone/dirtygravel/wetverydark/plain1" },
+				"dirtygravel-wetdark": { base: "block/stone/dirtygravel/wetdark/plain1" },
+				"dirtygravel-wet": { base: "block/stone/dirtygravel/wet/plain1" }
+			},
+
+		},
+		types: [
+			{ code: "alidade", colSelBoxes: [{ x1: 0.3125, y1: 0, z1: 0.3125, x2: 0.6875, y2: 0.6875, z2: 0.6875 }], 
+					guiTf: { rotation: { x: -22.6, y: -73, z: 0 }, origin: { x: 0.47, y: 0.3, z: 0.49 }, scale: 2.51 }, 
+					fpTf: { translation: { x: 0, y: 0, z: 0 }, scale: 1.85 }, 
+					tpTf: { translation: { x: -1.2, y: -0.6, z: -0.9 }, rotation: { x: 1, y: -20, z: -103 }, origin: { x: 0.5, y: 0.3, z: 0.5 }, scale: 0.58 }, 
+					groundTf: { scale: 3.2, origin: { x: 0.5, y: 0, z: 0.5 } }}
+		],
+	},
+	faceCullMode: "NeverCull",
+	creativeinventory: { "general": [""] },
+	shape: { base: "game:block/basic/cube" },
+	replaceable: 90,
+	sidesolid: { all: false },
+	sideopaque: { all: false },
+	sideao: { all: true },
+	emitsideao: { all: false },
+	lightAbsorption: 1
+}

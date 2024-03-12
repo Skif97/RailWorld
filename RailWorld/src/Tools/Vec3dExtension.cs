@@ -73,9 +73,14 @@ namespace RailWorld
             return new Vec3d(vec.X * val, vec.Y * val, vec.Z * val);
         }
 
+        public static Vec3d Sub(this Vec3d vec, Vec3i vec2)
+        {
+            return new Vec3d(vec.X - vec2.X, vec.Y - vec2.Y, vec.Z - vec2.Z);
+        }
+
         public static BlockPos ToBlockPos(this Vec3d vec)
         {
-            return new BlockPos(vec.ToVec3i());
+            return new BlockPos(vec.ToVec3i(),0);
         }
 
         public static Vec3i ToVec3i(this Vec3d vec)
