@@ -23,8 +23,10 @@ using static System.Net.Mime.MediaTypeNames;
 namespace RailWorld
 {
 
-    public class SystemClientBuildRails : IRenderer, IDisposable, ITexPositionSource
+    public class SystemClientBuildRails : IRenderer, ITexPositionSource, IDisposable
     {
+        TextureAtlas targetAtlas;
+        Dictionary<string, TextureAtlasPosition> targetAtlasPositions;
         TextureAtlasPosition texPosition;
         MeshData SelectionCube;
         ShaderProgramChunkopaque prog;
@@ -57,9 +59,9 @@ namespace RailWorld
             }
         }
 
-        public Size2i AtlasSize => (capi as ICoreClientAPI).BlockTextureAtlas.Size;
+        public Size2i AtlasSize => throw new NotImplementedException();
 
-        public TextureAtlasPosition this[string textureCode] => texPosition;
+        public TextureAtlasPosition this[string textureCode] => throw new NotImplementedException();
 
         public void Initialize()
         {
@@ -68,17 +70,20 @@ namespace RailWorld
                 var loc = new AssetLocation("railworld", "textures/block/iron.png");
                 tex = capi.Render.GetOrLoadTexture(loc);
                 textures = new Dictionary<string, int>();
+
+
                 textures.Add("iron", tex);
 
                 MeshData rail = ObjectCacheUtil.GetOrCreate<MeshData>(capi, "trainworldrailmesh", delegate
                 {
                     Shape shapeRail = Shape.TryGet(capi, new AssetLocation("railworld", "shapes/block/rail.json"));
                     texPosition = capi.BlockTextureAtlas.Positions[0];
+                    texPosition.
                     TextureAtlasPosition etetr = new TextureAtlasPosition();
                     etetr.get;
                     MeshData mesh;
                     capi.Tesselator.TesselateShape("customshape", shapeRail, out mesh, this);
-                    capi.Tesselator.TesselateShape()
+                    capi.Tesselator.TesselateBlock()
 
 
                     return mesh;
@@ -112,6 +117,78 @@ namespace RailWorld
 
             }
         }
+
+        protected TextureAtlasPosition GetOrCreateTexPos(AssetLocation texturePath)
+        {
+            IAsset texAsset = capi.Assets.TryGet(texturePath.Clone().WithPathPrefixOnce("textures/").WithPathAppendixOnce(".png"));
+            TextureAtlasPosition texPos = targetAtlas[texturePath];
+
+            if (texPos != null)
+            {
+                return texPos;
+            }
+
+            if (texAsset != null)
+            {
+                capi.Event.EnqueueMainThreadTask(() => targetAtlas.GetOrInsertTexture(texturePath, out int _, out texPos, () => texAsset.ToBitmap(capi)), "");
+            }
+
+            return texPos ?? capi.BlockTextureAtlas.UnknownTexturePosition;
+        }
+
+        public MeshData GenMesh(ItemStack stack, ITextureAtlasAPI targetAtlas, BlockPos atBlockPos)
+        {
+            if (stack != null)
+            {
+                capi.Tesselator.TesselateBlock(this, out MeshData mesh);
+                return mesh;
+            }
+            else if (atBlockPos != null)
+            {
+                if (api.World.BlockAccessor.GetBlockEntity(atBlockPos) is not BlockEntityFramed blockEntity)
+                {
+                    return null;
+                }
+
+                this.targetAtlas = targetAtlas;
+                tmpTextures.Clear();
+
+                foreach (KeyValuePair<string, CompositeTexture> key in Textures)
+                {
+                    tmpTextures[key.Key] = blockEntity.storedBlock?.ResolveBlockOrItem(api.World) == true
+                        ? blockEntity.storedBlock.Block.Textures.FirstOrDefault().Value.Base
+                        : Textures.FirstOrDefault().Value.Base;
+                }
+
+                CompositeShape cshape = Attributes["shape"].AsObject<CompositeShape>();
+
+                MeshData mesh;
+                if (cshape.Format == EnumShapeFormat.Obj)
+                {
+                    capi.Tesselator.TesselateShape(е)
+                     TessellatorExtensions.TessellateObj(capi.Tesselator as ShapeTesselator, cshape, out mesh, this);
+                }
+                else if (cshape.Format == EnumShapeFormat.GltfEmbedded)
+                {
+                    TessellatorExtensions.TessellateGltf(capi.Tesselator as ShapeTesselator, capi, cshape, out mesh, this);
+                }
+                else
+                {
+                    capi.Tesselator.TesselateBlock(this, out mesh);
+                }
+
+                if (blockEntity?.storedBlock?.Block?.VertexFlags.Reflective == true)
+                {
+                    mesh.SetVertexFlags(VertexFlags.ReflectiveBitMask);
+                }
+
+                return mesh;
+            }
+
+            return null;
+        }
+
+
 
 
         void IRenderer.OnRenderFrame(float deltaTime, EnumRenderStage stage)
