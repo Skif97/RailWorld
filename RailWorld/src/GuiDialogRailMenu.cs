@@ -7,6 +7,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Client;
 using Vintagestory.API.Config;
 using RailWorld.src.Items;
+using RailWorld.src.RailWay;
 
 namespace RailWorld
 {
@@ -18,6 +19,8 @@ namespace RailWorld
         string railDirection;
         string sleeperMaterial;
         string railMaterial;
+        string ballastMaterial;
+        bool replaceBlocks;
 
         // Слоти лише для показу вибраної шпали і рейки поруч зі списками
         DummyInventory previewInventory;
@@ -28,7 +31,7 @@ namespace RailWorld
         public GuiDialogRailMenu(ICoreClientAPI capi) : base(capi) 
         {
             _capi = capi;
-            previewInventory = new DummyInventory(capi, 2);
+            previewInventory = new DummyInventory(capi, 3);
            ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
             if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
             {
@@ -38,6 +41,8 @@ namespace RailWorld
                 railDirection = mystack.Attributes.GetString("railDirection", "Left");
                 sleeperMaterial = mystack.Attributes.GetString("sleeperMaterial", "oak");
                 railMaterial = mystack.Attributes.GetString("railMaterial", "iron");
+                ballastMaterial = mystack.Attributes.GetString("ballastMaterial", RailWorld.DontBuild);
+                replaceBlocks = mystack.Attributes.GetBool("replaceBlocks");
 
             }
         }
@@ -49,7 +54,7 @@ namespace RailWorld
         {
             
             ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog.WithAlignment(EnumDialogArea.CenterMiddle);
-            ElementBounds leftColumn = ElementBounds.Fixed(0, 200, 680, 340);
+            ElementBounds leftColumn = ElementBounds.Fixed(0, 200, 680, 480);
             ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
             ElementBounds singleBlockButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 70, 160, 40);
             ElementBounds turnButton90 = ElementBounds.Fixed(EnumDialogArea.CenterFixed, -86, 70, 160, 40);
@@ -72,6 +77,16 @@ namespace RailWorld
             ElementBounds railText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 420, 160, 40);
             ElementBounds railDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, 420, 400, 40);
             ElementBounds railIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 416, 48, 48);
+
+            ElementBounds ballastText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 490, 160, 40);
+            ElementBounds ballastDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, 490, 400, 40);
+            ElementBounds ballastIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 486, 48, 48);
+
+            ElementBounds replaceText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 560, 400, 40);
+            ElementBounds replaceSwitch = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 560, 40, 40);
+
+            string[] ballastValues = BuildBallastOptions(out string[] ballastNames);
+            previewInventory[2].Itemstack = BallastPreviewStack(ballastMaterial);
 
             previewInventory[0].Itemstack = PreviewStack("sleeper", sleeperMaterial);
             previewInventory[1].Itemstack = PreviewStack("rail", railMaterial);
@@ -106,7 +121,15 @@ namespace RailWorld
 
             .AddStaticText("Rails", CairoFont.ButtonText(), railText, "RailText")
             .AddDropDown(railValues, railNames, Math.Max(0, Array.IndexOf(railValues, railMaterial)), OnRailSelected, railDropDown, "RailDropDown")
-            .AddPassiveItemSlot(railIcon, previewInventory, previewInventory[1]);
+            .AddPassiveItemSlot(railIcon, previewInventory, previewInventory[1])
+
+            .AddStaticText("Ballast", CairoFont.ButtonText(), ballastText, "BallastText")
+            .AddDropDown(ballastValues, ballastNames, Math.Max(0, Array.IndexOf(ballastValues, ballastMaterial)), OnBallastSelected, ballastDropDown, "BallastDropDown")
+            .AddPassiveItemSlot(ballastIcon, previewInventory, previewInventory[2])
+
+            .AddStaticText("Replace blocks in the way", CairoFont.ButtonText(), replaceText, "ReplaceText")
+            .AddSwitch(OnReplaceToggled, replaceSwitch, "ReplaceSwitch");
+            SingleComposer.GetSwitch("ReplaceSwitch").SetValue(replaceBlocks);
             SingleComposer.GetSlider("RadiusLengthSlider").SetValues(railLengRad, 4, 150, 1);
             SingleComposer.GetSlider("ClimbDescentSlider").SetValues(railClimDes, -20, 20, 1);
             SingleComposer.GetButton(railDirection + "Button").SetActive(true);
@@ -160,6 +183,47 @@ namespace RailWorld
             stack.Attributes.SetString("type", "normal");
             stack.Attributes.SetString("material", material);
             return stack;
+        }
+
+        // Варіанти підсипки: зверху «не будувати», далі всі породи, з яких у грі буває гравій
+        private string[] BuildBallastOptions(out string[] names)
+        {
+            var values = new List<string> { RailWorld.DontBuild };
+            var nameList = new List<string> { "Не будувати" };
+
+            foreach (Block block in capi.World.Blocks)
+            {
+                if (block?.Code == null) continue;
+                ItemStack stack = new ItemStack(block);
+                string rock = SectionHandler.GetGravelRock(stack);
+                if (rock == null) continue;
+
+                values.Add(rock);
+                nameList.Add(block.GetHeldItemName(stack));
+            }
+
+            names = nameList.ToArray();
+            return values.ToArray();
+        }
+
+        private ItemStack BallastPreviewStack(string rock)
+        {
+            if (rock == RailWorld.DontBuild) return null;
+            Block block = capi.World.GetBlock(new AssetLocation("game", "gravel-" + rock));
+            return block == null ? null : new ItemStack(block);
+        }
+
+        private void OnReplaceToggled(bool on)
+        {
+            replaceBlocks = on;
+            UpdateRailMode();
+        }
+
+        private void OnBallastSelected(string code, bool selected)
+        {
+            ballastMaterial = code;
+            previewInventory[2].Itemstack = BallastPreviewStack(code);
+            UpdateRailMode();
         }
 
         private void OnSleeperSelected(string code, bool selected)
@@ -286,6 +350,8 @@ namespace RailWorld
                 packet.railDirection = railDirection;
                 packet.sleeperMaterial = sleeperMaterial;
                 packet.railMaterial = railMaterial;
+                packet.ballastMaterial = ballastMaterial;
+                packet.replaceBlocks = replaceBlocks;
                 SendRailMenuPacket(capi.Network,packet);
             }
         }

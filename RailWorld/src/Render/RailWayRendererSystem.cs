@@ -39,7 +39,7 @@ namespace RailWorld
         /// <summary>
         /// Додає шпалу для рендеру.
         /// </summary>
-        public void AddSleeper(string material, Vec3d position, Vec3f rotation)
+        public void AddSleeper(Vec3i chunkCoord, string material, Vec3d position, Vec3f rotation, float length)
         {
             if (!sleeperRenderers.TryGetValue(material, out var renderer))
             {
@@ -48,7 +48,7 @@ namespace RailWorld
                 renderer = new SleeperRenderer(capi, stack);
                 sleeperRenderers[material] = renderer;
             }
-            renderer.AddRailWayPart(position, new SleeperInstance(rotation));
+            renderer.AddRailWayPart(position, new SleeperInstance(rotation, length, chunkCoord.Clone()));
         }
 
         /// <summary>
@@ -56,17 +56,9 @@ namespace RailWorld
         /// </summary>
         public void RemoveChunkParts(Vec3i chunkCoord)
         {
-            int size = 32;
-            double minX = chunkCoord.X * size;
-            double minY = chunkCoord.Y * size;
-            double minZ = chunkCoord.Z * size;
-            double maxX = minX + size;
-            double maxY = minY + size;
-            double maxZ = minZ + size;
-
             foreach (var renderer in sleeperRenderers.Values)
             {
-                renderer.RemoveChunkParts(minX, minY, minZ, maxX, maxY, maxZ);
+                renderer.RemoveChunk(chunkCoord);
             }
         }
 

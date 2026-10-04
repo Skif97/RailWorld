@@ -1,0 +1,20 @@
+{
+	"code": "trackbed",
+	"class": "BlockTrackBed",
+	"entityClass": "BlockEntityTrackBed",
+	"drawtype": "JSON",
+	"shape": { "base": "game:block/basic/cube" },
+	"textures": { "all": { "base": "game:block/stone/gravel/granite" } },
+	"blockmaterial": "Gravel",
+	"replaceable": 100,
+	"resistance": 100,
+	"lightAbsorption": 0,
+	"rainPermeable": true,
+	"sidesolid": { "all": false },
+	"sideopaque": { "all": false },
+	"collisionbox": null,
+	"selectionbox": null,
+	"sounds": {
+		"walk": "game:walk/gravel"
+	}
+}

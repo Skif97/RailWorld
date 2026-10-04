@@ -42,6 +42,8 @@ namespace RailWorld
                 bool   left          = railDirection == "Left";
                 string sleeperMaterial = mystack.Attributes.GetString("sleeperMaterial", "oak");
                 string railMaterial    = mystack.Attributes.GetString("railMaterial", "iron");
+                string ballastMaterial = mystack.Attributes.GetString("ballastMaterial", RailWorld.DontBuild);
+                bool replaceBlocks     = mystack.Attributes.GetBool("replaceBlocks");
 
                 CubicBezierCurve3d controlPoints;
                 Vec3d pos = blockSel.Position.ToVec3d();
@@ -61,7 +63,6 @@ namespace RailWorld
 
                 List<PointOnBezierCurve> pointList = controlPoints.CutIntoEqualPieces(0.25f);
                 ModMath.ApplyCant(pointList);
-                double trackWidth = 0.78f;
 
                 RailDataSession session = new RailDataSession(world);
                 List<Section> stretch = new List<Section>();
@@ -69,17 +70,29 @@ namespace RailWorld
                 for (int i = 0; i < pointList.Count - 2; i += 2)
                 {
                     var section = new Section(
-                        pointList[i], pointList[i + 1], pointList[i + 2], (float)trackWidth);
-                    // Деталь, для якої в меню вибрано «не будувати», лишається порожнім місцем
-                    if (sleeperMaterial != RailWorld.DontBuild) section.InstallationSleeper(sleeperMaterial);
-                    if (railMaterial != RailWorld.DontBuild) section.InstallationRails(railMaterial);
-
+                        pointList[i], pointList[i + 1], pointList[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
                     // Чанк може бути не завантажений, тоді секцію записати нікуди
                     DataInChunk data = session.Get(section.ChunkAddres, create: true);
                     if (data == null) continue;
 
                     // Якщо тут уже лежить така сама секція, другу поверх неї не кладемо
                     if (SectionLinker.HasSameSection(data, section)) continue;
+
+                    // У меню ввімкнено заміну: блоки на шляху колії ламаються, а не блокують секцію
+                    if (replaceBlocks) TrackBed.ClearObstructions(world, section, byPlayer);
+
+                    if (TrackBed.CanAttach(world, section))
+                    {
+                        // Деталь, для якої в меню вибрано «не будувати», лишається порожнім місцем
+                        if (sleeperMaterial != RailWorld.DontBuild) section.InstallationSleeper(sleeperMaterial);
+                        if (railMaterial != RailWorld.DontBuild) section.InstallationRails(railMaterial);
+                        if (ballastMaterial != RailWorld.DontBuild) section.InstallPart(SectionPart.Ballast, "normal", ballastMaterial);
+                    }
+                    else
+                    {
+                        // Під секцією стоїть чужий блок: трасу лишаємо, але без деталей, доки його не приберуть
+                        section.Blocked = true;
+                    }
 
                     data.Add(section);
                     session.MarkDirty(section.ChunkAddres);
@@ -88,6 +101,13 @@ namespace RailWorld
 
                 SectionLinker.LinkStretch(session, stretch);
                 session.SaveAll();
+
+                // Секції з деталями займають клітинки під собою. Після збереження, бо блоки колії шукають свої секції в даних чанка
+                foreach (Section section in stretch)
+                    TrackBed.Attach(world, section);
+
+                // За мить надсилаємо блоки ще раз: при довгій ділянці не всі оновлення доходять у правильному порядку
+                world.RegisterCallback(dt => TrackBed.Resend(world, stretch), 500);
             }
 
             return true;

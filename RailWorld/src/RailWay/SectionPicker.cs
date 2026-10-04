@@ -5,6 +5,21 @@ using Vintagestory.API.MathTools;
 namespace RailWorld.src.RailWay
 {
     /// <summary>
+    /// Розміри типів колії. Зараз тип один; вузька шахтна колія буде ще одним набором цих двох чисел.
+    /// </summary>
+    public static class TrackGauge
+    {
+        /// <summary>Відстань між осями рейок.</summary>
+        public const float StandardWidth = 0.78f;
+
+        /// <summary>Довжина шпали. Трохи більша за блок, тому колія займає смугу в три блоки завширшки.</summary>
+        public const float StandardSleeperLength = 1.75f;
+
+        /// <summary>Довжина шпали в колії, прокладеній до появи типів.</summary>
+        public const float LegacySleeperLength = 1f;
+    }
+
+    /// <summary>
     /// Деталь секції, яку можна окремо виділити, поставити і зняти.
     /// FirstRail лежить з боку нормалі, SecondRail з протилежного.
     /// </summary>
@@ -15,7 +30,10 @@ namespace RailWorld.src.RailWay
         SecondRail = 2,
 
         /// <summary>Уся секція цілком. Виділяється лише предметом для прокладання колії.</summary>
-        Whole = 3
+        Whole = 3,
+
+        /// <summary>Підсипка: гравій під колією.</summary>
+        Ballast = 4
     }
 
     /// <summary>
@@ -27,7 +45,6 @@ namespace RailWorld.src.RailWay
         // Розміри деталей відносно осі колії на рівні підошви рейки
         public const double SleeperDepth      = 0.125;
         public const double SleeperHalfWidth  = 0.125;
-        public const double SleeperHalfLength = 0.5;
         public const double RailHeight        = 0.15625;
         public const double RailHalfWidth     = 0.08;
 
@@ -159,16 +176,23 @@ namespace RailWorld.src.RailWay
 
             // Шпала лежить посередині секції, під серединою рейок
             boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Sleeper, middle, chord, s.CenterNormal,
-                SectionBox.SleeperHalfWidth, SectionBox.SleeperHalfLength, -SectionBox.SleeperDepth, 0)
+                SectionBox.SleeperHalfWidth, s.SleeperLength / 2, -SectionBox.SleeperDepth, 0)
             {
                 Installed = s.SleeperInstalled
             });
 
             // Бокс на всю секцію: від краю до краю шпали, від низу шпали до верху рейки
             boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Whole, middle, chord, s.CenterNormal,
-                chord.Length() / 2, SectionBox.SleeperHalfLength, -SectionBox.SleeperDepth, SectionBox.RailHeight)
+                chord.Length() / 2, s.SleeperLength / 2, -SectionBox.SleeperDepth, SectionBox.RailHeight)
             {
                 Installed = true
+            });
+
+            // Підсипка: тонкий шар на всю секцію, від низу шпали до половини її товщини
+            boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Ballast, middle, chord, s.CenterNormal,
+                chord.Length() / 2, s.SleeperLength / 2, -SectionBox.SleeperDepth, -TrackBed.BallastBelowTrack)
+            {
+                Installed = s.BallastInstalled
             });
 
             for (int side = 0; side < 2; side++)

@@ -89,13 +89,12 @@ namespace RailWorld
             positions.Remove(position);
         }
 
-        public void RemoveChunkParts(double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
+        // Прибирає шпали секцій, що зберігаються в цьому чанку. Саме за чанком секції, а не за місцем шпали:
+        // шпала на самій межі може стояти вже в сусідньому чанку, і якби прибирати за координатами,
+        // оновлення сусіда стирало б її, а повернути було б нікому
+        public void RemoveChunk(Vec3i chunkCoord)
         {
-            var toRemove = positions.Keys
-                .Where(p => p.X >= minX && p.X < maxX &&
-                            p.Y >= minY && p.Y < maxY &&
-                            p.Z >= minZ && p.Z < maxZ)
-                .ToList();
+            var toRemove = positions.Where(p => p.Value.chunk.Equals(chunkCoord)).Select(p => p.Key).ToList();
             foreach (var key in toRemove)
                 positions.Remove(key);
         }
@@ -150,6 +149,7 @@ namespace RailWorld
             Mat4f.RotateY(tmpMat, tmpMat, data.rotation.Y);
             Mat4f.RotateX(tmpMat, tmpMat, -data.rotation.X);
             Mat4f.RotateZ(tmpMat, tmpMat, -data.rotation.Z);
+            Mat4f.Scale(tmpMat, tmpMat, new float[] { data.length, 1f, 1f });
             // Меш шпали займає блок 0..1, обертаємо навколо його центру
             Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, -0.5f);
 

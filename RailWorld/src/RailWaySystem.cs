@@ -131,6 +131,16 @@ namespace RailWorld
                 .RequiresPlayer()
                 .HandleWith(OnRailInfoCommand);
 
+            // Гравець зламав або поставив блок: перевіряємо, чи не змінилося щось під секціями поруч
+            api.Event.DidBreakBlock += (byPlayer, oldBlockId, blockSel) =>
+            {
+                if (blockSel?.Position != null) TrackBed.RecheckAround(api.World, blockSel.Position);
+            };
+            api.Event.DidPlaceBlock += (byPlayer, oldBlockId, blockSel, withItemStack) =>
+            {
+                if (blockSel?.Position != null) TrackBed.RecheckAround(api.World, blockSel.Position);
+            };
+
             api.Event.PlayerDisconnect += player =>
             {
                 serverSelections.Remove(player.PlayerUID);
@@ -221,7 +231,7 @@ namespace RailWorld
                     float yaw = (float)Math.Atan2(dx, dz);
                     float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
                     float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
-                    Renderer.AddSleeper(section.SleeperMaterial ?? "oak", globalPos, new Vec3f(pitch, yaw, roll));
+                    Renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", globalPos, new Vec3f(pitch, yaw, roll), section.SleeperLength);
                 }
 
                 if (section.FirstRailInstalled || section.SecondRailInstalled)

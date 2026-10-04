@@ -78,6 +78,45 @@ namespace RailWorld.src.RailWay
         [ProtoMember(32)]
         private int _activeEndLink;
 
+        // Довжина шпали впоперек колії. Разом із шириною колії задає тип колії: звичайна, вузька шахтна тощо
+        [ProtoMember(36)]
+        private float _sleeperLength;
+
+        /// <summary>
+        /// Довжина шпали впоперек колії. Вона ж ширина смуги, яку колія займає на землі.
+        /// </summary>
+        public float SleeperLength
+        {
+            // У секцій, збережених до появи цього поля, шпала була завдовжки з блок
+            get { return _sleeperLength > 0 ? _sleeperLength : TrackGauge.LegacySleeperLength; }
+        }
+
+        // Підсипка: гравій під колією. Матеріал це порода гравію
+        [ProtoMember(34)]
+        private bool _ballastInstalled;
+        [ProtoMember(35)]
+        private string _ballastMaterial;
+
+        public bool BallastInstalled
+        {
+            get { return _ballastInstalled; }
+        }
+
+        public string BallastMaterial
+        {
+            get { return _ballastMaterial; }
+        }
+
+        // Під секцією стоїть чужий блок: деталі ставити не можна, доки його не приберуть
+        [ProtoMember(33)]
+        private bool _blocked;
+
+        public bool Blocked
+        {
+            get { return _blocked; }
+            set { _blocked = value; }
+        }
+
         private static readonly List<SectionLink> NoLinks = new List<SectionLink>();
 
         /// <summary>
@@ -99,8 +138,9 @@ namespace RailWorld.src.RailWay
         /// Использовать если начальная, центральная и конечная точки находятся в глобальных координатах.
         /// </summary>
 
-        public Section(PointOnBezierCurve start, PointOnBezierCurve center, PointOnBezierCurve end, float trackWidth)
+        public Section(PointOnBezierCurve start, PointOnBezierCurve center, PointOnBezierCurve end, float trackWidth, float sleeperLength)
         {
+            _sleeperLength = sleeperLength;
             Vec3i chunkAddres = ModMath.FindChunk(center.position);
             Vec3d start_ = start.position.SubCopy(chunkAddres.X*32, chunkAddres.Y * 32, chunkAddres.Z * 32);
             Vec3d center_ = center.position.SubCopy(chunkAddres.X * 32, chunkAddres.Y * 32, chunkAddres.Z * 32);
@@ -292,11 +332,17 @@ namespace RailWorld.src.RailWay
                     _firstRailType = type;
                     _railMaterial = material;
                     break;
-                default:
+                case SectionPart.SecondRail:
                     _secondRailInstalled = true;
                     _secondRailType = type;
                     _secondRailMaterial = material;
                     break;
+                case SectionPart.Ballast:
+                    _ballastInstalled = true;
+                    _ballastMaterial = material;
+                    break;
+                default:
+                    return false;
             }
             return true;
         }
@@ -307,6 +353,7 @@ namespace RailWorld.src.RailWay
             {
                 case SectionPart.Sleeper: return _sleeperMaterial;
                 case SectionPart.FirstRail: return _railMaterial;
+                case SectionPart.Ballast: return _ballastMaterial;
                 default: return _secondRailMaterial;
             }
         }
@@ -323,7 +370,7 @@ namespace RailWorld.src.RailWay
 
         public bool IsEmpty
         {
-            get { return !_firstRailInstalled && !_secondRailInstalled && !_sleeperInstalled; }
+            get { return !_firstRailInstalled && !_secondRailInstalled && !_sleeperInstalled && !_ballastInstalled; }
         }
 
         public bool IsInstalled(SectionPart part)
@@ -333,6 +380,7 @@ namespace RailWorld.src.RailWay
                 case SectionPart.Sleeper: return _sleeperInstalled;
                 case SectionPart.FirstRail: return _firstRailInstalled;
                 case SectionPart.SecondRail: return _secondRailInstalled;
+                case SectionPart.Ballast: return _ballastInstalled;
                 // Секція цілком існує завжди, навіть без деталей
                 default: return true;
             }
@@ -345,6 +393,7 @@ namespace RailWorld.src.RailWay
                 case SectionPart.Sleeper: _sleeperInstalled = false; break;
                 case SectionPart.FirstRail: _firstRailInstalled = false; break;
                 case SectionPart.SecondRail: _secondRailInstalled = false; break;
+                case SectionPart.Ballast: _ballastInstalled = false; break;
             }
         }
 

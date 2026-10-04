@@ -39,9 +39,22 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public virtual bool CanInstall(ItemStack stack, SectionPart part)
         {
-            if (stack?.Item == null || part == SectionPart.Whole) return false;
+            if (stack == null || part == SectionPart.Whole) return false;
+            if (part == SectionPart.Ballast) return GetGravelRock(stack) != null;
             if (part == SectionPart.Sleeper) return stack.Item is ItemSleeper;
             return stack.Item is ItemRail;
+        }
+
+        /// <summary>
+        /// Порода гравію, якщо в стаку звичайний блок гравію з гри, інакше null. Таким блоком роблять підсипку.
+        /// </summary>
+        public static string GetGravelRock(ItemStack stack)
+        {
+            Block block = stack?.Block;
+            if (block?.Code == null || block.Code.Domain != "game") return null;
+
+            string rock = block.Variant?["rock"];
+            return rock != null && block.Code.Path == "gravel-" + rock ? rock : null;
         }
 
         /// <summary>
@@ -101,19 +114,118 @@ namespace RailWorld.src.RailWay
             DataInChunk data = DataInChunk.Get(world, sel.Chunk);
             if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
 
+            // Чужий блок під секцією могли вже прибрати, тому перевіряємо щоразу заново
+            if (!TrackBed.CanAttach(world, section))
+            {
+                if (!section.Blocked)
+                {
+                    section.Blocked = true;
+                    DataInChunk.Save(world, sel.Chunk, data);
+                    RailWorld.SendChunkDataToClients(sel.Chunk, data);
+                }
+                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railblocked", "Під колією стоять блоки, спершу приберіть їх");
+                return;
+            }
+            section.Blocked = false;
+
             ItemStack stack = slot.Itemstack;
+            bool ballast = sel.Part == SectionPart.Ballast;
             string type = stack.Attributes.GetString("type", "normal");
-            string material = stack.Attributes.GetString("material", sel.Part == SectionPart.Sleeper ? "oak" : "iron");
+            string material = ballast
+                ? GetGravelRock(stack)
+                : stack.Attributes.GetString("material", sel.Part == SectionPart.Sleeper ? "oak" : "iron");
+
+            // Скільки гравію вже лежить під секцією: сусідні секції могли засипати спільні блоки
+            int voxelsBefore = ballast ? TrackBed.CountVoxels(world, section) : 0;
+
             if (!section.InstallPart(sel.Part, type, material)) return;
 
-            if (byPlayer.WorldData.CurrentGameMode != EnumGameMode.Creative)
+            DataInChunk.Save(world, sel.Chunk, data);
+            RailWorld.SendChunkDataToClients(sel.Chunk, data);
+
+            // З першою деталлю секція займає свої клітинки, з наступними оновлює їхню форму
+            TrackBed.Sync(world, section);
+
+            // Рахуємо досипане до того, як позначати сусідів: за їхній гравій гравець не платить
+            int voxelsAdded = ballast ? TrackBed.CountVoxels(world, section) - voxelsBefore : 0;
+            if (ballast) MarkCoveredNeighbours(world, section, material);
+
+            if (byPlayer.WorldData.CurrentGameMode == EnumGameMode.Creative) return;
+
+            if (ballast)
+            {
+                ChargeGravel(byPlayer, slot, voxelsAdded);
+            }
+            else
             {
                 slot.TakeOut(1);
                 slot.MarkDirty();
             }
+        }
 
-            DataInChunk.Save(world, sel.Chunk, data);
-            RailWorld.SendChunkDataToClients(sel.Chunk, data);
+        // Скільки секцій у кожен бік переглядати після засипання однієї
+        protected const int NeighbourScanLimit = 8;
+
+        /// <summary>
+        /// Після засипання секції дивиться на сусідів уздовж колії. Блоки засипаються цілком, тому сусідній секції
+        /// часто вже нічого досипати: тоді вона одразу позначається як така, що має підсипку, і гравцеві
+        /// не треба клацати по ній окремо. Іде в обидва боки, доки сусіди покриті повністю.
+        /// </summary>
+        protected virtual void MarkCoveredNeighbours(IWorldAccessor world, Section section, string material)
+        {
+            RailDataSession session = new RailDataSession(world);
+            var marked = new List<Section>();
+
+            for (int end = 0; end < 2; end++)
+            {
+                Section current = section;
+                bool atStart = end == 0;
+
+                for (int step = 0; step < NeighbourScanLimit; step++)
+                {
+                    SectionStep next = SectionLinker.GetNext(session, current, atStart);
+                    if (next == null) break;
+
+                    Section neighbour = next.Section;
+                    if (neighbour.BallastInstalled || neighbour.Blocked) break;
+                    if (!TrackBed.IsBallastCovered(world, neighbour)) break;
+
+                    neighbour.InstallPart(SectionPart.Ballast, "normal", material);
+                    session.MarkDirty(neighbour.ChunkAddres);
+                    marked.Add(neighbour);
+
+                    // Далі виходимо з сусіда через його протилежний кінець
+                    current = neighbour;
+                    atStart = !next.EnterAtStart;
+                }
+            }
+
+            if (session.HasChanges) session.SaveAll();
+
+            // Позначені секції тепер тримають свої блоки нарівні з тією, що їх засипала
+            foreach (Section neighbour in marked) TrackBed.Sync(world, neighbour);
+        }
+
+        /// <summary>
+        /// Списує гравій за досипаний об'єм. Об'єм рахується у вокселях, а блок гравію це ціла їх пачка,
+        /// тому залишок від розпочатого блока зберігається за гравцем і витрачається наступними секціями.
+        /// </summary>
+        protected virtual void ChargeGravel(IPlayer byPlayer, ItemSlot slot, int voxels)
+        {
+            if (voxels <= 0) return;
+
+            const string key = "railworldGravelVoxels";
+            int bank = byPlayer.Entity.WatchedAttributes.GetInt(key) - voxels;
+
+            while (bank < 0 && slot.StackSize > 0)
+            {
+                slot.TakeOut(1);
+                bank += TrackBed.VoxelsPerBlock;
+            }
+            if (bank < 0) bank = 0;
+
+            byPlayer.Entity.WatchedAttributes.SetInt(key, bank);
+            slot.MarkDirty();
         }
 
         /// <summary>
@@ -143,7 +255,7 @@ namespace RailWorld.src.RailWay
         {
             // Секція цілком знімається інструментом одразу
             if (sel.Part == SectionPart.Whole) return 0f;
-            return sel.Part == SectionPart.Sleeper ? 1.5f : 3f;
+            return sel.Part == SectionPart.Sleeper || sel.Part == SectionPart.Ballast ? 1.5f : 3f;
         }
 
         /// <summary>
@@ -182,6 +294,9 @@ namespace RailWorld.src.RailWay
 
         protected virtual ItemStack CreatePartStack(IWorldAccessor world, Section section, SectionPart part)
         {
+            // Гравій предметом не повертається: він лишається у світі шаром, коли блок колії звільняється
+            if (part == SectionPart.Ballast) return null;
+
             bool sleeper = part == SectionPart.Sleeper;
             Item item = world.GetItem(new AssetLocation("railworld", sleeper ? "sleeper" : "rail"));
             if (item == null) return null;
@@ -225,6 +340,10 @@ namespace RailWorld.src.RailWay
 
             session.MarkDirty(sel.Chunk);
             session.SaveAll();
+
+            // Секції більше немає або в ній не лишилося деталей: звільняємо клітинки. Інакше оновлюємо їхню форму
+            if (whole) TrackBed.Detach(world, section);
+            else TrackBed.Sync(world, section);
 
             if (drops == null || byPlayer?.WorldData.CurrentGameMode == EnumGameMode.Creative) return;
             foreach (ItemStack stack in drops)

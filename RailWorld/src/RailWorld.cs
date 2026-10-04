@@ -24,6 +24,10 @@ namespace RailWorld
         // Матеріал шпал і рейок нової колії або RailWorld.DontBuild
         [ProtoMember(5)] public string sleeperMaterial;
         [ProtoMember(6)] public string railMaterial;
+        // Порода гравію для підсипки або RailWorld.DontBuild
+        [ProtoMember(7)] public string ballastMaterial;
+        // Ламати блоки на шляху колії замість того, щоб лишати секцію заблокованою
+        [ProtoMember(8)] public bool replaceBlocks;
     }
 
     /// <summary>
@@ -55,6 +59,8 @@ namespace RailWorld
         {
             base.Start(api);
             api.RegisterBlockClass("BlockRail", typeof(BlockRail));
+            api.RegisterBlockClass("BlockTrackBed", typeof(BlockTrackBed));
+            api.RegisterBlockEntityClass("BlockEntityTrackBed", typeof(BlockEntityTrackBed));
             api.RegisterItemClass("ItemTrolley", typeof(ItemTrolley));
             api.RegisterEntity("EntityTrolley", typeof(EntityTrolley));
             api.RegisterItemClass("ItemSleeper", typeof(ItemSleeper));
@@ -108,6 +114,8 @@ namespace RailWorld
                 mystack.Attributes.SetString("railDirection", packet.railDirection);
                 mystack.Attributes.SetString("sleeperMaterial", packet.sleeperMaterial ?? "oak");
                 mystack.Attributes.SetString("railMaterial", packet.railMaterial ?? "iron");
+                mystack.Attributes.SetString("ballastMaterial", packet.ballastMaterial ?? DontBuild);
+                mystack.Attributes.SetBool("replaceBlocks", packet.replaceBlocks);
                 _sapi.World.PlayerByUid(fromPlayer.PlayerUID)
                     .InventoryManager.ActiveHotbarSlot.MarkDirty();
             }

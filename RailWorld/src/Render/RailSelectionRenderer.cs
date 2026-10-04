@@ -26,6 +26,7 @@ namespace RailWorld
         private static readonly int[] GhostRgba = { 255, 255, 255, 60 };
         private static readonly int[] InstallableRgba = { 70, 255, 70, 90 };
         private static readonly int[] SelectedRgba = { 70, 255, 70, 150 };
+        private static readonly int[] BlockedRgba = { 255, 60, 60, 110 };
 
         // Чотири кути кожної грані куба від -1 до 1 в осях боксу (бік, верх, уздовж) і яскравість грані
         private static readonly float[][] Faces =
@@ -43,7 +44,9 @@ namespace RailWorld
         private class ChunkFill
         {
             public Vec3i Coord;
-            public MeshRef SleeperGhost, SleeperInstallable, RailGhost, RailInstallable;
+            public MeshRef SleeperGhost, SleeperInstallable, RailGhost, RailInstallable, BallastGhost, BallastInstallable;
+            // Місця в секціях, під якими стоїть чужий блок
+            public MeshRef Blocked;
 
             public void Dispose()
             {
@@ -51,6 +54,9 @@ namespace RailWorld
                 SleeperInstallable?.Dispose();
                 RailGhost?.Dispose();
                 RailInstallable?.Dispose();
+                BallastGhost?.Dispose();
+                BallastInstallable?.Dispose();
+                Blocked?.Dispose();
             }
         }
 
@@ -128,8 +134,9 @@ namespace RailWorld
             ItemStack held = player.InventoryManager.ActiveHotbarSlot?.Itemstack;
             bool sleeperFits = handler.CanInstall(held, SectionPart.Sleeper);
             bool railFits = handler.CanInstall(held, SectionPart.FirstRail) || handler.CanInstall(held, SectionPart.SecondRail);
+            bool ballastFits = handler.CanInstall(held, SectionPart.Ballast);
             bool showAll = handler.ShowsAllEmptyParts(held);
-            if (!sleeperFits && !railFits && !showAll) return;
+            if (!sleeperFits && !railFits && !ballastFits && !showAll) return;
 
             IShaderProgram prog = capi.Shader.GetProgram((int)EnumShaderProgram.Blockhighlights);
             prog.Use();
@@ -140,7 +147,7 @@ namespace RailWorld
             {
                 // З предметом для прокладання колії видно порожні місця в усіх завантажених чанках
                 foreach (ChunkFill fill in fills.Values)
-                    RenderChunkFill(prog, fill, sleeperFits, railFits);
+                    RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
             }
             else
             {
@@ -158,7 +165,7 @@ namespace RailWorld
                         {
                             chunkCoord.Set(x, y, z);
                             if (fills.TryGetValue(chunkCoord, out ChunkFill fill))
-                                RenderChunkFill(prog, fill, sleeperFits, railFits);
+                                RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
                         }
                     }
                 }
@@ -176,7 +183,7 @@ namespace RailWorld
             prog.Stop();
         }
 
-        private void RenderChunkFill(IShaderProgram prog, ChunkFill fill, bool sleeperFits, bool railFits)
+        private void RenderChunkFill(IShaderProgram prog, ChunkFill fill, bool sleeperFits, bool railFits, bool ballastFits)
         {
             Vec3d cam = capi.World.Player.Entity.CameraPos;
             mat.Set(capi.Render.CameraMatrixOriginf)
@@ -187,6 +194,9 @@ namespace RailWorld
             MeshRef rails = railFits ? fill.RailInstallable : fill.RailGhost;
             if (sleepers != null) capi.Render.RenderMesh(sleepers);
             if (rails != null) capi.Render.RenderMesh(rails);
+            MeshRef ballast = ballastFits ? fill.BallastInstallable : fill.BallastGhost;
+            if (ballast != null) capi.Render.RenderMesh(ballast);
+            if (fill.Blocked != null) capi.Render.RenderMesh(fill.Blocked);
         }
 
         private void RebuildDirtyChunks()
@@ -210,28 +220,40 @@ namespace RailWorld
             dirtyChunks.Clear();
         }
 
+        // У якій групі малювати порожнє місце
+        private enum FillGroup { Sleeper, Rail, Blocked, Ballast }
+
+        private static FillGroup GroupOf(SectionBox box)
+        {
+            if (box.Section.Blocked) return FillGroup.Blocked;
+            if (box.Part == SectionPart.Ballast) return FillGroup.Ballast;
+            return box.Part == SectionPart.Sleeper ? FillGroup.Sleeper : FillGroup.Rail;
+        }
+
         private ChunkFill BuildChunkFill(Vec3i coord, List<SectionBox> boxes)
         {
-            int sleepers = 0, rails = 0;
+            int[] counts = new int[4];
             foreach (SectionBox box in boxes)
             {
-                if (box.Installed) continue;
-                if (box.Part == SectionPart.Sleeper) sleepers++; else rails++;
+                if (!box.Installed) counts[(int)GroupOf(box)]++;
             }
-            if (sleepers == 0 && rails == 0) return null;
+            if (counts[0] == 0 && counts[1] == 0 && counts[2] == 0 && counts[3] == 0) return null;
 
             return new ChunkFill
             {
                 Coord = coord,
-                SleeperGhost = BuildFillMesh(coord, boxes, true, sleepers, GhostRgba),
-                SleeperInstallable = BuildFillMesh(coord, boxes, true, sleepers, InstallableRgba),
-                RailGhost = BuildFillMesh(coord, boxes, false, rails, GhostRgba),
-                RailInstallable = BuildFillMesh(coord, boxes, false, rails, InstallableRgba)
+                SleeperGhost = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0], GhostRgba),
+                SleeperInstallable = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0], InstallableRgba),
+                RailGhost = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1], GhostRgba),
+                RailInstallable = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1], InstallableRgba),
+                BallastGhost = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3], GhostRgba),
+                BallastInstallable = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3], InstallableRgba),
+                Blocked = BuildFillMesh(coord, boxes, FillGroup.Blocked, counts[2], BlockedRgba)
             };
         }
 
-        // Один меш з усіх порожніх місць чанка під шпали або під рейки. Координати вершин відносно початку чанка
-        private MeshRef BuildFillMesh(Vec3i coord, List<SectionBox> boxes, bool sleepers, int count, int[] rgba)
+        // Один меш з усіх порожніх місць чанка однієї групи. Координати вершин відносно початку чанка
+        private MeshRef BuildFillMesh(Vec3i coord, List<SectionBox> boxes, FillGroup group, int count, int[] rgba)
         {
             if (count == 0) return null;
 
@@ -240,7 +262,7 @@ namespace RailWorld
 
             foreach (SectionBox box in boxes)
             {
-                if (box.Installed || (box.Part == SectionPart.Sleeper) != sleepers) continue;
+                if (box.Installed || GroupOf(box) != group) continue;
                 AddBox(mesh, rgba, box.Center.X - ox, box.Center.Y - oy, box.Center.Z - oz,
                     box.AxisSide, box.AxisUp, box.AxisAlong, box.HalfSide, box.MinUp, box.MaxUp, box.HalfAlong);
             }

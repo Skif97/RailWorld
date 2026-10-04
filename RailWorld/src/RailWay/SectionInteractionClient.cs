@@ -147,8 +147,9 @@ namespace RailWorld
                 box => PickFilter(box, held, system.Handler.IsSectionTool(held)));
             if (sel == null) return null;
 
+            // Блок колії лежить під своїми ж деталями і місцями під них, тому він їх не затуляє
             BlockSelection blockSel = entity.BlockSelection;
-            if (blockSel != null)
+            if (blockSel != null && !(capi.World.BlockAccessor.GetBlock(blockSel.Position) is BlockTrackBed))
             {
                 Vec3d hit = new Vec3d(blockSel.Position.X, blockSel.Position.InternalY, blockSel.Position.Z).Add(blockSel.HitPosition);
                 if (origin.DistanceTo(hit) < sel.Distance) return null;
@@ -169,7 +170,9 @@ namespace RailWorld
         {
             if (sectionTool) return box.Part == SectionPart.Whole;
             if (box.Part == SectionPart.Whole) return false;
-            return box.Installed || system.Handler.CanInstall(held, box.Part);
+            if (box.Installed) return true;
+            // У заблоковану секцію ставити не можна, тому її порожні місця під прицілом не виділяються
+            return !box.Section.Blocked && system.Handler.CanInstall(held, box.Part);
         }
 
         // Дзеркало SystemMouseInWorldInteractions.HandleMouseInteractionsBlockSelected
