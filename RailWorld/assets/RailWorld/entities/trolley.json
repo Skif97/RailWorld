@@ -1,7 +1,14 @@
 {
 	"code": "trolley",
 	"class": "EntityTrolley",
-	"attributes": { "airDragFactor: ": 0.005 },
+	"attributes": { "airDragFactor": 0.005, "shouldSwivelFromMotion": false },
+	"behaviorConfigs": {
+		"seatable": {
+			"seats": [
+				{ "seatId": "trolley", "controllable": false, "bodyYawLimit": null, "eyeHeight": 1.35, "riderOffset": { "x": 0, "y": 0.25, "z": 0 }, "angleMode": "PushYaw", "animation": "sneakidle" }
+			]
+		}
+	},
 	"client": {
 		"PitchStep": false,
 		"renderer": "Shape",
@@ -12,7 +19,8 @@
 				"code": "controlledphysics",
 				"stepHeight": 0.2
 			},
-			{ "code": "interpolateposition" }
+			{ "code": "interpolateposition" },
+			{ "code": "seatable" }
 		]
 	},
 	"server": {
@@ -20,7 +28,8 @@
 			{
 				"code": "controlledphysics",
 				"stepHeight": 0.2
-			}
+			},
+			{ "code": "seatable" }
 		]
 	}
 }

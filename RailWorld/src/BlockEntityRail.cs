@@ -15,7 +15,7 @@ namespace RailWorld
 	public class BlockEntityRail : BlockEntity
 	{
 
-        List<RailSectionClient> railSections = new List<RailSectionClient>();
+        List<RailSectionClient_old> railSections = new List<RailSectionClient_old>();
 		Block ownBlock;
 		MeshData totalmesh = new MeshData(4, 3);
         Random rnd = new Random();
@@ -38,12 +38,12 @@ namespace RailWorld
 
         }
 
-		public List<RailSectionClient> GetRailSections()
+		public List<RailSectionClient_old> GetRailSections()
 		{
 			return railSections;
 		}
 
-        public RailSectionClient GetRailSection(int num)
+        public RailSectionClient_old GetRailSection(int num)
         {
 			return railSections[num];
         }
@@ -160,7 +160,7 @@ namespace RailWorld
 		{
 			if (byItemStack != null)
 			{
-				railSections.Add(new RailSectionClient(byItemStack, railSections.Count));
+				railSections.Add(new RailSectionClient_old(byItemStack, railSections.Count));
                 UpdateConnections(true);
                 MarkDirty(true, null);
 
@@ -187,7 +187,7 @@ namespace RailWorld
 
             for (int slot = 0; tree.TryGetDouble(string.Format("{0}.position.X", slot)) != null; slot++) 
 			{
-				railSections.Add(new RailSectionClient(tree, slot));
+				railSections.Add(new RailSectionClient_old(tree, slot));
 			}
 
 			

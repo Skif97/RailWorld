@@ -1,0 +1,30 @@
+{	"code": "sleeper",
+	"class": "ItemSleeper",
+    "maxstacksize": 32,
+	"attributes": {
+		"types": ["normal"],
+		"materials": { "loadFromProperties": "block/wood", "states": ["veryaged", "veryagedrotten", "aged", "mossy"] },
+		"shape": { "base": "railworld:item/sleeper" },
+		"textures": { 
+			"main": { "base": "block/wood/debarked/{material}", "overlays": [] }
+		}
+	},
+	"shape": { "base": "item/sleeper"},
+		guiTransform: {
+		translation: { x: 1, y: 8.02, z: 0 },
+		rotation: { x: -23, y: 65, z: 0 },
+		origin: { x: 0.43, y: 0, z: 0.5 },
+		scale: 2.38
+	},
+		tpHandTransform: {
+		translation: { x: -0.79, y: -0.59, z: 0.03 },
+		rotation: { x: 89, y: -12, z: 8 },
+		scale: 0.8
+	},
+		groundTransform: {
+		translation: { x: 0, y: 0.48, z: 0 },
+		rotation: { x: 0, y: -34, z: 0 },
+		origin: { x: 0.5, y: 0.37, z: 0.5 },
+		scale: 4.87
+	}
+}

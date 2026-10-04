@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -163,15 +163,26 @@ namespace RailWorld
 
         private double Derivative(double t, double p0, double p1, double p2, double p3)
         {
+            // Крива раціональна: P(t) = N(t) / D(t), тому P' = (N' * D - N * D') / D^2.
+            // Без урахування ваг дотична не збігається з кривою, яку дає InterpolationWithWeight
             double t2 = t * t;
             double mt = 1 - t;
             double mt2 = mt * mt;
 
-            double c0 =  mt2;
-            double c1 = 2  * mt * t;
-            double c2 =  t2;
-            double basis = c0 + c1 + c2;
-            return (c0 * 3f * (p1 - p0) + c1 * 3f * (p2 - p1) + c2 * 3f * (p3 - p2)) / basis;
+            double b0 = mt2 * mt;
+            double b1 = 3 * mt2 * t;
+            double b2 = 3 * mt * t2;
+            double b3 = t2 * t;
+
+            double n0 = w0 * p0, n1 = w1 * p1, n2 = w2 * p2, n3 = w3 * p3;
+
+            double numerator   = b0 * n0 + b1 * n1 + b2 * n2 + b3 * n3;
+            double denominator = b0 * w0 + b1 * w1 + b2 * w2 + b3 * w3;
+
+            double dNumerator   = 3 * (mt2 * (n1 - n0) + 2 * mt * t * (n2 - n1) + t2 * (n3 - n2));
+            double dDenominator = 3 * (mt2 * (w1 - w0) + 2 * mt * t * (w2 - w1) + t2 * (w3 - w2));
+
+            return (dNumerator * denominator - numerator * dDenominator) / (denominator * denominator);
         }
 
         double DerivativeX(double t)

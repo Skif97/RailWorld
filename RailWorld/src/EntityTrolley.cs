@@ -1,51 +1,85 @@
-﻿using Vintagestory.API.Common;
-using Vintagestory.API.Client;
-using Vintagestory.API.Config;
+using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
-using Vintagestory.API.Util;
-using Vintagestory.API.Datastructures;
-using Vintagestory.API.Server;
-using Vintagestory.GameContent;
 using System;
 using Vintagestory.API.Common.Entities;
-using System.IO;
+using RailWorld.src.RailWay;
+using RailWorld.src.Items;
+using Vintagestory.GameContent;
 
 namespace RailWorld
 {
 
-    public class EntityTrolley :  EntityAgent
+    public class EntityTrolley : EntityAgent, ISeatInstSupplier
     {
+        // Прискорення вільного падіння і опір коченню, блоків за секунду в квадраті
+        public const double Gravity = 9.8;
+        public const double RollingResistance = 0.5;
 
-        public double RenderOrder => 0;
+        // Опір повітря: гальмування = коефіцієнт * швидкість². Береться з атрибута airDragFactor сутності
+        public const double DefaultAirDrag = 0.002;
+        private double airDrag = DefaultAirDrag;
 
-        public int RenderRange => 999;
+        // Швидкість, яку дає поштовх гравця, і стеля швидкості, блоків за секунду
+        public const double PushSpeed = 2;
+        public const double MaxSpeed = 30;
+        // Вище цієї швидкості поштовх гравця вже нічого не додає
+        public const double MaxPushSpeed = 10;
 
-        private Vec3d DirVec = new Vec3d();
-        public double Speed = 0f;
-        public double FreeFallSpeed = 80.0f; //метров в секунду характерно для угловатой формы
-        private bool Brake = false;
+        // Пасажир, тримаючи «вперед» чи «назад», сам потроху розганяє вагонетку: до швидкості ходи навприсядки,
+        // із прискоренням понад опір кочення, блоків за секунду в квадраті.
+        // Швидкість ходи навприсядки з фізики гри: за тік 1/60 с до руху додається BaseMoveSpeed / 60 * SneakSpeedMultiplier,
+        // потім він множиться на опір землі 0.7 і повітря 0.983^0.55. Усталене значення це 1.19 блока за секунду
+        public const double DriveMaxSpeed = 1.2;
+        public const double DriveAccel = 0.6;
 
-        private bool OnRail = false;
+        // Рейки з цього матеріалу розганяють вагонетку, тимчасова заміна штовхачів.
+        // Секція з обома такими рейками при наїзді на неї додає стільки швидкості, скільки дав би
+        // з'їзд із гірки такої висоти в блоках; з однією рейкою половину
+        public const string BoostRailMaterial = "gold";
+        public const double BoostHeight = 15;
 
-        private bool applyGravity = false;
+        // На якій за рахунком секції поспіль без шпали вагонетка сходить з колії
+        public const int MaxSectionsWithoutSleeper = 5;
 
-        private bool isInteractable = true;
+        // Стан на колії. Живе на сервері, зберігається в Attributes сутності
+        private bool onRail;
+        private Vec3i railChunk = new Vec3i();
+        private int railIndex;
+        // Відстань від початку поточної секції вздовж неї
+        private double railS;
+        // Швидкість уздовж поточної секції: додатна в бік її кінця, від'ємна в бік початку
+        private double railVelocity;
+        private int sectionsWithoutSleeper;
+        // Куди дивиться перед вагонетки відносно поточної секції: 1 у бік її кінця, -1 у бік початку.
+        // Сусідні ділянки можуть бути прокладені назустріч, тому при переході це треба перераховувати
+        private int railFacing = 1;
 
-        private RailSectionClient currentRailSection;
+        // Клік, яким вагонетку поставили, не має ні штовхати її, ні садити в неї
+        private const long InteractDelayAfterSpawnMs = 1000;
+        private long spawnedAtMs;
 
-
+        // На колії вагонетку веде наш код, тому тяжіння вимкнене. Поза колією це звичайна сутність
         public override bool ApplyGravity
         {
-            get { return applyGravity; }
-
-
+            get { return !WatchedAttributes.GetBool("onRail"); }
         }
-
-
 
         public override bool IsInteractable
         {
-            get { return isInteractable; }
+            get { return true; }
+        }
+
+        // Гра сама нахиляє сутності вбік на поворотах і вперед на сходинках, як коня під вершником.
+        // Вона вмикає це, коли вважає сутність такою, що стоїть на землі, а з пасажиром вагонетка саме такою і стає.
+        // Вагонетці це не потрібно: її нахил повністю задає колія
+        public override bool CanSwivel
+        {
+            get { return false; }
+        }
+
+        public override bool CanStepPitch
+        {
+            get { return false; }
         }
 
         public override float MaterialDensity
@@ -53,344 +87,416 @@ namespace RailWorld
             get { return 30000f; }
         }
 
-        //public IMountable[] MountPoints => throw new NotImplementedException();
-
-        //public void OnRenderFrame(float dt, EnumRenderStage stage)
-        //{ 
-        
-        //}
-            
-
-        //public void Dispose()
-        //{
-
-        //}
-
-
-
         public override void Initialize(EntityProperties properties, ICoreAPI api, long InChunkIndex3d)
         {
-
             base.Initialize(properties, api, InChunkIndex3d);
             Properties.KnockbackResistance = 0.95f;
-            hasRepulseBehavior = true;
 
             touchDistanceSq = (double)Math.Max(0.001f, SelectionBox.XSize);
 
+            airDrag = properties.Attributes?["airDragFactor"].AsDouble(DefaultAirDrag) ?? DefaultAirDrag;
 
+            spawnedAtMs = World.ElapsedMilliseconds;
+            if (api.Side == EnumAppSide.Server) LoadRailState();
         }
 
-        public override void OnEntitySpawn()
+        private void LoadRailState()
         {
-            base.OnEntitySpawn();
-            if(Api.Side == EnumAppSide.Server) 
+            onRail = Attributes.GetBool("onRail");
+            railChunk.Set(Attributes.GetInt("railChunkX"), Attributes.GetInt("railChunkY"), Attributes.GetInt("railChunkZ"));
+            railIndex = Attributes.GetInt("railSectionIndex");
+            railS = Attributes.GetDouble("railS");
+            railVelocity = Attributes.GetDouble("railVelocity");
+            sectionsWithoutSleeper = Attributes.GetInt("railNoSleeper");
+            railFacing = Attributes.GetInt("railFacing", 1) < 0 ? -1 : 1;
+            SetOnRail(onRail);
+        }
+
+        private void SaveRailState()
+        {
+            Attributes.SetBool("onRail", onRail);
+            Attributes.SetInt("railChunkX", railChunk.X);
+            Attributes.SetInt("railChunkY", railChunk.Y);
+            Attributes.SetInt("railChunkZ", railChunk.Z);
+            Attributes.SetInt("railSectionIndex", railIndex);
+            Attributes.SetDouble("railS", railS);
+            Attributes.SetDouble("railVelocity", railVelocity);
+            Attributes.SetInt("railNoSleeper", sectionsWithoutSleeper);
+            Attributes.SetInt("railFacing", railFacing);
+        }
+
+        // Клієнту стан потрібен лише для тяжіння, тому синхронізуємо один прапорець і лише при зміні
+        private void SetOnRail(bool value)
+        {
+            onRail = value;
+            if (WatchedAttributes.GetBool("onRail") == value) return;
+            WatchedAttributes.SetBool("onRail", value);
+            WatchedAttributes.MarkPathDirty("onRail");
+        }
+
+        public override void OnGameTick(float dt)
+        {
+            base.OnGameTick(dt);
+            if (Api.Side != EnumAppSide.Server || !onRail) return;
+
+            TickOnRail(dt);
+            SaveRailState();
+        }
+
+        private enum EnterResult { Entered, Blocked, Derailed }
+
+        // Рух рахується аналітично по секціях: на секції прискорення стале, тому швидкість у її кінці
+        // береться з v² = u² + 2as, а час проїзду з t = (v - u) / a. Результат не залежить від частоти тіків
+        private void TickOnRail(float dt)
+        {
+            // Секцію беремо з даних чанка щотіку: її могли розібрати або видалити під вагонеткою
+            Section section = GetSection(railChunk, railIndex, out bool chunkLoaded);
+            if (section == null)
             {
-                currentRailSection = GetReilSec(this.Attributes.GetVec3d("currentSectionBlock"), this.Attributes.GetInt("currentSectionSlot"));
+                // Чанк вивантажений: чекаємо. Секції немає: колії під нами більше нема
+                if (chunkLoaded) Derail(null);
+                return;
             }
-        }
-
-        public override void OnCollided()
-        {
-            base.OnCollided();
-
-        }
-
-        public override void OnEntityLoaded()
-        {
-            base.OnEntityLoaded();
-        }
-
-
-
-        private void onServerPhysicsTickCallback(double dt)
-        {
-            while (dt > 0f)
+            if (!section.RailsInstalled)
             {
-                if (currentRailSection != null)
+                Derail(section);
+                return;
+            }
+
+            double timeLeft = dt;
+            Vec3d drive = GetDriveDirection();
+
+            // Запобіжник: за тік не буває стільки переходів між секціями і зупинок
+            for (int guard = 0; guard < 256 && timeLeft > 0; guard++)
+            {
+                double length = SectionLength(section);
+                if (length < 1e-9) break;
+
+                Vec3d start = section.FullStartPosition;
+                Vec3d end = section.FullEndPosition;
+
+                // Складова тяжіння вздовж осі секції (від початку до кінця): вниз по ухилу додатна
+                double slopeAccel = -Gravity * (end.Y - start.Y) / length;
+
+                // Пасажир розганяє вагонетку. Тяга долає опір кочення і ще трохи, і зникає на граничній швидкості
+                if (drive != null)
                 {
-                    int dirIndex;
-                    double accelerationOnRail;
-                    Vec3d endPoint;
-                    double distance;
-                    double totalSpeed;
-                    double totalTime;
-                    double timeToZeroSpeed;
+                    int driveSign = (end.X - start.X) * drive.X + (end.Z - start.Z) * drive.Z >= 0 ? 1 : -1;
+                    if (railVelocity * driveSign < DriveMaxSpeed) slopeAccel += driveSign * (RollingResistance + DriveAccel);
+                }
 
-
-                    if (Speed == 0f) //ищем правильное направление движения при нулевой сторости, если скорость не нулевая, то вектор остаётся прежним
-                    {
-                        if (currentRailSection.FDAcceleration > 0f)
-                        {
-                            DirVec = currentRailSection.FDVector.Clone();
-                        }
-                        else if (currentRailSection.SDAcceleration > 0f)
-                        {
-                            DirVec = currentRailSection.SDVector.Clone();
-                        }
-                        //else
-                        //{
-                        //    DirVec = ModMath.YawToVec(this.ServerPos.Yaw);
-                        //    return;
-                        //}
-                    }
-
-                    DirVec.Normalize();
-
-                    dirIndex = GetDirection(DirVec); // ищем нужное ускорение из жд секции, нужно спрятать под капот
-
-                    if (dirIndex == 1)
-                    {
-                        accelerationOnRail = currentRailSection.FDAcceleration;
-                    }
-                    else
-                    {
-                        accelerationOnRail = currentRailSection.SDAcceleration;
-                    }
-
-                    accelerationOnRail -= currentRailSection.SDResistance; //корректируем ускорение
-
-
-                    endPoint = GetEndPointOnSections(dirIndex);
-                    distance = ServerPos.DistanceTo(endPoint);
-                    totalSpeed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
-
-                    if (totalSpeed == 0f) 
-                    {
-                        return;
-                    }
-
-                    if (totalSpeed < 0f) //если скорость в конце участка отрицательная
-                    {
-                        timeToZeroSpeed = TotalTravelTimeToZeroSpeed(Speed, accelerationOnRail); //ищем время для прохождения участка
-                        if (timeToZeroSpeed > dt) // если нехватает времени чтобы достичь точку с нулевой скоростью, ищем точку до неё
-                        {
-                            distance = TotalDistanceOnTimeInterval(Speed, dt, accelerationOnRail);
-                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
-                            DirVec = GetDirectionVector(dirIndex).Normalize();
-                            DirVec.Mul(distance);
-                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
-                            dt = 0f;
-                        }
-                        else // если времени больше  то останавливаемся в нулевой точке 
-                        {
-                            distance = TotalDistanceOnTimeInterval(Speed, timeToZeroSpeed, accelerationOnRail);
-                            Speed = 0f;
-                            DirVec = GetDirectionVector(dirIndex).Normalize();
-                            DirVec.Mul(distance);
-                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
-                            dt -= timeToZeroSpeed;
-                            dt--;
-                        }
-                    }
-                    else // если скорость положительная
-                    {
-                        totalTime = TotalTravelTime(Speed, totalSpeed, accelerationOnRail); //ищем время для прохождения участка
-                        if (totalTime > dt) // если нехватает времени чтобы достичь конечную точку, ищем точку до неё
-                        {
-                            distance = TotalDistanceOnTimeInterval(Speed, dt, accelerationOnRail);
-                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
-                            DirVec = GetDirectionVector(dirIndex).Normalize();
-                            DirVec.Mul(distance);
-                            ServerPos.Add(DirVec.X, DirVec.Y, DirVec.Z);
-                            dt = 0f;
-                        }
-                        else // если время хватает обновляет данные, становимся в эту точку
-                        {
-                            Speed = TotalSpeedOnDistance(Speed, distance, accelerationOnRail);
-                            ServerPos.SetPos(endPoint);
-                            dt -= totalTime;
-                            currentRailSection = GetNextReilSec(dirIndex);
-                        }
-                    }
-
-
+                // Напрямок руху. Якщо стоїмо, його задає ухил, але лише коли він сильніший за опір
+                int dir;
+                if (railVelocity != 0)
+                {
+                    dir = Math.Sign(railVelocity);
+                }
+                else if (Math.Abs(slopeAccel) > RollingResistance)
+                {
+                    dir = Math.Sign(slopeAccel);
                 }
                 else
                 {
-                    if (Speed != 0f)
-                    {
-                    
-                        dt= 0f;
-                        //тут описать движение по инерции вне рельс
-                    }
-                    dt = 0f;
+                    break;
                 }
-            }
-            if (currentRailSection!=null) 
-            {
-                ServerPos.Yaw = currentRailSection.centerYaw;
-                ServerPos.Pitch = currentRailSection.centerPitch;
-                ServerPos.Roll = currentRailSection.centerRoll;
+
+                double speed = Math.Abs(railVelocity);
+                // Прискорення в напрямку руху: ухил допомагає або заважає, опір кочення і повітря завжди проти.
+                // Опір повітря залежить від швидкості, а формули вимагають сталого прискорення, тому на цей відрізок
+                // беремо його за швидкістю на початку відрізка. Відрізки короткі, похибка мала
+                double accel = dir * slopeAccel - RollingResistance - airDrag * speed * speed;
+                double distance = dir > 0 ? length - railS : railS;
+
+                if (distance > 1e-9)
+                {
+                    // Чи доїде до кінця секції і за який час
+                    bool reachesEnd;
+                    double timeToEnd = 0;
+                    double speedAtEnd = 0;
+
+                    if (Math.Abs(accel) < 1e-9)
+                    {
+                        // Рівномірний рух, формули з діленням на прискорення тут не працюють
+                        reachesEnd = speed > 0;
+                        if (reachesEnd)
+                        {
+                            timeToEnd = distance / speed;
+                            speedAtEnd = speed;
+                        }
+                    }
+                    else
+                    {
+                        double squared = speed * speed + 2 * accel * distance;
+                        reachesEnd = squared > 0;
+                        if (reachesEnd)
+                        {
+                            speedAtEnd = Math.Sqrt(squared);
+                            timeToEnd = (speedAtEnd - speed) / accel;
+                        }
+                    }
+
+                    if (!reachesEnd)
+                    {
+                        // Зупиниться всередині секції. Сюди потрапляємо лише з від'ємним прискоренням
+                        double timeToStop = accel < 0 ? -speed / accel : 0;
+                        if (timeToStop > timeLeft)
+                        {
+                            Advance(dir, speed, accel, timeLeft, length);
+                            timeLeft = 0;
+                        }
+                        else
+                        {
+                            Advance(dir, speed, accel, timeToStop, length);
+                            railVelocity = 0;
+                            // Залишок часу не викидаємо: на наступному проході ухил може покотити назад
+                            timeLeft -= timeToStop;
+                        }
+                        continue;
+                    }
+
+                    if (timeToEnd > timeLeft)
+                    {
+                        Advance(dir, speed, accel, timeLeft, length);
+                        timeLeft = 0;
+                        continue;
+                    }
+
+                    // Доїхали до кінця секції
+                    railS = dir > 0 ? length : 0;
+                    railVelocity = dir * Math.Min(speedAtEnd, MaxSpeed);
+                    timeLeft -= timeToEnd;
+                }
+
+                EnterResult result = EnterNext(ref section, dir < 0);
+                if (result == EnterResult.Derailed) return;
+                if (result == EnterResult.Blocked) break;
             }
 
+            ApplyRailPose(Pos, section, railS, SelectionBox.Y2 / 2, railFacing);
+            Pos.Motion.Set(0, 0, 0);
         }
 
+        // Куди пасажир хоче їхати: горизонтальний напрямок його погляду, якщо тримає «вперед»,
+        // зворотний, якщо «назад». null, якщо ніхто не керує
+        private Vec3d GetDriveDirection()
+        {
+            EntityBehaviorSeatable seatable = GetBehavior<EntityBehaviorSeatable>();
+            if (seatable?.Seats == null) return null;
 
+            foreach (IMountableSeat seat in seatable.Seats)
+            {
+                if (seat?.Passenger == null || seat.Controls == null) continue;
 
+                bool forward = seat.Controls.Forward;
+                bool backward = seat.Controls.Backward;
+                if (forward == backward) continue;
+
+                Vec3f view = seat.Passenger.Pos.GetViewVector();
+                double length = Math.Sqrt(view.X * view.X + view.Z * view.Z);
+                if (length < 1e-6) continue;
+
+                double sign = forward ? 1 : -1;
+                return new Vec3d(view.X / length * sign, 0, view.Z / length * sign);
+            }
+            return null;
+        }
+
+        // Проїжджає час t усередині секції зі сталим прискоренням: s = ut + at²/2, v = u + at
+        private void Advance(int dir, double speed, double accel, double time, double length)
+        {
+            double travelled = speed * time + 0.5 * accel * time * time;
+            railS = GameMath.Clamp(railS + dir * travelled, 0, length);
+            railVelocity = dir * GameMath.Clamp(speed + accel * time, 0, MaxSpeed);
+        }
+
+        // Переїжджає з краю поточної секції в сусідню. Швидкість за модулем не змінюється
+        private EnterResult EnterNext(ref Section section, bool leaveAtStart)
+        {
+            RailDataSession session = new RailDataSession(World);
+            SectionStep next = SectionLinker.GetNext(session, section, leaveAtStart);
+            bool linked = section.GetLinks(leaveAtStart).Count > 0;
+            if (session.HasChanges) session.SaveAll();
+
+            if (next == null)
+            {
+                if (linked)
+                {
+                    // Далі колія є, але її чанк не завантажений: стоїмо на краю
+                    railVelocity = 0;
+                    return EnterResult.Blocked;
+                }
+
+                // Колія скінчилася
+                Derail(section);
+                return EnterResult.Derailed;
+            }
+
+            if (!next.Section.RailsInstalled)
+            {
+                Derail(section);
+                return EnterResult.Derailed;
+            }
+
+            sectionsWithoutSleeper = next.Section.SleeperInstalled ? 0 : sectionsWithoutSleeper + 1;
+            if (sectionsWithoutSleeper >= MaxSectionsWithoutSleeper)
+            {
+                Derail(section);
+                return EnterResult.Derailed;
+            }
+
+            double speed = Math.Abs(railVelocity);
+            section = next.Section;
+
+            // Розгінні рейки: один раз при наїзді на секцію, в напрямку руху.
+            // Рахуємо як з'їзд із гірки: v² = u² + 2gh
+            int boostRails = (section.GetMaterial(SectionPart.FirstRail) == BoostRailMaterial ? 1 : 0)
+                + (section.GetMaterial(SectionPart.SecondRail) == BoostRailMaterial ? 1 : 0);
+            if (boostRails > 0)
+            {
+                speed = Math.Min(Math.Sqrt(speed * speed + 2 * Gravity * BoostHeight * boostRails / 2.0), MaxSpeed);
+            }
+            railChunk.Set(section.ChunkAddres.X, section.ChunkAddres.Y, section.ChunkAddres.Z);
+            railIndex = section.IndexInChunk;
+
+            // Виїхали через кінець і заїхали через кінець (або початок і початок): осі секцій дивляться назустріч,
+            // тож відносно нової осі перед вагонетки тепер з іншого боку
+            if (leaveAtStart == next.EnterAtStart) railFacing = -railFacing;
+
+            // Якщо заїхали через кінець сусідньої секції, їдемо в бік її початку
+            if (next.EnterAtStart)
+            {
+                railS = 0;
+                railVelocity = speed;
+            }
+            else
+            {
+                railS = SectionLength(section);
+                railVelocity = -speed;
+            }
+            return EnterResult.Entered;
+        }
+
+        // Сходить з колії: далі це звичайна сутність із тяжінням, яка летить із тією швидкістю, що мала
+        private void Derail(Section section)
+        {
+            if (section != null)
+            {
+                double length = SectionLength(section);
+                if (length > 1e-9)
+                {
+                    Vec3d start = section.FullStartPosition;
+                    Vec3d end = section.FullEndPosition;
+                    // Motion рахується в блоках за 1/60 секунди
+                    double k = railVelocity / length / 60;
+                    Pos.Motion.Set((end.X - start.X) * k, (end.Y - start.Y) * k, (end.Z - start.Z) * k);
+                }
+            }
+
+            railVelocity = 0;
+            sectionsWithoutSleeper = 0;
+            Pos.Pitch = 0;
+            Pos.Roll = 0;
+            SetOnRail(false);
+            SaveRailState();
+        }
+
+        // Сидіння для стандартної поведінки seatable
+        public IMountableSeat CreateSeat(IMountable mountable, string seatId, SeatConfig config)
+        {
+            return new TrolleySeat(mountable, seatId, config);
+        }
+
+        // Правий клік садить у вагонетку (це робить поведінка seatable), Shift + правий клік штовхає її по колії
         public override void OnInteract(EntityAgent byEntity, ItemSlot slot, Vec3d hitPosition, EnumInteractMode mode)
         {
-            //Pos.Pitch = 0f;
-            //Pos.Yaw = 0f;
-            //Pos.Roll = (float)-Math.PI / 180 * 30;
-            //Pos.Roll = 0f;
-            //ServerPos.Pitch = 0f;
-            //ServerPos.Yaw = 0f;
-            //ServerPos.X = Pos.X + 1D;
-            //ServerPos.Y = Pos.Y + 1D;
-            //ServerPos.Roll = (float)-Math.PI / 180 * 30;
-            //this.Attributes.SetBool("rotateWhenFalling", false);
-           // applyGravity = applyGravity ? false : true;
+            if (mode != EnumInteractMode.Interact)
+            {
+                base.OnInteract(byEntity, slot, hitPosition, mode);
+                return;
+            }
+
+            // Клік, яким вагонетку щойно поставили, і клік із вагонеткою в руці нічого не роблять
+            if (World.ElapsedMilliseconds - spawnedAtMs < InteractDelayAfterSpawnMs) return;
+            if (slot?.Itemstack?.Item is ItemTrolley) return;
+
+            if (byEntity.Controls.ShiftKey)
+            {
+                if (Api.Side == EnumAppSide.Server && onRail) Push(byEntity);
+                return;
+            }
 
             base.OnInteract(byEntity, slot, hitPosition, mode);
         }
 
-        public override void OnFallToGround(double motionY)
+        // Штовхає вздовж колії в той бік, куди дивиться гравець
+        private void Push(EntityAgent byEntity)
         {
-            base.OnFallToGround(motionY);
-        }
+            Section section = GetSection(railChunk, railIndex, out _);
+            if (section == null) return;
 
-        public override void OnGameTick(float dt)
-        {           
+            Vec3d start = section.FullStartPosition;
+            Vec3d end = section.FullEndPosition;
+            Vec3f view = byEntity.Pos.GetViewVector();
+            double along = (end.X - start.X) * view.X + (end.Z - start.Z) * view.Z;
 
-            base.OnGameTick(dt);
-            if(Api.Side == EnumAppSide.Server) 
+            // Руками вагонетку не розігнати понад MaxPushSpeed. Проти руху штовхати можна завжди
+            int pushDir = along >= 0 ? 1 : -1;
+            double speedInPushDir = railVelocity * pushDir;
+            if (speedInPushDir < MaxPushSpeed)
             {
-                onServerPhysicsTickCallback(dt);
+                railVelocity = pushDir * Math.Min(speedInPushDir + PushSpeed, MaxPushSpeed);
             }
         }
 
-        private double TotalSpeedOnDistance(double startspeed, double distance, double acceleration) 
+        private Section GetSection(Vec3i chunk, int index, out bool chunkLoaded)
         {
-            //v = √(u^2 + 2as)
-            double squareTotalSpeed = startspeed * startspeed + 2f * acceleration * distance;
-            if (squareTotalSpeed < 0) 
-            {
-                return -1f;
-            }
-            else 
-            {
-                return Math.Sqrt(squareTotalSpeed);
-            }
-            
+            chunkLoaded = World.BlockAccessor.GetChunk(chunk.X, chunk.Y, chunk.Z) != null;
+            if (!chunkLoaded) return null;
 
+            DataInChunk data = DataInChunk.Get(World, chunk);
+            if (data == null) return null;
+            data.RailWaySections.TryGetValue(index, out Section section);
+            return section;
         }
 
-        private double TotalTravelTime(double startSpeed, double endSpeed, double totalAcceleration)
+        private static double SectionLength(Section section)
         {
-            //t = (v - u) / a
-            return (endSpeed - startSpeed) / totalAcceleration;
+            return section.FullStartPosition.DistanceTo(section.FullEndPosition);
         }
 
-        private double TotalTravelTimeToZeroSpeed(double startSpeed, double totalAcceleration)
+        /// <summary>
+        /// Ставить позицію на колію: на відстані s від початку секції, колесами на головці рейки,
+        /// з поворотом, ухилом і нахилом полотна. halfHeight це половина висоти боксу сутності,
+        /// facing каже, в який бік секції дивиться перед: 1 у бік кінця, -1 у бік початку.
+        /// </summary>
+        public static void ApplyRailPose(EntityPos pos, Section section, double s, double halfHeight, int facing)
         {
-            //t = -u / a
-            return -startSpeed / totalAcceleration;
+            Vec3d start = section.FullStartPosition;
+            Vec3d end = section.FullEndPosition;
+            Vec3d along = new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z);
+            if (along.Length() < 1e-9) return;
+            along.Normalize();
+
+            // Рамка колії: уздовж, убік (з нахилом полотна) і вгору
+            Vec3d side = new Vec3d(section.CenterNormal.X, section.CenterNormal.Y, section.CenterNormal.Z);
+            side.Sub(along.Clone().Mul(side.Dot(along))).Normalize();
+            Vec3d up = side.Cross(along);
+
+            // Розворот переду це поворот на 180° навколо верху: уздовж і вбік міняють знак, верх лишається
+            Vec3d forward = facing < 0 ? along.Clone().Mul(-1) : along;
+            Vec3d right = facing < 0 ? side.Clone().Mul(-1) : side;
+
+            ModMath.TrackFrameToEntityAngles(forward, right, up, out float yaw, out float pitch, out float roll);
+            pos.Yaw = yaw;
+            pos.Pitch = pitch;
+            pos.Roll = roll;
+
+            // Рендер обертає модель навколо середини її висоти, тому зсуваємо позицію так,
+            // щоб після нахилу низ моделі лишився на осі колії
+            double lift = SectionBox.RailHeight + halfHeight;
+            pos.X = start.X + along.X * s + up.X * lift;
+            pos.Y = start.Y + along.Y * s + up.Y * lift - halfHeight;
+            pos.Z = start.Z + along.Z * s + up.Z * lift;
         }
-
-        private double TotalDistanceOnTimeInterval(double startSpeed, double timeInterval, double acceleration)
-        {
-            //s = u * t_sec + 0.5a * t_sec^2
-            return startSpeed * timeInterval + 0.5f * acceleration * timeInterval * timeInterval;
-
-        }
-
-
-
-
-
-        
-
-        
-
-        private Vec3d GetEndPointOnSections(int directionIndex)
-        {
-            if (directionIndex == 1)
-            { 
-                return currentRailSection.FDEnd ; 
-            }
-            else 
-            {
-                return currentRailSection.SDEnd;
-            }
-        }
-
-        private Vec3d GetDirectionVector(int directionIndex)
-        {
-            if (directionIndex == 1)
-            { 
-                return currentRailSection.FDVector.Clone(); 
-            }
-            else 
-            {
-                return currentRailSection.SDVector.Clone();
-            }
-        }
-
-        private int GetDirection(Vec3d directionVector)
-        {
-
-            if (currentRailSection.FDVector.X * directionVector.X +
-                currentRailSection.FDVector.Y * directionVector.Y +
-                currentRailSection.FDVector.Z * directionVector.Z >= 0)
-            {
-                return 1;
-            }
-            else
-            {
-                return 2;
-            }
-        }
-
-        private RailSectionClient GetNextReilSec(int directionIndex)
-        {
-            BlockEntityRail BERail;
-            if (directionIndex == 1)
-            {
-                BERail = (BlockEntityRail)this.Api.World.BlockAccessor.GetBlockEntity(currentRailSection.FDNextSectionBlock.ToBlockPos());
-                if (BERail != null) 
-                {
-                    return BERail.GetRailSection(currentRailSection.FDNextSectionSlot);
-                }
-               
-            }
-            else 
-            {
-                BERail = (BlockEntityRail)this.Api.World.BlockAccessor.GetBlockEntity(currentRailSection.SDNextSectionBlock.ToBlockPos());
-                if (BERail != null)
-                {
-                    return BERail.GetRailSection(currentRailSection.SDNextSectionSlot);
-                }
-            }
-            return null;
-        }
-
-        private RailSectionClient GetReilSec(Vec3d pos, int slot)
-        {
-          
-            if(pos != null ) 
-            {
-                BlockEntityRail BERail = this.Api.World.BlockAccessor.GetBlockEntity<BlockEntityRail>(pos.ToBlockPos());
-                if(BERail != null) 
-                {
-                    RailSectionClient rs = BERail.GetRailSection(slot);
-                    if(rs != null) 
-                    {
-                        return rs;
-                    }
-                }
-            }
-            return null;
-                   
-        }
-
-        //public bool IsMountedBy(Entity entity)
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //public Vec3f GetMountOffset(Entity entity)
-        //{
-        //    throw new NotImplementedException();
-        //}
     }
 }

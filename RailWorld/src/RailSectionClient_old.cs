@@ -10,144 +10,74 @@ using ProtoBuf;
 
 namespace RailWorld
 {
-    [ProtoContract(SkipConstructor = true)]
-    public class RailSectionClient
+    public class RailSectionClient_old
     {
-        [ProtoMember(1)]
+ 
         public int slotNumberInBLock = 0;
-        [ProtoMember(2)]
         public Vec3d position;
-        
-        [ProtoMember(3)]
         public Vec3d centerStartPos;
-        [ProtoMember(4)]
         public Vec3d centerСenterPos;
-        [ProtoMember(5)]
         public Vec3d centerEndPos;
-        [ProtoMember(6)]
-
         public Vec3d centerStartOffset;
-        [ProtoMember(7)]
         public Vec3d centerCenterOffset;
-        [ProtoMember(8)]
         public Vec3d centerEndOffset;
-        [ProtoMember(9)]
-
         public Vec3f centerStartTangent;
-        [ProtoMember(10)]
         public Vec3d centerCenterTangent;
-        [ProtoMember(11)]
         public Vec3f centerEndTangent;
-        [ProtoMember(12)]
-
         public Vec3f centerStartNormal;
-        [ProtoMember(13)]
         public Vec3d centerCenterNormal;
-        [ProtoMember(14)]
         public Vec3f centerEndNormal;
-        [ProtoMember(15)]
-
         public Vec3d leftStartOffset;
-        [ProtoMember(16)]
         public Vec3d leftCenterOffset;
-        [ProtoMember(17)]
         public Vec3d leftEndOffset;
-        [ProtoMember(18)]
-
         public Vec3d leftCenterTangent;
-        [ProtoMember(19)]
         public Vec3d leftCenterNormal;
-        [ProtoMember(20)]
-
         public Vec3d rightStartOffset;
-        [ProtoMember(21)]
         public Vec3d rightCenterOffset;
-        [ProtoMember(22)]
         public Vec3d rightEndOffset;
-        [ProtoMember(23)]
-
         public Vec3d rightCenterTangent;
-        [ProtoMember(24)]
         public Vec3d rightCenterNormal;
-        [ProtoMember(25)]
-
         public double rightLenght;
-        [ProtoMember(26)]
         public double leftLenght;
-        [ProtoMember(27)]
-
         public float leftYaw = 0f;
-        [ProtoMember(28)]
         public float leftPitch = 0f;
-        [ProtoMember(29)]
         public float leftRoll = 0f;
-        [ProtoMember(30)]
-
         public float rightYaw = 0f;
-        [ProtoMember(31)]
         public float rightPitch = 0f;
-        [ProtoMember(32)]
         public float rightRoll = 0f;
-        [ProtoMember(33)]
-
         public float centerYaw = 0f;
-        [ProtoMember(34)]
         public float centerPitch = 0f;
-        [ProtoMember(35)]
         public float centerRoll = 0f;
-        [ProtoMember(36)]
-
         public Vec3d leftScale;
-        [ProtoMember(37)]
         public Vec3d rightScale;
-        [ProtoMember(38)]
         public Vec3d centerScale;
-        [ProtoMember(39)]
-
         public Vec3d switchOffsetLeft;
-        [ProtoMember(40)]
         public Vec3d switchOffsetRight;
-        [ProtoMember(41)]
-
         public double[] leftMatrix;
-        [ProtoMember(42)]
         public double[] rightMatrix;
-        [ProtoMember(43)]
         public double[] centerMatrix;
 
         //first derection
         //public Vec3d FDStart;
-        [ProtoMember(44)]
         public Vec3d FDEnd;
-        [ProtoMember(45)]
         public Vec3d FDVector;
-        [ProtoMember(46)]
         public double FDResistance;
-        [ProtoMember(47)]
         public double FDAcceleration;
-        [ProtoMember(48)]
         public Vec3d FDNextSectionBlock;
-        [ProtoMember(49)]
         public int FDNextSectionSlot;
 
         //second derection
         // public Vec3d SDStart;
-        [ProtoMember(50)]
+
         public Vec3d SDEnd;
-        [ProtoMember(51)]
         public Vec3d SDVector;
-        [ProtoMember(52)]
         public double SDResistance;
-        [ProtoMember(53)]
         public double SDAcceleration;
-        [ProtoMember(54)]
         public Vec3d SDNextSectionBlock;
-        [ProtoMember(55)]
         public int SDNextSectionSlot;
-        [ProtoMember(56)]
 
         double sectionLength;
-        public RailSectionClient(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
+        public RailSectionClient_old(ICoreAPI api, PointOnBezierCurve pointsOnCurveStart, PointOnBezierCurve pointsOnCurveCenter, PointOnBezierCurve pointsOnCurveEnd, double trackWidth)
         {
             double trackRadius = trackWidth / 2;
 
@@ -384,14 +314,14 @@ namespace RailWorld
             SDAcceleration = tree.GetDouble(string.Format("{0}.SDAcceleration", slotNumberInBLock));
         }
 
-        public RailSectionClient(ItemStack itemStack, int slot)
+        public RailSectionClient_old(ItemStack itemStack, int slot)
         {
 
             FromTreeAttribute(itemStack.Attributes);
             slotNumberInBLock = slot;
         }
 
-        public RailSectionClient(ITreeAttribute tree, int slot)
+        public RailSectionClient_old(ITreeAttribute tree, int slot)
         {
             slotNumberInBLock = slot;
             FromTreeAttribute(tree);

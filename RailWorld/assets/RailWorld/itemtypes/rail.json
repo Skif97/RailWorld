@@ -1,0 +1,31 @@
+{	"code": "rail",
+	"class": "ItemRail",
+    "maxstacksize": 32,
+	"attributes": {
+		"types": ["normal"],
+		"materials": { "loadFromProperties": "block/metal"},
+		"shape": { "base": "railworld:item/rail" },
+		"textures": { 
+			"rusty-iron2": { "base": "block/metal/plate/{material}", "overlays": [] }
+		}
+	},
+	"shape": { "base": "item/rail"},
+		guiTransform: {
+		translation: { x: 11, y: -6.98, z: 0 },
+		rotation: { x: 158, y: 28, z: 0 },
+		origin: { x: 0.5, y: 0.1, z: 0.5 },
+		scale: 3.35
+	},
+		tpHandTransform: {
+		translation: { x: -0.7, y: 0, z: -0.43 },
+		rotation: { x: 0, y: -90, z: -2 },
+		origin: { x: 0.5, y: 0, z: 0.5 },
+		scale: 1.01
+	},
+		groundTransform: {
+		translation: { x: 0, y: 0, z: 0 },
+		rotation: { x: 0, y: -25, z: 0 },
+		origin: { x: 0.5, y: 0, z: 0.5 },
+		scale: 5.1
+	}
+}

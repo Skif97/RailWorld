@@ -6,7 +6,7 @@
     "author": "Skif_97",
     "version": "1.0.0",
     "dependency": {
-        "game": "1.17"
+        "game": "1.22.0-pre.2"
     },
     "website": ""
 }

@@ -1,0 +1,29 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textureSizes": {
+		"main": [32,32]
+	},
+	"textures": {
+		"main": "block/wood/debarked/pine"
+	},
+	"elements": [
+		{
+			"name": "Cube3",
+			"from": [ 0.0, -2.0, 6.0 ], 
+			"to": [ 16.0, 0.0, 10.0 ], 
+			"rotationOrigin": [ 8.0, 0.0, 8.0 ],
+			"faces": {
+				"north": { "texture": "#main", "uv": [ 0.0, 4.0, 32.0, 8.0 ], "autoUv": false, "snapUv": false, "windMode": [-1,-1,-1,-1] },
+				"east": { "texture": "#main", "uv": [ 24.0, 10.0, 28.0, 18.0 ], "rotation": 90, "autoUv": false },
+				"south": { "texture": "#main", "uv": [ 0.0, 16.0, 32.0, 20.0 ], "autoUv": false },
+				"west": { "texture": "#main", "uv": [ 22.0, 21.0, 26.0, 29.0 ], "rotation": 90, "autoUv": false },
+				"up": { "texture": "#main", "uv": [ 0.0, 11.0, 32.0, 19.0 ], "rotation": 180, "autoUv": false },
+				"down": { "texture": "#main", "uv": [ 0.0, 19.0, 32.0, 27.0 ], "rotation": 180, "autoUv": false }
+			}
+		}
+	]}

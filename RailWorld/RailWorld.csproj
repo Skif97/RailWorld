@@ -1,10 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFramework>net7</TargetFramework>
+		<TargetFramework>net10.0</TargetFramework>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<GameVersion>1.19.4</GameVersion>
+		<GameVersion>1.22.3</GameVersion>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -47,6 +47,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Compile Remove="src\NewFolder\**" />
+	  <EmbeddedResource Remove="src\NewFolder\**" />
+	  <None Remove="src\NewFolder\**" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<None Remove="src\VAPlayerData.cs~RF1a0530a.TMP" />
 	</ItemGroup>
 
@@ -69,9 +75,39 @@
 		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Mods\VSSurvivalMod.dll">
 			<Private>false</Private>  
 		</Reference>
-    		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\protobuf-net.dll">
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\protobuf-net.dll">
 			<Private>false</Private>
-		</Reference>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\0Harmony.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Core.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Graphics.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Input.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Mathematics.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Windowing.Common.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Windowing.Desktop.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Windowing.GraphicsLibraryFramework.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Compute.dll">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\OpenTK.Audio.OpenAL.dll">
+      <Private>false</Private>
+    </Reference>
 	</ItemGroup>
 
 	<ItemGroup>
@@ -81,7 +117,12 @@
 
 	<Target Name="CopyToBin1" AfterTargets="Build">
 
+		<!-- copy compiled output files -->
 		<Copy SourceFiles="@(OutFiles)" DestinationFiles="@(OutFiles->'$(BinaryDir)/%(RecursiveDir)%(Filename)%(Extension)')" />
+
+		<!-- copy assets folder into the game testing directory preserving folder structure
+		     Force all asset subfolder names to lower-case to avoid case-sensitivity issues on the game side -->
+		<Copy SourceFiles="@(Assets)" DestinationFiles="@(Assets-&gt;'$(BinaryDir)/$([System.String]::Copy('%(Assets.RecursiveDir)').ToLowerInvariant())%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
 	</Target>
 
 
