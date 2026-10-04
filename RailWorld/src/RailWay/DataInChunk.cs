@@ -84,16 +84,5 @@ namespace RailWorld.src.RailWay
             chunk.MarkModified();
             serverCache[chunkCoord.Clone()] = data;
         }
-
-        /// <summary>
-        /// Ініціалізує клієнтські представлення секцій.
-        /// </summary>
-        public List<ClientSection> BuildClientSections()
-        {
-            var result = new List<ClientSection>();
-            foreach (var kvp in RailWaySections)
-                result.Add(new ClientSection(kvp.Value));
-            return result;
-        }
     }
 }

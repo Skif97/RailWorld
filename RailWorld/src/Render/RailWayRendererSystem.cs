@@ -17,7 +17,7 @@ namespace RailWorld
         private IShaderProgram prog;
 
         // Словник: ключ матеріалу → рендерер шпал
-        private Dictionary<string, SlepperRenderer> sleeperRenderers = new Dictionary<string, SlepperRenderer>();
+        private Dictionary<string, SleeperRenderer> sleeperRenderers = new Dictionary<string, SleeperRenderer>();
 
         // Словник: ключ матеріалу → рендерер рейок
         private Dictionary<string, RailSectionRenderer> railRenderers = new Dictionary<string, RailSectionRenderer>();
@@ -45,10 +45,10 @@ namespace RailWorld
             {
                 ItemStack stack = CreateStack("sleeper", material);
                 if (stack == null) return;
-                renderer = new SlepperRenderer(capi, stack);
+                renderer = new SleeperRenderer(capi, stack);
                 sleeperRenderers[material] = renderer;
             }
-            renderer.AddRailWayPart(position, new RWPartData(rotation));
+            renderer.AddRailWayPart(position, new SleeperInstance(rotation));
         }
 
         /// <summary>

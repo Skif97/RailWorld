@@ -47,16 +47,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Compile Remove="src\NewFolder\**" />
-	  <EmbeddedResource Remove="src\NewFolder\**" />
-	  <None Remove="src\NewFolder\**" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<None Remove="src\VAPlayerData.cs~RF1a0530a.TMP" />
-	</ItemGroup>
-
-	<ItemGroup>
 		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\Newtonsoft.Json.dll">
 			<Private>false</Private>
 		</Reference>

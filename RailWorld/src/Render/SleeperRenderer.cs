@@ -9,20 +9,20 @@ using Vintagestory.API.Util;
 
 namespace RailWorld
 {
-    internal class SlepperRenderer
+    internal class SleeperRenderer
     {
         private ICoreClientAPI capi;
         private MeshData itemMesh;
         private MeshRef meshref;
         public int TextureId { get; private set; }
         private CustomMeshDataPartFloat matrixAndLightFloats;
-        private Dictionary<Vec3d, RWPartData> positions = new Dictionary<Vec3d, RWPartData>();
+        private Dictionary<Vec3d, SleeperInstance> positions = new Dictionary<Vec3d, SleeperInstance>();
 
         protected float[] tmpMat = Mat4f.Create();
         protected double[] quat = Quaterniond.Create();
         protected Vec3f tmp = new Vec3f();
 
-        public SlepperRenderer(ICoreClientAPI capi, ItemStack itemStack)
+        public SleeperRenderer(ICoreClientAPI capi, ItemStack itemStack)
         {
             this.capi = capi;
 
@@ -67,7 +67,7 @@ namespace RailWorld
             meshref = capi.Render.UploadMesh(itemMesh);
         }
 
-        public void AddRailWayPart(Vec3d position, RWPartData data)
+        public void AddRailWayPart(Vec3d position, SleeperInstance data)
         {
             data.light = GetLight(position);
             positions[position] = data;
@@ -129,7 +129,7 @@ namespace RailWorld
             foreach (var kvp in positions)
             {
                 Vec3d pos = kvp.Key;
-                RWPartData data = kvp.Value;
+                SleeperInstance data = kvp.Value;
 
                 tmp.Set(
                     (float)(pos.X - camPos.X),
@@ -142,7 +142,7 @@ namespace RailWorld
             }
         }
 
-        private void UpdateLightAndTransformMatrix(int index, Vec3f distToCamera, RWPartData data)
+        private void UpdateLightAndTransformMatrix(int index, Vec3f distToCamera, SleeperInstance data)
         {
             Mat4f.Identity(tmpMat);
             Mat4f.Translate(tmpMat, tmpMat, distToCamera.X, distToCamera.Y, distToCamera.Z);

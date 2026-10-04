@@ -1,7 +1,6 @@
 {
     "code": "Rail",
     "class": "BlockRail",
-    "entityClass": "BlockEntityRail",
     "shape": { "base": "block/rail" },
     "creativeinventory": { "general": [ "*" ] },
     "blockmaterial": "Metal",

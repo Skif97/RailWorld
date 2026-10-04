@@ -54,9 +54,6 @@ namespace RailWorld.src.RailWay
         [ProtoMember(19)]
         private bool _sleeperInstalled;
 
-        private ITreeAttribute firstRail;
-        private ITreeAttribute secondRail;
-        private ITreeAttribute Sleeper;
         [ProtoMember(23)]
         private string _sleeperMaterial;
         [ProtoMember(24)]

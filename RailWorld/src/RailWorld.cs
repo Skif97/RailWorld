@@ -41,11 +41,8 @@ namespace RailWorld
 
     public class RailWorld : ModSystem
     {
-        public const int sectiontPerBlock = 2;
-
         /// <summary>Значення матеріалу, яке означає «цю деталь не ставити».</summary>
         public const string DontBuild = "none";
-        static internal ICoreAPI coreAPI;
         static internal ICoreClientAPI _capi;
         static internal ICoreServerAPI _sapi;
         static IServerNetworkChannel _serverChannel;
@@ -56,10 +53,8 @@ namespace RailWorld
 
         public override void Start(ICoreAPI api)
         {
-            coreAPI = api;
             base.Start(api);
             api.RegisterBlockClass("BlockRail", typeof(BlockRail));
-            api.RegisterBlockEntityClass("BlockEntityRail", typeof(BlockEntityRail));
             api.RegisterItemClass("ItemTrolley", typeof(ItemTrolley));
             api.RegisterEntity("EntityTrolley", typeof(EntityTrolley));
             api.RegisterItemClass("ItemSleeper", typeof(ItemSleeper));

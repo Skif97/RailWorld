@@ -11,17 +11,6 @@ namespace RailWorld
 {
     public class BlockRail : Block
     {
-        public override void OnLoaded(ICoreAPI api)
-        {
-            base.OnLoaded(api);
-        }
-
-        public override void OnBeforeRender(ICoreClientAPI capi, ItemStack itemstack,
-            EnumItemRenderTarget target, ref ItemRenderInfo renderinfo)
-        {
-            base.OnBeforeRender(capi, itemstack, target, ref renderinfo);
-        }
-
         // Предметом для прокладання колії блоки не ламаються. Для секції blockSel дорівнює null,
         // тому видалення секцій цим самим предметом працює далі
         public override void OnHeldAttackStart(ItemSlot slot, EntityAgent byEntity, BlockSelection blockSel, EntitySelection entitySel, ref EnumHandHandling handling)
@@ -32,32 +21,6 @@ namespace RailWorld
                 return;
             }
             base.OnHeldAttackStart(slot, byEntity, blockSel, entitySel, ref handling);
-        }
-
-        public override Cuboidf[] GetCollisionBoxes(IBlockAccessor blockAccessor, BlockPos pos)
-        {
-            BlockEntityRail bentity = blockAccessor.GetBlockEntity(pos) as BlockEntityRail;
-            if (bentity != null)
-            {
-                Cuboidf[] colisions = new Cuboidf[1];
-                colisions[0] = this.CollisionBoxes[0];
-                colisions[0].Y2 = bentity.GetHeightSections() + 0.09375f;
-                return colisions;
-            }
-            return base.GetCollisionBoxes(blockAccessor, pos);
-        }
-
-        public override Cuboidf[] GetSelectionBoxes(IBlockAccessor blockAccessor, BlockPos pos)
-        {
-            BlockEntityRail bentity = blockAccessor.GetBlockEntity(pos) as BlockEntityRail;
-            if (bentity != null)
-            {
-                Cuboidf[] selection = new Cuboidf[1];
-                selection[0] = this.SelectionBoxes[0];
-                selection[0].Y2 = bentity.GetHeightSections() + 0.25f;
-                return selection;
-            }
-            return base.GetSelectionBoxes(blockAccessor, pos);
         }
 
         public override bool DoPlaceBlock(IWorldAccessor world, IPlayer byPlayer,
