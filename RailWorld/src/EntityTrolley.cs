@@ -1,3 +1,4 @@
+using Vintagestory.API.Server;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using System;
@@ -54,6 +55,29 @@ namespace RailWorld
         // Сусідні ділянки можуть бути прокладені назустріч, тому при переході це треба перераховувати
         private int railFacing = 1;
 
+        // Мотор. Швидкості його передач у блоках за секунду, від першої до найвищої; порожньо означає,
+        // що мотора немає. Беруться з атрибутів сутності
+        private double[] motorGears = new double[0];
+        // Наскільки швидко мотор розганяє і наскільки швидко гальмує, блоків за секунду в квадраті
+        public const double MotorAccel = 4;
+        public const double MotorBrake = 6;
+
+        // Мотор вимкнено: вагонетка котиться сама, як звичайна. Так завжди, коли в ній ніхто не сидить
+        private const int MotorOff = 0;
+        // Мотор тримає свою швидкість і на підйомі, і на спуску
+        private const int MotorDrive = 1;
+        // Мотор гальмує до зупинки і тримає вагонетку на місці, навіть на ухилі
+        private const int MotorHold = 2;
+
+        private int motorMode = MotorOff;
+        // Куди мотор везе відносно поточної секції: 1 у бік її кінця, -1 у бік початку
+        private int motorDir = 1;
+        // Увімкнена передача, рахуючи з одиниці. Має зміст, лише поки мотор везе
+        private int motorGear;
+        // Чи тримав пасажир «вперед» і «назад» минулого тіку: передачі перемикаються натисканням, а не утриманням
+        private bool forwardWasDown;
+        private bool backwardWasDown;
+
         // Клік, яким вагонетку поставили, не має ні штовхати її, ні садити в неї
         private const long InteractDelayAfterSpawnMs = 1000;
         private long spawnedAtMs;
@@ -95,6 +119,7 @@ namespace RailWorld
             touchDistanceSq = (double)Math.Max(0.001f, SelectionBox.XSize);
 
             airDrag = properties.Attributes?["airDragFactor"].AsDouble(DefaultAirDrag) ?? DefaultAirDrag;
+            motorGears = properties.Attributes?["motorGears"].AsArray<double>(null) ?? new double[0];
 
             spawnedAtMs = World.ElapsedMilliseconds;
             if (api.Side == EnumAppSide.Server) LoadRailState();
@@ -109,6 +134,9 @@ namespace RailWorld
             railVelocity = Attributes.GetDouble("railVelocity");
             sectionsWithoutSleeper = Attributes.GetInt("railNoSleeper");
             railFacing = Attributes.GetInt("railFacing", 1) < 0 ? -1 : 1;
+            motorMode = Attributes.GetInt("motorMode", MotorOff);
+            motorDir = Attributes.GetInt("motorDir", 1) < 0 ? -1 : 1;
+            motorGear = Attributes.GetInt("motorGear");
             SetOnRail(onRail);
         }
 
@@ -123,6 +151,34 @@ namespace RailWorld
             Attributes.SetDouble("railVelocity", railVelocity);
             Attributes.SetInt("railNoSleeper", sectionsWithoutSleeper);
             Attributes.SetInt("railFacing", railFacing);
+            Attributes.SetInt("motorMode", motorMode);
+            Attributes.SetInt("motorDir", motorDir);
+            Attributes.SetInt("motorGear", motorGear);
+        }
+
+        // Нахил полотна під вагонеткою, радіани. У кути сутності він не вміщається (див. ModMath.TrackFrameToEntityAngles),
+        // тому їде клієнту окремим числом, а той ставить його в рендер
+        public const string CantAttribute = "railCant";
+        // Нахил, з яким вагонетка намальована зараз: клієнт плавно веде його до присланого
+        private float shownCant;
+
+        /// <summary>Нахил полотна під вагонеткою: на клієнті той, що зараз на екрані, на сервері останній порахований.</summary>
+        public float Cant => Api?.Side == EnumAppSide.Client ? shownCant : WatchedAttributes.GetFloat(CantAttribute);
+
+        private void SetCant(float value)
+        {
+            if (Math.Abs(WatchedAttributes.GetFloat(CantAttribute) - value) < 0.0005f) return;
+            WatchedAttributes.SetFloat(CantAttribute, value);
+            WatchedAttributes.MarkPathDirty(CantAttribute);
+        }
+
+        // Клієнт: передає нахил полотна в рендер. xangle це додатковий поворот навколо осі X моделі після всіх
+        // кутів сутності; сама гра ним гойдає сутності на воді
+        private void ShowCant(float dt)
+        {
+            float target = WatchedAttributes.GetFloat(CantAttribute);
+            shownCant += (target - shownCant) * Math.Min(1f, dt * 10f);
+            if (Properties.Client.Renderer is EntityShapeRenderer renderer) renderer.xangle = shownCant;
         }
 
         // Клієнту стан потрібен лише для тяжіння, тому синхронізуємо один прапорець і лише при зміні
@@ -137,7 +193,12 @@ namespace RailWorld
         public override void OnGameTick(float dt)
         {
             base.OnGameTick(dt);
-            if (Api.Side != EnumAppSide.Server || !onRail) return;
+            if (Api.Side == EnumAppSide.Client)
+            {
+                ShowCant(dt);
+                return;
+            }
+            if (!onRail) return;
 
             TickOnRail(dt);
             SaveRailState();
@@ -164,7 +225,11 @@ namespace RailWorld
             }
 
             double timeLeft = dt;
-            Vec3d drive = GetDriveDirection();
+
+            // Моторизовану вагонетку пасажир не розганяє сам: він лише вмикає мотор і гальмує
+            bool hasMotor = motorGears.Length > 0;
+            Vec3d drive = hasMotor ? null : GetDriveDirection();
+            double motorTarget = hasMotor ? UpdateMotor(section) : 0;
 
             // Запобіжник: за тік не буває стільки переходів між секціями і зупинок
             for (int guard = 0; guard < 256 && timeLeft > 0; guard++)
@@ -185,11 +250,21 @@ namespace RailWorld
                     if (railVelocity * driveSign < DriveMaxSpeed) slopeAccel += driveSign * (RollingResistance + DriveAccel);
                 }
 
+                // Мотор увімкнено: швидкість задає він, а не ухил. Цільова швидкість уздовж осі секції зі знаком
+                bool governed = hasMotor && motorMode != MotorOff;
+                double motorVelocity = motorMode == MotorDrive ? motorDir * motorTarget : 0;
+
                 // Напрямок руху. Якщо стоїмо, його задає ухил, але лише коли він сильніший за опір
                 int dir;
                 if (railVelocity != 0)
                 {
                     dir = Math.Sign(railVelocity);
+                }
+                else if (governed)
+                {
+                    // Стоїмо під мотором: або рушаємо, куди він везе, або він тримає нас на місці
+                    if (motorVelocity == 0) break;
+                    dir = Math.Sign(motorVelocity);
                 }
                 else if (Math.Abs(slopeAccel) > RollingResistance)
                 {
@@ -206,6 +281,39 @@ namespace RailWorld
                 // беремо його за швидкістю на початку відрізка. Відрізки короткі, похибка мала
                 double accel = dir * slopeAccel - RollingResistance - airDrag * speed * speed;
                 double distance = dir > 0 ? length - railS : railS;
+
+                if (governed)
+                {
+                    // Швидкість, якої хоче мотор, у напрямку теперішнього руху. Від'ємна, якщо везти треба в інший бік:
+                    // тоді спершу гальмуємо до нуля, а далі рушаємо вже туди
+                    double wanted = dir * motorVelocity;
+
+                    if (Math.Abs(wanted - speed) < 1e-6)
+                    {
+                        // Уже їдемо, як треба: ухил і опір мотор компенсує повністю
+                        accel = 0;
+                    }
+                    else
+                    {
+                        accel = wanted > speed ? MotorAccel : -MotorBrake;
+
+                        // Прискорення стале, тому точно відомо, коли і де швидкість зрівняється з потрібною.
+                        // Якщо це станеться в цій секції і в цьому тіку, доїжджаємо до того місця і далі тримаємо її
+                        if (wanted >= 0)
+                        {
+                            double timeToTarget = (wanted - speed) / accel;
+                            double distanceToTarget = (wanted * wanted - speed * speed) / (2 * accel);
+
+                            if (timeToTarget <= timeLeft && distanceToTarget <= distance)
+                            {
+                                Advance(dir, speed, accel, timeToTarget, length);
+                                railVelocity = dir * wanted;
+                                timeLeft -= timeToTarget;
+                                continue;
+                            }
+                        }
+                    }
+                }
 
                 if (distance > 1e-9)
                 {
@@ -272,8 +380,92 @@ namespace RailWorld
                 if (result == EnterResult.Blocked) break;
             }
 
-            ApplyRailPose(Pos, section, railS, SelectionBox.Y2 / 2, railFacing);
+            ApplyRailPose(Pos, section, railS, SelectionBox.Y2 / 2, railFacing, out float cant);
+            SetCant(cant);
             Pos.Motion.Set(0, 0, 0);
+        }
+
+        // Читає керування пасажира моторизованої вагонетки і повертає швидкість, яку мотор має тримати.
+        // «Вперед» це газ: перше натискання рушає в той бік колії, куди пасажир дивиться, кожне наступне
+        // вмикає вищу передачу. «Назад» це гальмо: кожне натискання скидає передачу, а з першої зупиняє
+        // вагонетку і тримає її на місці, навіть на ухилі. Напрямок вибирається лише при рушанні: далі
+        // погляд ні на що не впливає. Без пасажира мотор вимкнений, і вагонетка котиться сама
+        private double UpdateMotor(Section section)
+        {
+            EntityBehaviorSeatable seatable = GetBehavior<EntityBehaviorSeatable>();
+            IMountableSeat driver = null;
+            if (seatable?.Seats != null)
+            {
+                foreach (IMountableSeat seat in seatable.Seats)
+                {
+                    if (seat?.Passenger != null && seat.Controls != null)
+                    {
+                        driver = seat;
+                        break;
+                    }
+                }
+            }
+
+            if (driver == null)
+            {
+                motorMode = MotorOff;
+                motorGear = 0;
+                forwardWasDown = false;
+                backwardWasDown = false;
+                return 0;
+            }
+
+            bool forward = driver.Controls.Forward;
+            bool backward = driver.Controls.Backward;
+            bool gas = forward && !forwardWasDown;
+            bool brake = backward && !backwardWasDown;
+            forwardWasDown = forward;
+            backwardWasDown = backward;
+
+            if (gas && !brake)
+            {
+                if (motorMode == MotorDrive)
+                {
+                    motorGear = Math.Min(motorGear + 1, motorGears.Length);
+                }
+                else
+                {
+                    Vec3f view = driver.Passenger.Pos.GetViewVector();
+                    Vec3d start = section.FullStartPosition;
+                    Vec3d end = section.FullEndPosition;
+                    motorDir = (end.X - start.X) * view.X + (end.Z - start.Z) * view.Z >= 0 ? 1 : -1;
+                    motorMode = MotorDrive;
+                    motorGear = 1;
+                }
+                ShowGear(driver.Passenger);
+            }
+            else if (brake && !gas)
+            {
+                if (motorMode == MotorDrive && motorGear > 1)
+                {
+                    motorGear--;
+                }
+                else
+                {
+                    motorMode = MotorHold;
+                    motorGear = 0;
+                }
+                ShowGear(driver.Passenger);
+            }
+
+            return motorMode == MotorDrive ? motorGears[GameMath.Clamp(motorGear, 1, motorGears.Length) - 1] : 0;
+        }
+
+        // Коротке повідомлення пасажирові посеред екрана: яка передача і швидкість
+        private void ShowGear(Entity passenger)
+        {
+            IServerPlayer player = (passenger as EntityPlayer)?.Player as IServerPlayer;
+            if (player == null) return;
+
+            string text = motorMode == MotorDrive
+                ? "Передача " + motorGear + " з " + motorGears.Length + ": " + motorGears[motorGear - 1] + " блоків за секунду"
+                : "Гальмо";
+            player.SendIngameError("trolleygear", text);
         }
 
         // Куди пасажир хоче їхати: горизонтальний напрямок його погляду, якщо тримає «вперед»,
@@ -347,6 +539,9 @@ namespace RailWorld
             double speed = Math.Abs(railVelocity);
             section = next.Section;
 
+            // Вагонетка розчищає колію, якою їде
+            TrackBed.ClearSnow(World, section, TrackBed.SnowAfterTrolley);
+
             // Розгінні рейки: один раз при наїзді на секцію, в напрямку руху.
             // Рахуємо як з'їзд із гірки: v² = u² + 2gh
             int boostRails = (section.GetMaterial(SectionPart.FirstRail) == BoostRailMaterial ? 1 : 0)
@@ -360,7 +555,12 @@ namespace RailWorld
 
             // Виїхали через кінець і заїхали через кінець (або початок і початок): осі секцій дивляться назустріч,
             // тож відносно нової осі перед вагонетки тепер з іншого боку
-            if (leaveAtStart == next.EnterAtStart) railFacing = -railFacing;
+            if (leaveAtStart == next.EnterAtStart)
+            {
+                railFacing = -railFacing;
+                // З тієї самої причини перевертається і бік, у який везе мотор
+                motorDir = -motorDir;
+            }
 
             // Якщо заїхали через кінець сусідньої секції, їдемо в бік її початку
             if (next.EnterAtStart)
@@ -396,6 +596,7 @@ namespace RailWorld
             sectionsWithoutSleeper = 0;
             Pos.Pitch = 0;
             Pos.Roll = 0;
+            SetCant(0);
             SetOnRail(false);
             SaveRailState();
         }
@@ -469,8 +670,9 @@ namespace RailWorld
         /// з поворотом, ухилом і нахилом полотна. halfHeight це половина висоти боксу сутності,
         /// facing каже, в який бік секції дивиться перед: 1 у бік кінця, -1 у бік початку.
         /// </summary>
-        public static void ApplyRailPose(EntityPos pos, Section section, double s, double halfHeight, int facing)
+        public static void ApplyRailPose(EntityPos pos, Section section, double s, double halfHeight, int facing, out float cant)
         {
+            cant = 0;
             Vec3d start = section.FullStartPosition;
             Vec3d end = section.FullEndPosition;
             Vec3d along = new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z);
@@ -486,10 +688,12 @@ namespace RailWorld
             Vec3d forward = facing < 0 ? along.Clone().Mul(-1) : along;
             Vec3d right = facing < 0 ? side.Clone().Mul(-1) : side;
 
-            ModMath.TrackFrameToEntityAngles(forward, right, up, out float yaw, out float pitch, out float roll);
+            // Ухил іде в Roll: рендер застосовує його одразу після курсу, тобто навколо поперечної осі вагонетки.
+            // Нахил полотна повертається окремо, Pitch лишається нулем
+            ModMath.TrackFrameToEntityAngles(forward, right, up, out float yaw, out float tilt, out cant);
             pos.Yaw = yaw;
-            pos.Pitch = pitch;
-            pos.Roll = roll;
+            pos.Pitch = 0;
+            pos.Roll = tilt;
 
             // Рендер обертає модель навколо середини її висоти, тому зсуваємо позицію так,
             // щоб після нахилу низ моделі лишився на осі колії

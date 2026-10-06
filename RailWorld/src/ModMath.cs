@@ -252,37 +252,34 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Кути сутності, з якими стандартний рендер (EntityShapeRenderer) поставить модель по колії:
+        /// Кути, з якими стандартний рендер (EntityShapeRenderer) поставить модель по колії:
         /// вісь X моделі проти напрямку колії, Z проти нормалі, Y по верху полотна.
-        /// Рендер збирає поворот як Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll), тому кути розкладаємо саме під цей порядок.
+        /// Поворот розкладається як у літака: курс, потім ухил навколо поперечної осі вагонетки, потім нахил
+        /// полотна навколо поздовжньої, тобто Ry(yaw + 90°) * Rz(tilt) * Rx(cant). Рендер збирає поворот як
+        /// Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll) * Rx(xangle), тому yaw іде в Yaw, tilt у Roll, cant у xangle,
+        /// а Pitch лишається нулем.
+        /// Розкладати на самі Pitch, Yaw і Roll не можна: у такого порядку є мертва точка, коли колія йде
+        /// вздовж осі Z. Біля неї Pitch і Roll між сусідніми секціями перестрибують на пів оберту, і клієнт,
+        /// який веде кожен кут окремо, на мить показує вагонетку перекошеною. У цього розкладу мертва точка
+        /// лише при вертикальній колії.
         /// </summary>
-        public static void TrackFrameToEntityAngles(Vec3d along, Vec3d side, Vec3d up, out float yaw, out float pitch, out float roll)
+        public static void TrackFrameToEntityAngles(Vec3d along, Vec3d side, Vec3d up, out float yaw, out float tilt, out float cant)
         {
-            // Рядки матриці повороту зі стовпцями (-along, up, -side)
-            double m00 = -along.X, m01 = up.X, m02 = -side.X;
-            double m10 = -along.Y, m11 = up.Y;
-            double m12 = -side.Y, m22 = -side.Z;
+            // Вісь X моделі дивиться проти напрямку колії. Її підйом над горизонтом це ухил, а напрямок у плані це курс
+            double turn = Math.Atan2(along.Z, -along.X);
+            double slope = Math.Asin(GameMath.Clamp(-along.Y, -1, 1));
 
-            double a, b, c;
-            if (Math.Abs(m02) > 0.99999)
-            {
-                // Колія рівно вздовж осі Z без нахилів: Pitch і Roll зливаються в один кут
-                a = 0;
-                b = Math.Sign(m02) * Math.PI / 2;
-                c = Math.Atan2(m10, m11);
-            }
-            else
-            {
-                // Гілку вибираємо так, щоб Pitch лишався в межах ±90°
-                double s = m22 >= 0 ? 1 : -1;
-                a = Math.Atan2(-m12 * s, m22 * s);
-                b = Math.Atan2(m02, s * Math.Sqrt(m00 * m00 + m01 * m01));
-                c = Math.Atan2(-m01 * s, m00 * s);
-            }
+            double cosTurn = Math.Cos(turn), sinTurn = Math.Sin(turn);
+            double cosSlope = Math.Cos(slope), sinSlope = Math.Sin(slope);
 
-            pitch = (float)a;
-            yaw = (float)(b - Math.PI / 2);
-            roll = (float)c;
+            // Куди дивилися б верх і бік моделі після курсу й ухилу, без нахилу полотна.
+            // Справжній верх повернутий від першого до другого на кут нахилу
+            double levelUp = -cosTurn * sinSlope * up.X + cosSlope * up.Y + sinTurn * sinSlope * up.Z;
+            double levelSide = sinTurn * up.X + cosTurn * up.Z;
+
+            yaw = (float)(turn - Math.PI / 2);
+            tilt = (float)slope;
+            cant = (float)Math.Atan2(levelSide, levelUp);
         }
 
         // Нахил полотна в поворотах (підвищення зовнішньої рейки)
@@ -291,8 +288,10 @@ namespace RailWorld
         public const double CantRampLength = 6;              // на скільки блоків від краю кривої нахил наростає з нуля
 
         /// <summary>
-        /// Нахиляє нормалі точок кривої в бік повороту. Кут залежить від кривизни в точці
-        /// і плавно сходить до нуля на краях кривої, щоб стикуватися з сусідніми ділянками.
+        /// Нахиляє нормалі точок кривої в бік повороту. Кут залежить від кривизни, усередненої по відрізку
+        /// колії довжиною CantRampLength навколо точки: там, де сходяться дуги різної кривизни, нахил
+        /// міняється поступово, а не стрибком між двома секціями. На краях кривої він плавно сходить до нуля,
+        /// щоб стикуватися з сусідніми ділянками.
         /// </summary>
         public static void ApplyCant(List<PointOnBezierCurve> points)
         {
@@ -309,6 +308,8 @@ namespace RailWorld
             double ramp = Math.Min(CantRampLength, total / 2);
             if (ramp <= 0) return;
 
+            // Нахил, якого просить кривизна в самій точці
+            double[] raw = new double[count];
             for (int i = 0; i < count; i++)
             {
                 int a = Math.Max(i - 1, 0);
@@ -322,9 +323,22 @@ namespace RailWorld
                 double curvature = span > 1e-9 ? turn / span : 0;
                 if (double.IsNaN(curvature) || double.IsInfinity(curvature)) curvature = 0;
 
+                raw[i] = Math.Sign(curvature) * MaxCantRad * Math.Min(1, FullCantRadius * Math.Abs(curvature));
+            }
+
+            // Середнє по відрізку навколо точки. Вікно їде разом із точкою, тому межі лише зсуваються вперед
+            double half = CantRampLength / 2;
+            int from = 0, to = 0;
+            double sum = 0;
+
+            for (int i = 0; i < count; i++)
+            {
+                while (to < count && dist[to] <= dist[i] + half) sum += raw[to++];
+                while (dist[from] < dist[i] - half) sum -= raw[from++];
+
                 double k = GameMath.Clamp(Math.Min(dist[i], total - dist[i]) / ramp, 0, 1);
                 k = k * k * (3 - 2 * k);
-                double cant = Math.Sign(curvature) * MaxCantRad * Math.Min(1, FullCantRadius * Math.Abs(curvature)) * k;
+                double cant = sum / (to - from) * k;
 
                 PointOnBezierCurve p = points[i];
                 Vec3f n = p.normal;

@@ -99,8 +99,15 @@ namespace RailWorld
                 positions.Remove(key);
         }
 
-        public void OnRenderFrame(float deltaTime, IShaderProgram prog)
+        // Скільки інстансів лежить у буфері після останнього PrepareFrame
+        private int preparedCount;
+
+        /// <summary>
+        /// Раз на кадр: рахує матриці всіх шпал відносно камери і заливає їх у відеокарту.
+        /// </summary>
+        public void PrepareFrame()
         {
+            preparedCount = 0;
             if (meshref == null || positions.Count == 0) return;
 
             int count = positions.Count;
@@ -118,7 +125,16 @@ namespace RailWorld
             matrixAndLightFloats.Count = floatCount;
             itemMesh.CustomFloats = matrixAndLightFloats;
             capi.Render.UpdateMesh(meshref, itemMesh);
-            capi.Render.RenderMeshInstanced(meshref, count);
+            preparedCount = count;
+        }
+
+        /// <summary>
+        /// Малює підготовлені шпали поточним шейдером. Викликається і для основного проходу, і для тіней.
+        /// </summary>
+        public void Draw()
+        {
+            if (meshref == null || preparedCount == 0) return;
+            capi.Render.RenderMeshInstanced(meshref, preparedCount);
         }
 
         private void UpdateCustomFloatBuffer()

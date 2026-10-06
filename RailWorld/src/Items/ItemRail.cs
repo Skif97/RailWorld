@@ -154,7 +154,9 @@ namespace RailWorld.src.Items
 
         public override string GetHeldItemName(ItemStack itemStack)
         {
-            return Lang.Get("item-rail-" + itemStack.Attributes.GetString("material", null), Array.Empty<object>());
+            // Назва складається з назви предмета і назви матеріалу з перекладів гри
+            string material = itemStack.Attributes.GetString("material", null);
+            return Lang.Get("railworld:item-rail", Lang.Get("material-" + material));
         }
 
         public MeshData GetMeshData(ICoreClientAPI capi, ItemStack itemstack)

@@ -29,12 +29,16 @@ namespace RailWorld.src.RailWay
         // Найменша висота колонки з колією, щоб бокс колізії не вироджувався
         private const float MinHeight = 1 / 16f;
 
-        // Блок вважається вільним місцем, якщо його можна замінити (повітря, трава, квіти)
-        private const int ReplaceableThreshold = 6000;
+        /// <summary>
+        /// Блок вважається вільним місцем, якщо гра дозволяє його замінити не гірше за це: повітря, висока трава,
+        /// шар снігу. Квіти сюди не потрапляють, у них це число менше. Те саме число бере розмітка маршруту,
+        /// коли вирішує, крізь які блоки дивитися.
+        /// </summary>
+        public const int ReplaceableThreshold = 6000;
 
         private static Block GetBedBlock(IWorldAccessor world)
         {
-            return world.GetBlock(new AssetLocation("railworld", "trackbed"));
+            return world.GetBlock(new AssetLocation("railworld", "trackbed-free"));
         }
 
         /// <summary>
@@ -282,9 +286,45 @@ namespace RailWorld.src.RailWay
             return total;
         }
 
+        /// <summary>До якого ступеня вагонетка зчищає сніг із колії, якою проїхала: на третьому рейки ледь виступають зі снігу.</summary>
+        public const int SnowAfterTrolley = 3;
+
+        // На крутому підйомі блоки колії стоять стовпчиком, і сніг тримає верхній. Скільки блоків угору його шукати
+        private const int StackReach = 4;
+
+        /// <summary>
+        /// Зчищає сніг під секцією до заданого ступеня. Ступінь снігу це властивість цілого блока,
+        /// тому чистяться всі блоки колії під секцією цілком, а не смуга під колесами.
+        /// </summary>
+        public static void ClearSnow(IWorldAccessor world, Section section, int stage)
+        {
+            IBlockAccessor accessor = world.BlockAccessor;
+            BlockPos at = new BlockPos(0);
+
+            foreach (BlockPos pos in AllCells(section))
+            {
+                BlockTrackBed top = accessor.GetBlock(pos) as BlockTrackBed;
+                if (top == null) continue;
+
+                at.Set(pos);
+                for (int k = 0; k < StackReach; k++)
+                {
+                    BlockTrackBed above = accessor.GetBlock(at.Up()) as BlockTrackBed;
+                    if (above == null)
+                    {
+                        at.Down();
+                        break;
+                    }
+                    top = above;
+                }
+
+                top.ReduceSnow(world, at, stage);
+            }
+        }
+
         private static bool IsFree(Block block, Block bed)
         {
-            return block.Id == 0 || block.Id == bed.Id || block.Replaceable >= ReplaceableThreshold;
+            return block.Id == 0 || block is BlockTrackBed || block.Replaceable >= ReplaceableThreshold;
         }
 
         /// <summary>
@@ -380,7 +420,8 @@ namespace RailWorld.src.RailWay
             foreach (BlockPos pos in AllCells(section))
             {
                 Block block = accessor.GetBlock(pos);
-                if (block.Id != bed.Id)
+                // Блок колії буває двох різновидів, звичайний і засніжений, тому перевіряємо клас, а не код
+                if (!(block is BlockTrackBed))
                 {
                     if (!IsFree(block, bed)) continue;
                     accessor.SetBlock(bed.Id, pos);

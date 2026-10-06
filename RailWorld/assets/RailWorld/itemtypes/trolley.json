@@ -1,10 +1,11 @@
 {
 
     "code": "trolley",
+    "variantgroups": [ { "code": "type", "states": ["iron", "gold"] } ],
     "class": "ItemTrolley",
     "maxstacksize": 16,
     "shape": { "base": "entity/trolley" },
-    "texture": { "base": "game:block/metal/plate/iron" },
+    "texture": { "base": "game:block/metal/plate/{type}" },
     "creativeinventory": {
         "general": [ "*" ],
         "items": [ "*" ],

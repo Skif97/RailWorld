@@ -56,6 +56,7 @@ namespace RailWorld
             ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog.WithAlignment(EnumDialogArea.CenterMiddle);
             ElementBounds leftColumn = ElementBounds.Fixed(0, 200, 680, 480);
             ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
+            ElementBounds pointsButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 20, 640, 40);
             ElementBounds singleBlockButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 70, 160, 40);
             ElementBounds turnButton90 = ElementBounds.Fixed(EnumDialogArea.CenterFixed, -86, 70, 160, 40);
             ElementBounds turnButton45 = ElementBounds.Fixed(EnumDialogArea.CenterFixed, 86, 70, 160, 40);
@@ -101,6 +102,7 @@ namespace RailWorld
             bgBounds.WithChildren(leftColumn);
             SingleComposer = capi.Gui.CreateCompo("Train World: Selecting the type of rails to be placed", dialogBounds)
             .AddShadedDialogBG(bgBounds)
+            .AddButton("By points", OnClickPointsButton, pointsButton, EnumButtonStyle.Normal, "PointsButton")
             .AddButton("Single block", OnClickSingleBlockButton, singleBlockButton, EnumButtonStyle.Normal, "SingleBlockButton")
             .AddButton("Turn 90 deg", OnClickTurnButton90, turnButton90, EnumButtonStyle.Normal,  "Turn90Button")
             .AddButton("Turn 45 deg", OnClickTurnButton45, turnButton45, EnumButtonStyle.Normal, "Turn45Button")
@@ -135,7 +137,7 @@ namespace RailWorld
             SingleComposer.GetButton(railDirection + "Button").SetActive(true);
             SingleComposer.GetButton(railMode + "Button").SetActive(true);
 
-            if(railMode== "SingleBlock") 
+            if(railMode== "SingleBlock" || railMode == RoutePlanner.ModeCode) 
             {
                 SingleComposer.GetButton("RightButton").Enabled = false;
                 SingleComposer.GetButton("LeftButton").Enabled = false;
@@ -254,8 +256,27 @@ namespace RailWorld
             return true;
         }
 
+        // Маршрут по точках: радіус, підйом і сторона тут не потрібні, форму задають самі точки
+        private bool OnClickPointsButton()
+        {
+            SingleComposer.GetButton("SingleBlockButton").SetActive(false);
+            SingleComposer.GetButton("Turn90Button").SetActive(false);
+            SingleComposer.GetButton("Turn45Button").SetActive(false);
+            SingleComposer.GetButton("StraightButton").SetActive(false);
+            SingleComposer.GetButton("PointsButton").SetActive(true);
+
+            SingleComposer.GetButton("RightButton").Enabled = false;
+            SingleComposer.GetButton("LeftButton").Enabled = false;
+            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = false;
+            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = false;
+            railMode = RoutePlanner.ModeCode;
+            UpdateRailMode();
+            return true;
+        }
+
         private bool OnClickSingleBlockButton()
         {
+            SingleComposer.GetButton("PointsButton").SetActive(false);
             SingleComposer.GetButton("Turn90Button").SetActive(false);
             SingleComposer.GetButton("Turn45Button").SetActive(false);
             SingleComposer.GetButton("StraightButton").SetActive(false);
@@ -272,6 +293,7 @@ namespace RailWorld
 
         private bool OnClickTurnButton90()
         {
+            SingleComposer.GetButton("PointsButton").SetActive(false);
             SingleComposer.GetButton("SingleBlockButton").SetActive(false);
             SingleComposer.GetButton("StraightButton").SetActive(false);
             SingleComposer.GetButton("Turn90Button").SetActive(true);
@@ -288,6 +310,7 @@ namespace RailWorld
 
         private bool OnClickTurnButton45()
         {
+            SingleComposer.GetButton("PointsButton").SetActive(false);
             SingleComposer.GetButton("SingleBlockButton").SetActive(false);
             SingleComposer.GetButton("StraightButton").SetActive(false);
             SingleComposer.GetButton("Turn90Button").SetActive(false);
@@ -304,6 +327,7 @@ namespace RailWorld
 
         private bool OnClickStraightButton()
         {
+            SingleComposer.GetButton("PointsButton").SetActive(false);
             SingleComposer.GetButton("SingleBlockButton").SetActive(false);
             SingleComposer.GetButton("Turn90Button").SetActive(false);
             SingleComposer.GetButton("Turn45Button").SetActive(false);

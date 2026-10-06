@@ -55,6 +55,7 @@ namespace RailWorld
         public RailWayRendererSystem Renderer { get; private set; }
 
         private RailSelectionRenderer selectionRenderer;
+        private RoutePlanner routePlanner;
         private SectionInteractionClient interaction;
 
         /// <summary>
@@ -152,6 +153,7 @@ namespace RailWorld
         {
             Renderer = new RailWayRendererSystem(capi);
             selectionRenderer = new RailSelectionRenderer(capi, this);
+            routePlanner = new RoutePlanner(capi, this);
         }
 
         /// <summary>
@@ -281,6 +283,8 @@ namespace RailWorld
             Renderer = null;
             selectionRenderer?.Dispose();
             selectionRenderer = null;
+            routePlanner?.Dispose();
+            routePlanner = null;
             interaction?.Dispose();
             clientBoxes.Clear();
         }

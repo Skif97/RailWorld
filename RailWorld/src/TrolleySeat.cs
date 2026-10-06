@@ -35,20 +35,27 @@ namespace RailWorld
 
         /// <summary>
         /// Куди дивиться перед вагонетки і куди її верх, у світових координатах.
-        /// Рахується з кутів сутності тим самим поворотом, яким рендер ставить її модель:
-        /// Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll), перед моделі це її вісь -X.
+        /// Рахується тим самим поворотом, яким рендер ставить її модель, перед моделі це її вісь -X.
         /// </summary>
         public static void GetTrolleyFrame(Entity trolley, Matrixf tmp, out Vec3d forward, out Vec3d up)
         {
             tmp.Identity();
-            tmp.RotateX(trolley.Pos.Pitch);
-            tmp.RotateY(trolley.Pos.Yaw + GameMath.PIHALF);
-            tmp.RotateZ(trolley.Pos.Roll);
+            RotateLikeRenderer(trolley, tmp);
 
             Vec4f f = tmp.TransformVector(new Vec4f(-1, 0, 0, 0));
             Vec4f u = tmp.TransformVector(new Vec4f(0, 1, 0, 0));
             forward = new Vec3d(f.X, f.Y, f.Z);
             up = new Vec3d(u.X, u.Y, u.Z);
+        }
+
+        // Поворот моделі вагонетки, як його збирає рендер: Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll) * Rx(нахил полотна).
+        // Нахил полотна лежить не в кутах сутності, а окремо, див. ModMath.TrackFrameToEntityAngles
+        private static void RotateLikeRenderer(Entity trolley, Matrixf matrix)
+        {
+            matrix.RotateX(trolley.Pos.Pitch);
+            matrix.RotateY(trolley.Pos.Yaw + GameMath.PIHALF);
+            matrix.RotateZ(trolley.Pos.Roll);
+            matrix.RotateX((trolley as EntityTrolley)?.Cant ?? 0f);
         }
 
         public override EntityPos SeatPosition
@@ -63,9 +70,7 @@ namespace RailWorld
                 // Точка сидіння нахиляється разом із вагонеткою: рендер обертає модель навколо середини її висоти
                 modelmat.Identity();
                 modelmat.Translate(0f, half, 0f);
-                modelmat.RotateX(trolley.Pos.Pitch);
-                modelmat.RotateY(trolley.Pos.Yaw + GameMath.PIHALF);
-                modelmat.RotateZ(trolley.Pos.Roll);
+                RotateLikeRenderer(trolley, modelmat);
                 modelmat.Translate(0f, -half, 0f);
                 if (config?.RiderOffset != null) modelmat.Translate(config.RiderOffset);
 

@@ -24,6 +24,34 @@ namespace RailWorld
 
         private long lightListenerId;
 
+        // Шейдер для карти тіней. Стандартний шейдер інстансів у грі тіней не вміє, а шейдер тіней гри
+        // не вміє інстансів, тому тут свій: лише позиція вершини, матриця інстанса і матриця світла
+        private IShaderProgram shadowProg;
+
+        private const string ShadowVertexShader = @"#version 330 core
+#extension GL_ARB_explicit_attrib_location: enable
+
+layout(location = 0) in vec3 vertexPosition;
+layout(location = 5) in mat4 transform;
+
+uniform mat4 mvpMatrix;
+
+void main()
+{
+	gl_Position = mvpMatrix * transform * vec4(vertexPosition, 1.0);
+}
+";
+
+        private const string ShadowFragmentShader = @"#version 330 core
+
+out vec4 outColor;
+
+void main()
+{
+	outColor = vec4(1.0);
+}
+";
+
         public double RenderOrder => 0.5;
         public int RenderRange => 350;
 
@@ -31,7 +59,14 @@ namespace RailWorld
         {
             this.capi = capi;
             this.prog = capi.Shader.GetProgramByName("instanced");
+            // Before: готуємо буфери раз на кадр. Далі ті самі буфери малюються в картах тіней і в основному проході
+            capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railsection-prepare");
+            capi.Event.RegisterRenderer(this, EnumRenderStage.ShadowFar, "railsection-shadowfar");
+            capi.Event.RegisterRenderer(this, EnumRenderStage.ShadowNear, "railsection-shadownear");
             capi.Event.RegisterRenderer(this, EnumRenderStage.Opaque, "railsection");
+
+            capi.Event.ReloadShader += LoadShadowShader;
+            LoadShadowShader();
             // Світло блоків змінюється (факели, перекрите небо), тому перечитуємо його двічі на секунду
             lightListenerId = capi.Event.RegisterGameTickListener(UpdateLights, 500);
         }
@@ -115,12 +150,38 @@ namespace RailWorld
                 renderer.UpdateLights();
         }
 
+        // Збирає шейдер тіней. Викликається при старті і щоразу, коли гра перезбирає шейдери
+        private bool LoadShadowShader()
+        {
+            IShaderProgram loaded = capi.Shader.NewShaderProgram();
+            loaded.VertexShader = capi.Shader.NewShader(EnumShaderType.VertexShader);
+            loaded.FragmentShader = capi.Shader.NewShader(EnumShaderType.FragmentShader);
+            loaded.VertexShader.Code = ShadowVertexShader;
+            loaded.FragmentShader.Code = ShadowFragmentShader;
+
+            capi.Shader.RegisterMemoryShaderProgram("railworldshadow", loaded);
+            bool ok = loaded.Compile();
+            shadowProg = ok ? loaded : null;
+            return ok;
+        }
+
         public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
         {
+            if (stage == EnumRenderStage.Before)
+            {
+                foreach (var renderer in sleeperRenderers.Values) renderer.PrepareFrame();
+                foreach (var renderer in railRenderers.Values) renderer.PrepareFrame();
+                return;
+            }
+
+            if (stage == EnumRenderStage.ShadowFar || stage == EnumRenderStage.ShadowNear)
+            {
+                RenderShadows();
+                return;
+            }
+
             if (prog.Disposed)
                 prog = capi.Shader.GetProgramByName("instanced");
-
-            if (stage != EnumRenderStage.Opaque) return;
 
             capi.Render.GlDisableCullFace();
             capi.Render.GlToggleBlend(false, EnumBlendMode.Standard);
@@ -136,22 +197,49 @@ namespace RailWorld
             foreach (var renderer in sleeperRenderers.Values)
             {
                 prog.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.OnRenderFrame(deltaTime, prog);
+                renderer.Draw();
             }
 
             foreach (var renderer in railRenderers.Values)
             {
                 prog.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.OnRenderFrame(deltaTime, prog);
+                renderer.Draw();
             }
 
             prog.Stop();
             capi.Render.GlEnableCullFace();
         }
 
+        // Малює рейки й шпали в карту тіней. На час малювання підміняє шейдер тіней гри своїм і повертає його назад
+        private void RenderShadows()
+        {
+            if (shadowProg == null || shadowProg.Disposed) return;
+            if (sleeperRenderers.Count == 0 && railRenderers.Count == 0) return;
+
+            IShaderProgram gameShader = capi.Render.CurrentActiveShader;
+            gameShader?.Stop();
+
+            shadowProg.Use();
+            // Проекція і вид від джерела світла: та сама матриця, якою гра малює в тіні блоки.
+            // Перемножувати CurrentProjectionMatrix і CurrentModelviewMatrix не можна: вони повертають один і той самий масив
+            shadowProg.UniformMatrix("mvpMatrix", capi.Render.CurrentShadowProjectionMatrix);
+
+            capi.Render.GlDisableCullFace();
+            foreach (var renderer in sleeperRenderers.Values) renderer.Draw();
+            foreach (var renderer in railRenderers.Values) renderer.Draw();
+            capi.Render.GlEnableCullFace();
+
+            shadowProg.Stop();
+            gameShader?.Use();
+        }
+
         public void Dispose()
         {
+            capi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
+            capi.Event.UnregisterRenderer(this, EnumRenderStage.ShadowFar);
+            capi.Event.UnregisterRenderer(this, EnumRenderStage.ShadowNear);
             capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
+            capi.Event.ReloadShader -= LoadShadowShader;
             capi.Event.UnregisterGameTickListener(lightListenerId);
             foreach (var renderer in sleeperRenderers.Values)
                 renderer.Dispose();

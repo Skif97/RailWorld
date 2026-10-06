@@ -37,7 +37,8 @@ namespace RailWorld.src.Items
                 return;
             }
 
-            AssetLocation assetLocation = new AssetLocation(Code.Domain, "trolley");
+            // Сутність має той самий код, що й предмет: звичайна вагонетка ставить звичайну, моторизована свою
+            AssetLocation assetLocation = new AssetLocation(Code.Domain, Code.Path);
             EntityProperties entityType = byEntity.World.GetEntityType(assetLocation);
             if (entityType == null)
             {
@@ -61,7 +62,8 @@ namespace RailWorld.src.Items
                 Section section = railSel.Section;
                 double middle = section.FullStartPosition.DistanceTo(section.FullEndPosition) / 2;
                 double halfHeight = (entityType.SelectionBoxSize?.Y ?? entityType.CollisionBoxSize.Y) / 2;
-                EntityTrolley.ApplyRailPose(entity.Pos, section, middle, halfHeight, 1);
+                EntityTrolley.ApplyRailPose(entity.Pos, section, middle, halfHeight, 1, out float cant);
+                entity.WatchedAttributes.SetFloat(EntityTrolley.CantAttribute, cant);
 
                 entity.Attributes.SetBool("onRail", true);
                 entity.Attributes.SetDouble("railS", middle);

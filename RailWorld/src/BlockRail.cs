@@ -11,10 +11,36 @@ namespace RailWorld
 {
     public class BlockRail : Block
     {
+        private static bool IsPointsMode(ItemSlot slot)
+        {
+            return slot?.Itemstack?.Attributes?.GetString("railMode") == RoutePlanner.ModeCode;
+        }
+
+        // У режимі «по точках» правий клік не кладе колію, а ставить точку розмітки
+        public override void OnHeldInteractStart(ItemSlot slot, EntityAgent byEntity, BlockSelection blockSel, EntitySelection entitySel, bool firstEvent, ref EnumHandHandling handling)
+        {
+            if (!IsPointsMode(slot))
+            {
+                base.OnHeldInteractStart(slot, byEntity, blockSel, entitySel, firstEvent, ref handling);
+                return;
+            }
+
+            handling = EnumHandHandling.PreventDefault;
+            // Лише перший кадр натискання: утримання кнопки нових точок не ставить
+            if (api.Side == EnumAppSide.Client && firstEvent) RoutePlanner.Instance?.OnRightClick();
+        }
+
         // Предметом для прокладання колії блоки не ламаються. Для секції blockSel дорівнює null,
         // тому видалення секцій цим самим предметом працює далі
         public override void OnHeldAttackStart(ItemSlot slot, EntityAgent byEntity, BlockSelection blockSel, EntitySelection entitySel, ref EnumHandHandling handling)
         {
+            // Поки триває розмітка маршруту, лівий клік це крок назад, а не видалення секції
+            if (api.Side == EnumAppSide.Client && IsPointsMode(slot) && RoutePlanner.Instance?.OnLeftClick() == true)
+            {
+                handling = EnumHandHandling.PreventDefaultAction;
+                return;
+            }
+
             if (blockSel != null)
             {
                 handling = EnumHandHandling.PreventDefaultAction;
@@ -40,10 +66,9 @@ namespace RailWorld
                 int    railClimDes   = mystack.Attributes.GetInt("railClimDes", 0);
                 string railDirection = mystack.Attributes.GetString("railDirection", "Left");
                 bool   left          = railDirection == "Left";
-                string sleeperMaterial = mystack.Attributes.GetString("sleeperMaterial", "oak");
-                string railMaterial    = mystack.Attributes.GetString("railMaterial", "iron");
-                string ballastMaterial = mystack.Attributes.GetString("ballastMaterial", RailWorld.DontBuild);
-                bool replaceBlocks     = mystack.Attributes.GetBool("replaceBlocks");
+
+                // Маршрут по точках будується окремим пакетом від клієнта, не кліком
+                if (railMode == RoutePlanner.ModeCode) return false;
 
                 CubicBezierCurve3d controlPoints;
                 Vec3d pos = blockSel.Position.ToVec3d();
@@ -64,50 +89,7 @@ namespace RailWorld
                 List<PointOnBezierCurve> pointList = controlPoints.CutIntoEqualPieces(0.25f);
                 ModMath.ApplyCant(pointList);
 
-                RailDataSession session = new RailDataSession(world);
-                List<Section> stretch = new List<Section>();
-
-                for (int i = 0; i < pointList.Count - 2; i += 2)
-                {
-                    var section = new Section(
-                        pointList[i], pointList[i + 1], pointList[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
-                    // Чанк може бути не завантажений, тоді секцію записати нікуди
-                    DataInChunk data = session.Get(section.ChunkAddres, create: true);
-                    if (data == null) continue;
-
-                    // Якщо тут уже лежить така сама секція, другу поверх неї не кладемо
-                    if (SectionLinker.HasSameSection(data, section)) continue;
-
-                    // У меню ввімкнено заміну: блоки на шляху колії ламаються, а не блокують секцію
-                    if (replaceBlocks) TrackBed.ClearObstructions(world, section, byPlayer);
-
-                    if (TrackBed.CanAttach(world, section))
-                    {
-                        // Деталь, для якої в меню вибрано «не будувати», лишається порожнім місцем
-                        if (sleeperMaterial != RailWorld.DontBuild) section.InstallationSleeper(sleeperMaterial);
-                        if (railMaterial != RailWorld.DontBuild) section.InstallationRails(railMaterial);
-                        if (ballastMaterial != RailWorld.DontBuild) section.InstallPart(SectionPart.Ballast, "normal", ballastMaterial);
-                    }
-                    else
-                    {
-                        // Під секцією стоїть чужий блок: трасу лишаємо, але без деталей, доки його не приберуть
-                        section.Blocked = true;
-                    }
-
-                    data.Add(section);
-                    session.MarkDirty(section.ChunkAddres);
-                    stretch.Add(section);
-                }
-
-                SectionLinker.LinkStretch(session, stretch);
-                session.SaveAll();
-
-                // Секції з деталями займають клітинки під собою. Після збереження, бо блоки колії шукають свої секції в даних чанка
-                foreach (Section section in stretch)
-                    TrackBed.Attach(world, section);
-
-                // За мить надсилаємо блоки ще раз: при довгій ділянці не всі оновлення доходять у правильному порядку
-                world.RegisterCallback(dt => TrackBed.Resend(world, stretch), 500);
+                TrackBuilder.Build(world, byPlayer, mystack, pointList);
             }
 
             return true;

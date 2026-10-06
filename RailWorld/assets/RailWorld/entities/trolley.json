@@ -1,7 +1,11 @@
 {
 	"code": "trolley",
+	"variantgroups": [ { "code": "type", "states": ["iron", "gold"] } ],
 	"class": "EntityTrolley",
-	"attributes": { "airDragFactor": 0.005, "shouldSwivelFromMotion": false },
+	"attributesByType": {
+		"*-iron": { "airDragFactor": 0.005, "shouldSwivelFromMotion": false },
+		"*-gold": { "airDragFactor": 0.005, "shouldSwivelFromMotion": false, "motorGears": [2, 5, 10, 15, 20] }
+	},
 	"behaviorConfigs": {
 		"seatable": {
 			"seats": [
@@ -13,7 +17,7 @@
 		"PitchStep": false,
 		"renderer": "Shape",
 		"shape": { "base": "entity/trolley" },
-		"texture": { "base": "game:block/metal/plate/iron" },
+		"texture": { "base": "game:block/metal/plate/{type}" },
 		"behaviors": [
 			{
 				"code": "controlledphysics",

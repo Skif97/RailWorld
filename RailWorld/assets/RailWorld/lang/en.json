@@ -1,0 +1,11 @@
+{
+	"block-rail": "Track laying tool",
+	"block-trackbed-*": "Track bed",
+	"clutter-alidade": "Alidade",
+	"item-trolley-iron": "Trolley",
+	"item-trolley-gold": "Motor trolley",
+	"item-creature-trolley-iron": "Trolley",
+	"item-creature-trolley-gold": "Motor trolley",
+	"item-rail": "Rail ({0})",
+	"item-sleeper": "Sleeper ({0})"
+}

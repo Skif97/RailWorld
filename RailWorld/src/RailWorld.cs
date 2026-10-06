@@ -43,6 +43,21 @@ namespace RailWorld
         [ProtoMember(4)] public byte[] Data; // серіалізований DataInChunk
     }
 
+    /// <summary>
+    /// Підтверджений маршрут по точках: положення і напрямок колії в кожній точці.
+    /// Клієнт надсилає його лише після перегляду; до того розмітка живе тільки в нього.
+    /// </summary>
+    [ProtoContract]
+    public class RoutePacket
+    {
+        [ProtoMember(1)] public double[] X;
+        [ProtoMember(2)] public double[] Y;
+        [ProtoMember(3)] public double[] Z;
+        [ProtoMember(4)] public double[] TangentX;
+        [ProtoMember(5)] public double[] TangentY;
+        [ProtoMember(6)] public double[] TangentZ;
+    }
+
     public class RailWorld : ModSystem
     {
         /// <summary>Значення матеріалу, яке означає «цю деталь не ставити».</summary>
@@ -61,6 +76,7 @@ namespace RailWorld
             api.RegisterBlockClass("BlockRail", typeof(BlockRail));
             api.RegisterBlockClass("BlockTrackBed", typeof(BlockTrackBed));
             api.RegisterBlockEntityClass("BlockEntityTrackBed", typeof(BlockEntityTrackBed));
+            api.RegisterBlockEntityBehaviorClass("TrackBedSnowCover", typeof(BEBehaviorTrackBedSnowCover));
             api.RegisterItemClass("ItemTrolley", typeof(ItemTrolley));
             api.RegisterEntity("EntityTrolley", typeof(EntityTrolley));
             api.RegisterItemClass("ItemSleeper", typeof(ItemSleeper));
@@ -84,6 +100,7 @@ namespace RailWorld
                 .RegisterChannel("TWchannel")
                 .RegisterMessageType<RailMenuPacket>()
                 .RegisterMessageType<RailDataPacket>()
+                .RegisterMessageType<RoutePacket>()
                 .SetMessageHandler<RailDataPacket>(OnRailDataReceived);
         }
 
@@ -96,7 +113,9 @@ namespace RailWorld
                 .RegisterChannel("TWchannel")
                 .RegisterMessageType<RailMenuPacket>()
                 .RegisterMessageType<RailDataPacket>()
-                .SetMessageHandler<RailMenuPacket>(OnRailMenuPacketReceived);
+                .RegisterMessageType<RoutePacket>()
+                .SetMessageHandler<RailMenuPacket>(OnRailMenuPacketReceived)
+                .SetMessageHandler<RoutePacket>(OnRoutePacketReceived);
         }
 
         // ── Сервер: отримали налаштування рейки від клієнта ──────────────────
@@ -119,6 +138,65 @@ namespace RailWorld
                 _sapi.World.PlayerByUid(fromPlayer.PlayerUID)
                     .InventoryManager.ActiveHotbarSlot.MarkDirty();
             }
+        }
+
+        // Скільки точок і яку відстань між сусідніми сервер приймає в одному маршруті
+        private const int MaxRoutePoints = 64;
+        private const double MaxRouteSpan = 400;
+
+        /// <summary>
+        /// Клієнт: відправляє підтверджений маршрут на побудову.
+        /// </summary>
+        public static void SendRoute(List<RoutePoint> route)
+        {
+            int count = route.Count;
+            RoutePacket packet = new RoutePacket
+            {
+                X = new double[count], Y = new double[count], Z = new double[count],
+                TangentX = new double[count], TangentY = new double[count], TangentZ = new double[count]
+            };
+
+            for (int i = 0; i < count; i++)
+            {
+                packet.X[i] = route[i].Position.X;
+                packet.Y[i] = route[i].Position.Y;
+                packet.Z[i] = route[i].Position.Z;
+                packet.TangentX[i] = route[i].Tangent.X;
+                packet.TangentY[i] = route[i].Tangent.Y;
+                packet.TangentZ[i] = route[i].Tangent.Z;
+            }
+
+            _clientChannel?.SendPacket(packet);
+        }
+
+        // ── Сервер: будує маршрут по точках ──────────────────────────────────
+        private void OnRoutePacketReceived(IServerPlayer fromPlayer, RoutePacket packet)
+        {
+            ItemStack tool = fromPlayer.InventoryManager.ActiveHotbarSlot?.Itemstack;
+            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true) return;
+            if (tool.Attributes.GetString("railMode") != RoutePlanner.ModeCode) return;
+
+            int count = packet.X?.Length ?? 0;
+            if (count < 2 || count > MaxRoutePoints) return;
+            if (packet.Y?.Length != count || packet.Z?.Length != count) return;
+            if (packet.TangentX?.Length != count || packet.TangentY?.Length != count || packet.TangentZ?.Length != count) return;
+
+            var route = new List<RoutePoint>();
+            for (int i = 0; i < count; i++)
+            {
+                Vec3d tangent = new Vec3d(packet.TangentX[i], packet.TangentY[i], packet.TangentZ[i]);
+                if (tangent.Length() < 1e-6) return;
+
+                Vec3d position = new Vec3d(packet.X[i], packet.Y[i], packet.Z[i]);
+                if (i > 0 && position.DistanceTo(route[i - 1].Position) > MaxRouteSpan) return;
+
+                route.Add(new RoutePoint { Position = position, Tangent = tangent.Normalize() });
+            }
+
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route);
+            if (points.Count < 3) return;
+
+            TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
         }
 
         /// <summary>

@@ -271,7 +271,7 @@ namespace RailWorld
         }
 
         // Додає в меш один бокс з кольором у вершинах, у тому ж форматі, що й підсвічування блоків у грі
-        private static void AddBox(MeshData mesh, int[] rgba, double cx, double cy, double cz, Vec3d side, Vec3d up, Vec3d along,
+        internal static void AddBox(MeshData mesh, int[] rgba, double cx, double cy, double cz, Vec3d side, Vec3d up, Vec3d along,
             double halfSide, double minUp, double maxUp, double halfAlong)
         {
             for (int f = 0; f < 6; f++)
