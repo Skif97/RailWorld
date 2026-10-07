@@ -196,6 +196,19 @@ namespace RailWorld
         /// </summary>
         public IEnumerable<Vec3i> ClientChunkCoords => clientBoxes.Keys;
 
+        // Секції кожного чанка за номером: щоб швидко пройти по колії через зв'язки між секціями
+        private Dictionary<Vec3i, IDictionary<int, Section>> clientSections = new Dictionary<Vec3i, IDictionary<int, Section>>();
+
+        /// <summary>
+        /// Секція, на яку вказує посилання, з того, що клієнт зараз знає про колію. null, якщо її чанку немає.
+        /// </summary>
+        public Section FindClientSection(SectionLink link)
+        {
+            if (link == null || !clientSections.TryGetValue(link.Chunk, out IDictionary<int, Section> sections)) return null;
+            sections.TryGetValue(link.Index, out Section section);
+            return section;
+        }
+
         public List<SectionBox> GetClientBoxes(Vec3i chunkCoord)
         {
             clientBoxes.TryGetValue(chunkCoord, out List<SectionBox> boxes);
@@ -215,17 +228,82 @@ namespace RailWorld
             foreach (var kvp in data.RailWaySections)
                 Handler.GetSelectionBoxes(boxes, coord, kvp.Key, kvp.Value);
             clientBoxes[coord] = boxes;
+            clientSections[coord] = data.RailWaySections;
             selectionRenderer?.MarkChunkDirty(coord);
 
+            RebuildChunkRender(coord, data.RailWaySections);
+            QueueNeighbourRender(coord);
+        }
+
+        // Чанки, вигляд колії в яких треба зібрати заново, бо змінилася колія в сусідньому
+        private HashSet<Vec3i> pendingRender = new HashSet<Vec3i>();
+        private bool pendingRenderScheduled;
+
+        /// <summary>
+        /// Вигляд колії в чанку залежить і від сусідніх чанків: спільна шпала стрілки малюється з двох секцій,
+        /// які можуть лежати в різних чанках, а дані чанків приходять окремо і в довільному порядку.
+        /// Тому після зміни колії в чанку його сусіди перемальовуються теж, трохи згодом і всі разом.
+        /// </summary>
+        private void QueueNeighbourRender(Vec3i chunkCoord)
+        {
+            if (capi == null || Renderer == null) return;
+
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        if (dx == 0 && dy == 0 && dz == 0) continue;
+                        Vec3i neighbour = new Vec3i(chunkCoord.X + dx, chunkCoord.Y + dy, chunkCoord.Z + dz);
+                        if (clientSections.ContainsKey(neighbour)) pendingRender.Add(neighbour);
+                    }
+                }
+            }
+
+            if (pendingRender.Count == 0 || pendingRenderScheduled) return;
+            pendingRenderScheduled = true;
+            capi.Event.RegisterCallback(dt =>
+            {
+                pendingRenderScheduled = false;
+                var coords = new List<Vec3i>(pendingRender);
+                pendingRender.Clear();
+
+                foreach (Vec3i coord in coords)
+                {
+                    if (Renderer != null && clientSections.TryGetValue(coord, out IDictionary<int, Section> sections))
+                        RebuildChunkRender(coord, sections);
+                }
+            }, 100);
+        }
+
+        // Збирає заново все, що малюється для колії чанка: шпали, важелі стрілок і рейки
+        private void RebuildChunkRender(Vec3i chunkCoord, IDictionary<int, Section> sections)
+        {
             if (Renderer == null) return;
+
+            Renderer.RemoveChunkParts(chunkCoord);
+            Renderer.RemoveRailChunk(chunkCoord);
 
             var railSections = new List<Section>();
 
-            foreach (var kvp in data.RailWaySections)
+            foreach (var kvp in sections)
             {
                 Section section = kvp.Value;
 
-                if (section.SleeperInstalled)
+                // У стрілці шпали двох гілок перетинаються, тому замість двох малюється одна спільна.
+                // Малює її секція першої гілки; секція другої свою шпалу пропускає
+                bool sharedSleeper = false;
+                if (section.SleeperInstalled && SwitchZone.FindPair(section, FindClientSection, out Section partner, out bool primary, out int fromEnd, out int pairNumber)
+                    && partner.SleeperInstalled)
+                {
+                    sharedSleeper = true;
+                    // Скільки всього пар у стрілці, відомо лише для двох останніх; для них це і потрібно
+                    int pairs = fromEnd < 2 ? pairNumber + fromEnd : int.MaxValue;
+                    if (primary) AddSharedSleeper(chunkCoord, section, partner, pairs < StaggerMinPairs ? 2 : fromEnd);
+                }
+
+                if (section.SleeperInstalled && !sharedSleeper)
                 {
                     // Шпала лежить посередині секції, під серединою рейок, і повернута так само, як вони:
                     // поворот і ухил з хорди секції, крен середній між початком і кінцем
@@ -263,10 +341,79 @@ namespace RailWorld
                 Renderer.RebuildRails(chunkCoord, railSections);
         }
 
+        // У стрілці, де спільних шпал менше за це, дві останні не робляться коротшими в шаховому порядку:
+        // на короткій стрілці вони займали б половину її довжини
+        private const int StaggerMinPairs = 6;
+
+        /// <summary>
+        /// Спільна шпала двох секцій у стрілці: одна суцільна на обидві колії.
+        /// Лежить упоперек середнього напрямку двох колій, серединою між ними, тож сусідні спільні шпали
+        /// майже паралельні й ідуть рівним кроком, навіть коли колії розходяться круто. Завдовжки вона така,
+        /// щоб дістати до зовнішніх кінців власних шпал обох колій: за рейки виступає так само, як звичайна.
+        /// Дві останні шпали стрілки коротші і лежать у шаховому порядку: передостання тримає три рейки
+        /// з боку першої колії (обидві її рейки і ближню рейку другої), остання три рейки з боку другої,
+        /// і за третьою рейкою виступає на звичайний хвостик. fromEnd це номер пари від краю стрілки.
+        /// </summary>
+        private void AddSharedSleeper(Vec3i chunkCoord, Section a, Section b, int fromEnd)
+        {
+            Vec3d centerA = Middle(a), centerB = Middle(b);
+            Vec3d sideA = new Vec3d(a.CenterNormal.X, a.CenterNormal.Y, a.CenterNormal.Z).Normalize();
+            Vec3d sideB = new Vec3d(b.CenterNormal.X, b.CenterNormal.Y, b.CenterNormal.Z).Normalize();
+
+            // З якого боку від кожної колії лежить сусідня: зовнішній край шпали з протилежного
+            Vec3d between = centerB - centerA;
+            double towardB = between.X * sideA.X + between.Z * sideA.Z >= 0 ? 1 : -1;
+            double towardA = between.X * sideB.X + between.Z * sideB.Z >= 0 ? -1 : 1;
+
+            // Точки, до яких шпала має дістати з кожного боку
+            Vec3d from = centerA - sideA * (towardB * a.SleeperLength / 2);
+            Vec3d to = centerB - sideB * (towardA * b.SleeperLength / 2);
+
+            // Край за третьою рейкою: ближня до сусіда рейка лежить за пів ширини колії від осі в його бік,
+            // а хвостик це те, на скільки звичайна шпала виступає за рейку. Разом це зсув від осі колії
+            if (fromEnd == 1) to = centerB + sideB * (towardA * (b.TrackWidth - b.SleeperLength / 2));
+            else if (fromEnd == 0) from = centerA + sideA * (towardB * (a.TrackWidth - a.SleeperLength / 2));
+
+            // Напрямок шпали: середній між нормалями двох колій, тобто впоперек середнього напрямку самих колій.
+            // Нормаль другої секції може дивитися в інший бік, тоді береться з протилежним знаком
+            Vec3d sameB = sideA.X * sideB.X + sideA.Z * sideB.Z >= 0 ? sideB : sideB * -1;
+            Vec3d across = sideA + sameB;
+            if (across.Length() < 1e-6) return;
+            across.Normalize();
+
+            // Шпала лежить на прямій через середину між коліями. Її кінці це проєкції потрібних точок на цю пряму
+            Vec3d middle = new Vec3d((centerA.X + centerB.X) / 2, (centerA.Y + centerB.Y) / 2, (centerA.Z + centerB.Z) / 2);
+            double first = (from.X - middle.X) * across.X + (from.Y - middle.Y) * across.Y + (from.Z - middle.Z) * across.Z;
+            double second = (to.X - middle.X) * across.X + (to.Y - middle.Y) * across.Y + (to.Z - middle.Z) * across.Z;
+            double low = Math.Min(first, second), high = Math.Max(first, second);
+            double length = high - low;
+            if (length < 1e-6) return;
+
+            // Уздовж колії: нормаль секції лежить ліворуч від її напрямку, тож напрямок відновлюється з неї
+            float yaw = (float)Math.Atan2(across.Z, -across.X);
+            float roll = (float)Math.Asin(GameMath.Clamp(across.Y, -1, 1));
+
+            Vec3d start = a.FullStartPosition, end = a.FullEndPosition;
+            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+            float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
+
+            Vec3d position = middle + across * ((low + high) / 2);
+            Renderer.AddSleeper(chunkCoord, a.SleeperMaterial ?? "oak", position, new Vec3f(pitch, yaw, roll), (float)length);
+        }
+
+        private static Vec3d Middle(Section section)
+        {
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            return new Vec3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2);
+        }
+
         public void RemoveChunk(Vec3i chunkCoord)
         {
+            bool known = clientSections.Remove(chunkCoord);
             clientBoxes.Remove(chunkCoord);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
+            // Колія в чанку зникла: сусіди могли малювати з нею спільні шпали
+            if (known) QueueNeighbourRender(chunkCoord);
             Renderer?.RemoveChunkParts(chunkCoord);
             Renderer?.RemoveRailChunk(chunkCoord);
         }
