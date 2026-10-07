@@ -21,7 +21,8 @@ namespace RailWorld
 
     /// <summary>
     /// Рендерить рейки одного матеріалу через instanced rendering.
-    /// Один інстанс на рейку.
+    /// Рейка секції малюється двома прямими шматками, від початку секції до середини і від середини до кінця:
+    /// так вона ближче до кривої, і злам на стиках удвічі менший. Один інстанс на шматок.
     /// Меш рейки масштабується по Z матрицею трансформації.
     /// </summary>
     internal class RailSectionRenderer
@@ -83,7 +84,21 @@ namespace RailWorld
 
         public void AddRail(Vec3i chunkCoord, int index, Section section, bool left)
         {
-            instances[$"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}"] = BuildInstance(section, left);
+            string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}";
+            float offset = section.TrackWidth / 2f * (left ? 1f : -1f);
+            Vec3d start = section.FullStartPosition;
+            Vec3d center = section.GetGlobalPos();
+            Vec3d end = section.FullEndPosition;
+
+            AddPiece(key + "0", BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offset));
+            AddPiece(key + "1", BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offset));
+        }
+
+        private void AddPiece(string key, RailInstanceData piece)
+        {
+            // Шматок нульової довжини: середина секції збіглася з її краєм
+            if (piece == null) instances.Remove(key);
+            else instances[key] = piece;
         }
 
         public void RemoveChunk(Vec3i chunkCoord)
@@ -93,32 +108,31 @@ namespace RailWorld
                 instances.Remove(key);
         }
 
-        private RailInstanceData BuildInstance(Section s, bool left)
+        // Шматок рейки між двома точками осі колії. offset це зсув рейки вбік від осі
+        private RailInstanceData BuildInstance(Vec3d from, Vec3f fromNormal, Vec3f fromTangent, Vec3d to, Vec3f toNormal, Vec3f toTangent, float offset)
         {
-            float offset = s.TrackWidth / 2f * (left ? 1f : -1f);
-            Vec3d fullStart = s.FullStartPosition;
-            Vec3d fullEnd   = s.FullEndPosition;
-
-            // Кінці рейки зсуваємо кожен по своїй нормалі і тягнемо рейку по хорді між ними,
-            // тоді кінець цієї рейки збігається з початком наступної і сходинок не буде
+            // Кінці шматка зсуваємо кожен по своїй нормалі і тягнемо його по хорді між ними,
+            // тоді кінець цього шматка збігається з початком наступного і сходинок не буде
             // Нормаль може бути нахилена (нахил полотна), тоді зовнішня рейка піднімається, а внутрішня опускається
             Vec3d pos = new Vec3d(
-                fullStart.X + s.StartNormal.X * offset,
-                fullStart.Y + s.StartNormal.Y * offset,
-                fullStart.Z + s.StartNormal.Z * offset);
+                from.X + fromNormal.X * offset,
+                from.Y + fromNormal.Y * offset,
+                from.Z + fromNormal.Z * offset);
 
-            double dx = fullEnd.X + s.EndNormal.X * offset - pos.X;
-            double dy = fullEnd.Y + s.EndNormal.Y * offset - pos.Y;
-            double dz = fullEnd.Z + s.EndNormal.Z * offset - pos.Z;
+            double dx = to.X + toNormal.X * offset - pos.X;
+            double dy = to.Y + toNormal.Y * offset - pos.Y;
+            double dz = to.Z + toNormal.Z * offset - pos.Z;
 
             double length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            if (length < 1e-4) return null;
+
             double yaw    = Math.Atan2(dx, dz);
             double pitch  = Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
 
             // Сусідні рейки сходяться на спільній площині стику, перпендикулярній до дотичної кривої.
             // Подовжуємо рейку рівно настільки, щоб її найдальший кут дістав до цієї площини
-            double startExt = JointExtension(s.StartTangent, yaw, pitch, atStart: true);
-            double endExt   = JointExtension(s.EndTangent, yaw, pitch, atStart: false);
+            double startExt = JointExtension(fromTangent, yaw, pitch, atStart: true);
+            double endExt   = JointExtension(toTangent, yaw, pitch, atStart: false);
 
             if (length > 0)
             {
@@ -126,8 +140,8 @@ namespace RailWorld
                 pos.Add(-dx * k, -dy * k, -dz * k);
             }
 
-            // Рейка жорстка, тому крен беремо середній між початком і кінцем секції
-            double roll = (Math.Asin(GameMath.Clamp(s.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(s.EndNormal.Y, -1, 1))) / 2;
+            // Шматок жорсткий, тому крен беремо середній між його початком і кінцем
+            double roll = (Math.Asin(GameMath.Clamp(fromNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(toNormal.Y, -1, 1))) / 2;
 
             return new RailInstanceData
             {

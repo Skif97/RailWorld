@@ -405,7 +405,7 @@ namespace RailWorld
             meshOrigin = new Vec3d(shown[0].Block.X, shown[0].Block.Y, shown[0].Block.Z);
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(BuildRoute(shown));
 
-            int boxes = shown.Count + (preview ? points.Count / 2 * 3 : Math.Max(0, points.Count - 1) * 2);
+            int boxes = shown.Count + (preview ? points.Count / 2 * 5 : Math.Max(0, points.Count - 1) * 2);
             MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
 
             bool[] problems = CheckRoute(points, out double minRadius, out double minVerticalRadius, out bool crossesItself);
@@ -570,8 +570,12 @@ namespace RailWorld
                 PointOnBezierCurve start = points[i], middle = points[i + 1], end = points[i + 2];
                 int[] rgba = problems[i] || problems[i + 1] || problems[i + 2] ? ProblemRgba : PreviewRgba;
 
-                AddSegment(data, rgba, start, end, offset, SectionBox.RailHalfWidth, 0, SectionBox.RailHeight);
-                AddSegment(data, rgba, start, end, -offset, SectionBox.RailHalfWidth, 0, SectionBox.RailHeight);
+                // Рейка секції це два шматки, через середню точку, як вона й буде намальована у світі
+                for (int rail = -1; rail <= 1; rail += 2)
+                {
+                    AddSegment(data, rgba, start, middle, offset * rail, SectionBox.RailHalfWidth, 0, SectionBox.RailHeight);
+                    AddSegment(data, rgba, middle, end, offset * rail, SectionBox.RailHalfWidth, 0, SectionBox.RailHeight);
+                }
 
                 // Шпала посередині секції, впоперек колії
                 Vec3d along = end.position - start.position;
