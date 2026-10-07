@@ -1,0 +1,6 @@
+{
+	"code": "switchlever",
+	"maxstacksize": 1,
+	"shape": { "base": "item/switchlever" },
+	"textures": { "main": { "base": "game:block/metal/plate/iron" } }
+}

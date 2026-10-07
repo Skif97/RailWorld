@@ -1,0 +1,48 @@
+{
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textures": {
+		"main": "game:block/metal/plate/iron"
+	},
+	"elements": [
+		{
+			"name": "Base",
+			"from": [ 6.5, 0, 6.5 ],
+			"to": [ 9.5, 1, 9.5 ],
+			"faces": {
+				"north": { "texture": "#main", "uv": [ 0, 0, 6.0, 2 ], "autoUv": false },
+				"east": { "texture": "#main", "uv": [ 0, 0, 6.0, 2 ], "autoUv": false },
+				"south": { "texture": "#main", "uv": [ 0, 0, 6.0, 2 ], "autoUv": false },
+				"west": { "texture": "#main", "uv": [ 0, 0, 6.0, 2 ], "autoUv": false },
+				"up": { "texture": "#main", "uv": [ 0, 0, 6.0, 6.0 ], "autoUv": false },
+				"down": { "texture": "#main", "uv": [ 0, 0, 6.0, 6.0 ], "autoUv": false }
+			}
+		},
+		{
+			"name": "Post",
+			"from": [ 7.5, 1, 7.5 ],
+			"to": [ 8.5, 11, 8.5 ],
+			"faces": {
+				"north": { "texture": "#main", "uv": [ 0, 0, 2.0, 20 ], "autoUv": false },
+				"east": { "texture": "#main", "uv": [ 0, 0, 2.0, 20 ], "autoUv": false },
+				"south": { "texture": "#main", "uv": [ 0, 0, 2.0, 20 ], "autoUv": false },
+				"west": { "texture": "#main", "uv": [ 0, 0, 2.0, 20 ], "autoUv": false },
+				"up": { "texture": "#main", "uv": [ 0, 0, 2.0, 2.0 ], "autoUv": false },
+				"down": { "texture": "#main", "uv": [ 0, 0, 2.0, 2.0 ], "autoUv": false }
+			}
+		},
+		{
+			"name": "Knob",
+			"from": [ 7, 11, 7 ],
+			"to": [ 9, 13, 9 ],
+			"faces": {
+				"north": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false },
+				"east": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false },
+				"south": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false },
+				"west": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false },
+				"up": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false },
+				"down": { "texture": "#main", "uv": [ 0, 0, 4, 4 ], "autoUv": false }
+			}
+		}
+	]
+}

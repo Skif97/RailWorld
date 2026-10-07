@@ -429,6 +429,63 @@ namespace RailWorld.src.RailWay
             return atStart ? new Vec3f(-_startTangent.X, -_startTangent.Y, -_startTangent.Z) : _endTangent;
         }
 
+        // Коли стрілку на цьому кінці востаннє почали переводити, у мілісекундах роботи сервера. 0, якщо ніколи
+        [ProtoMember(37)]
+        private long _startSwitchMs;
+        [ProtoMember(38)]
+        private long _endSwitchMs;
+
+        /// <summary>
+        /// Скільки триває саме переведення стрілки. Вагонетка, що заїхала на стрілку в цей час, сходить із колії.
+        /// </summary>
+        public const int SwitchTimeMs = 1000;
+
+        /// <summary>Чи є на цьому кінці стрілка: колія тут розходиться на дві.</summary>
+        public bool HasSwitch(bool atStart)
+        {
+            return GetLinks(atStart).Count >= 2;
+        }
+
+        /// <summary>Котра з двох гілок стрілки зараз увімкнена: 0 або 1.</summary>
+        public int GetSwitchPosition(bool atStart)
+        {
+            int count = GetLinks(atStart).Count;
+            if (count == 0) return 0;
+            return GameMath.Clamp(atStart ? _activeStartLink : _activeEndLink, 0, count - 1);
+        }
+
+        /// <summary>
+        /// Переводить стрілку на іншу гілку і запам'ятовує, коли це почалося.
+        /// </summary>
+        public void ToggleSwitch(bool atStart, long nowMs)
+        {
+            int count = GetLinks(atStart).Count;
+            if (count < 2) return;
+
+            int next = (GetSwitchPosition(atStart) + 1) % count;
+            if (atStart)
+            {
+                _activeStartLink = next;
+                _startSwitchMs = nowMs;
+            }
+            else
+            {
+                _activeEndLink = next;
+                _endSwitchMs = nowMs;
+            }
+        }
+
+        /// <summary>
+        /// Чи стрілку на цьому кінці саме зараз переводять. Час рахується від запуску сервера, тому після
+        /// перезапуску збережене значення виявляється «в майбутньому» і вважається давно минулим.
+        /// </summary>
+        public bool IsSwitching(bool atStart, long nowMs)
+        {
+            if (!HasSwitch(atStart)) return false;
+            long since = atStart ? _startSwitchMs : _endSwitchMs;
+            return since > 0 && nowMs >= since && nowMs - since < SwitchTimeMs;
+        }
+
         public List<SectionLink> GetLinks(bool atStart)
         {
             return (atStart ? _startLinks : _endLinks) ?? NoLinks;

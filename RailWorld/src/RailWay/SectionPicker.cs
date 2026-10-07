@@ -33,7 +33,13 @@ namespace RailWorld.src.RailWay
         Whole = 3,
 
         /// <summary>Підсипка: гравій під колією.</summary>
-        Ballast = 4
+        Ballast = 4,
+
+        /// <summary>
+        /// Важіль стрілки. Є в секції, з кінця якої колія розходиться на дві. Його не ставлять і не знімають:
+        /// він з'являється разом із відгалуженням, а клік по ньому переводить стрілку.
+        /// </summary>
+        Switch = 5
     }
 
     /// <summary>
@@ -47,6 +53,10 @@ namespace RailWorld.src.RailWay
         public const double SleeperHalfWidth  = 0.125;
         public const double RailHeight        = 0.15625;
         public const double RailHalfWidth     = 0.08;
+        // Важіль стрілки: на скільки він відступає від краю шпали, пів ширини і висота його бокса
+        public const double LeverGap          = 0.25;
+        public const double LeverHalfWidth    = 0.12;
+        public const double LeverHeight       = 0.85;
 
         public Vec3i Chunk;
         public int Index;
@@ -195,6 +205,19 @@ namespace RailWorld.src.RailWay
                 Installed = s.BallastInstalled
             });
 
+            // Важіль стрілки на кожному кінці, з якого колія розходиться
+            for (int e = 0; e < 2; e++)
+            {
+                bool atStart = e == 0;
+                if (!s.HasSwitch(atStart)) continue;
+
+                boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Switch, LeverPosition(s, atStart), chord, s.CenterNormal,
+                    SectionBox.LeverHalfWidth, SectionBox.LeverHalfWidth, 0, SectionBox.LeverHeight)
+                {
+                    Installed = true
+                });
+            }
+
             for (int side = 0; side < 2; side++)
             {
                 SectionPart part = side == 0 ? SectionPart.FirstRail : SectionPart.SecondRail;
@@ -211,6 +234,18 @@ namespace RailWorld.src.RailWay
                     Installed = s.IsInstalled(part)
                 });
             }
+        }
+
+        /// <summary>
+        /// Де стоїть важіль стрілки на цьому кінці секції: збоку від колії, на рівні підошви рейки.
+        /// Те саме місце беруть і бокс виділення, і рендер.
+        /// </summary>
+        public static Vec3d LeverPosition(Section s, bool atStart)
+        {
+            Vec3d end = s.GetEndPosition(atStart);
+            Vec3f normal = atStart ? s.StartNormal : s.EndNormal;
+            double offset = s.SleeperLength / 2 + SectionBox.LeverGap;
+            return new Vec3d(end.X + normal.X * offset, end.Y + normal.Y * offset, end.Z + normal.Z * offset);
         }
 
         /// <summary>

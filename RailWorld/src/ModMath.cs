@@ -293,8 +293,14 @@ namespace RailWorld
         /// міняється поступово, а не стрибком між двома секціями. На краях кривої він плавно сходить до нуля,
         /// щоб стикуватися з сусідніми ділянками.
         /// </summary>
-        public static void ApplyCant(List<PointOnBezierCurve> points)
+        /// <param name="startCant">Нахил, з якого крива має початися, радіани; NaN, якщо з нуля.
+        /// Потрібен, коли крива починається від уже покладеної колії, а та в цьому місці нахилена.</param>
+        /// <param name="endCant">Те саме для кінця кривої.</param>
+        public static void ApplyCant(List<PointOnBezierCurve> points, double startCant = double.NaN, double endCant = double.NaN)
         {
+            if (double.IsNaN(startCant)) startCant = 0;
+            if (double.IsNaN(endCant)) endCant = 0;
+
             int count = points.Count;
             if (count < 3) return;
 
@@ -336,9 +342,14 @@ namespace RailWorld
                 while (to < count && dist[to] <= dist[i] + half) sum += raw[to++];
                 while (dist[from] < dist[i] - half) sum -= raw[from++];
 
-                double k = GameMath.Clamp(Math.Min(dist[i], total - dist[i]) / ramp, 0, 1);
+                // На краю кривої нахил такий, як у колії, до якої вона примикає, і плавно переходить у свій
+                bool nearStart = dist[i] <= total - dist[i];
+                double edge = nearStart ? startCant : endCant;
+                double fromEdge = nearStart ? dist[i] : total - dist[i];
+
+                double k = GameMath.Clamp(fromEdge / ramp, 0, 1);
                 k = k * k * (3 - 2 * k);
-                double cant = sum / (to - from) * k;
+                double cant = edge + (sum / (to - from) - edge) * k;
 
                 PointOnBezierCurve p = points[i];
                 Vec3f n = p.normal;

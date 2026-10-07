@@ -635,6 +635,10 @@ namespace RailWorld
             bool anyBallast = false;
             string rock = null;
 
+            // Висота найнижчої колії над кожною колонкою вокселів, від підлоги блока
+            float[] lowestTrack = new float[voxelColumns];
+            for (int v = 0; v < voxelColumns; v++) lowestTrack[v] = float.MaxValue;
+
             for (int i = sections.Count - 1; i >= 0; i--)
             {
                 int[] s = sections[i];
@@ -665,6 +669,9 @@ namespace RailWorld
                             float h = own[x + z * TrackBed.Voxels];
                             int c = x / scale + z / scale * TrackBed.Columns;
                             if (h > result[c]) result[c] = h;
+
+                            // Найнижча колія над цією колонкою: вище за неї гравію бути не може
+                            if (h != TrackBed.NoHeight && h < lowestTrack[x + z * TrackBed.Voxels]) lowestTrack[x + z * TrackBed.Voxels] = h;
                         }
                     }
                 }
@@ -699,6 +706,12 @@ namespace RailWorld
                         float h = ballastHeight[x + z * TrackBed.Voxels];
 
                         int top = TrackBed.BallastTop(h);
+
+                        // Гравій засипає блок до рівня секції з підсипкою, але якщо над цією колонкою проходить
+                        // ще й інша колія, нижча, то не вище, ніж належить їй: інакше відгалуження чи сусідня
+                        // колія на іншій висоті опинилися б під гравієм
+                        float lowest = lowestTrack[x + z * TrackBed.Voxels];
+                        if (lowest != float.MaxValue) top = System.Math.Min(top, TrackBed.BallastTop(lowest));
                         if (top == 0) continue;
 
                         for (int y = 0; y < top; y++) voxels[x, y, z] = true;

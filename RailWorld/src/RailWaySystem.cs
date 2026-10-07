@@ -156,6 +156,9 @@ namespace RailWorld
             routePlanner = new RoutePlanner(capi, this);
         }
 
+        // На скільки радіан важіль стрілки нахилений убік у кожному з двох положень
+        private const float LeverLean = 0.45f;
+
         /// <summary>
         /// Деталь секції, на яку дивиться гравець. Працює і на клієнті, і на сервері,
         /// тож предмет у руці може спитати про неї в OnHeldInteractStart, де blockSel для секції дорівнює null.
@@ -234,6 +237,22 @@ namespace RailWorld
                     float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
                     float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
                     Renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", globalPos, new Vec3f(pitch, yaw, roll), section.SleeperLength);
+                }
+
+                // Важіль стрілки на кожному кінці, з якого колія розходиться. Стоїть прямо, а нахилом убік
+                // показує, котра з двох гілок увімкнена
+                for (int e = 0; e < 2; e++)
+                {
+                    bool atStart = e == 0;
+                    if (!section.HasSwitch(atStart)) continue;
+
+                    Vec3d start = section.FullStartPosition;
+                    Vec3d end = section.FullEndPosition;
+                    double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+                    float yaw = (float)Math.Atan2(dx, dz);
+                    float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
+                    float lean = section.GetSwitchPosition(atStart) == 0 ? LeverLean : -LeverLean;
+                    Renderer.AddLever(chunkCoord, SectionPicker.LeverPosition(section, atStart), new Vec3f(pitch, yaw, lean));
                 }
 
                 if (section.FirstRailInstalled || section.SecondRailInstalled)

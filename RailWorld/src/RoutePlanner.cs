@@ -25,8 +25,13 @@ namespace RailWorld
             public Vec3d Position;
             // Напрямок руху по маршруту в цій точці
             public Vec3d Heading;
-            // Точка взята з кінця вже покладеної колії: положення і напрямок звідти, а не з блока і погляду
+            // Точка взята зі стику вже покладеної колії: положення і напрямок звідти, а не з блока і погляду
             public bool Snapped;
+            // Нахил полотна в цьому стику; NaN для точки не на колії
+            public double Cant = double.NaN;
+            // Секція покладеної колії, поверх якої маршрут лежить одразу за цим стиком, і котрим кінцем вона в стику
+            public Section Track;
+            public bool TrackJointAtStart;
         }
 
         // Ухил, з якого лінія вже повністю червона, у градусах
@@ -50,6 +55,11 @@ namespace RailWorld
 
         // Чому маршрут зараз не можна будувати; null, якщо можна
         private string routeProblem;
+        // Між сусідніми точками нарізки ухил, крутіший за це, означає розрив рейок, а не підйом, градуси
+        public const double BreakSlopeDeg = 60;
+
+        // Чому точку не вдалося поставити на колію під прицілом; null, якщо причини немає
+        private string snapRefusal;
 
         private ICoreClientAPI capi;
         private RailWaySystem system;
@@ -102,7 +112,11 @@ namespace RailWorld
             }
 
             Marker target = MakeMarker(markers.Count == 0);
-            if (target == null) return;
+            if (target == null)
+            {
+                if (snapRefusal != null) capi.ShowChatMessage(snapRefusal);
+                return;
+            }
 
             if (markers.Count > 0 && target.Block.Equals(markers[markers.Count - 1].Block))
             {
@@ -168,29 +182,11 @@ namespace RailWorld
             IClientPlayer player = capi.World.Player;
             if (player?.Entity == null) return null;
 
-            // Кінець уже покладеної колії: беремо його положення і напрямок як є
+            // Уже покладена колія: точка стає на стик її секцій, положення і напрямок звідти
             SectionSelection sel = system.CurrentSelection;
-            if (sel != null && sel.Part == SectionPart.Whole)
-            {
-                Section section = sel.Section;
-                bool atStart = sel.HitPosition.SquareDistanceTo(section.FullStartPosition) < sel.HitPosition.SquareDistanceTo(section.FullEndPosition);
-                // До кінця, з якого колія вже йде далі, приєднатися не можна
-                if (section.GetLinks(atStart).Count > 0) atStart = !atStart;
-                if (section.GetLinks(atStart).Count > 0) return null;
+            if (sel != null && sel.Part == SectionPart.Whole) return SnapToTrack(sel, first, player.Entity.Pos.GetViewVector());
 
-                Vec3f outward = section.GetOutwardDirection(atStart);
-                Vec3d direction = new Vec3d(outward.X, outward.Y, outward.Z).Normalize();
-                Vec3d position = section.GetEndPosition(atStart);
-
-                return new Marker
-                {
-                    Block = position.AsBlockPos,
-                    Position = position,
-                    Heading = first ? direction : direction.Mul(-1),
-                    Snapped = true
-                };
-            }
-
+            snapRefusal = null;
             BlockSelection blockSel = PickBlock(player);
             if (blockSel == null) return null;
 
@@ -209,6 +205,114 @@ namespace RailWorld
                 Position = new Vec3d(block.X + 0.5, block.Y + SectionBox.SleeperDepth, block.Z + 0.5),
                 Heading = heading
             };
+        }
+
+        /// <summary>
+        /// Точка на вже покладеній колії: найближчий до прицілу стик секції. Маршрут може від нього почати,
+        /// це відгалуження, або ним закінчити, це примикання; в обох випадках у стику виникає стрілка.
+        /// У стику колія має два напрямки. Перша точка маршруту бере той, куди дивиться гравець,
+        /// остання той, яким маршрут до неї прийшов. Якщо в потрібний бік стрілка вже є
+        /// (у кінця секції два сусіди), береться інший бік, а якщо зайняті обидва, точка не ставиться.
+        /// </summary>
+        private Marker SnapToTrack(SectionSelection sel, bool first, Vec3f view)
+        {
+            snapRefusal = null;
+            Section section = sel.Section;
+            bool atStart = sel.HitPosition.SquareDistanceTo(section.FullStartPosition) < sel.HitPosition.SquareDistanceTo(section.FullEndPosition);
+
+            Vec3d position = section.GetEndPosition(atStart);
+            Vec3f o = section.GetOutwardDirection(atStart);
+            Vec3d outward = new Vec3d(o.X, o.Y, o.Z).Normalize();
+
+            double wanted;
+            if (first)
+            {
+                wanted = view.X * outward.X + view.Z * outward.Z;
+            }
+            else
+            {
+                Vec3d previous = markers[markers.Count - 1].Position;
+                wanted = (position.X - previous.X) * outward.X + (position.Z - previous.Z) * outward.Z;
+            }
+            int sign = wanted >= 0 ? 1 : -1;
+
+            if (!JointHasRoom(section, atStart, first, sign))
+            {
+                sign = -sign;
+                if (!JointHasRoom(section, atStart, first, sign))
+                {
+                    snapRefusal = "Тут уже є стрілка в обидва боки";
+                    return null;
+                }
+            }
+
+            Vec3d heading = outward.Clone().Mul(sign);
+
+            // Поверх якої секції маршрут піде за стиком. Чіпляється він до одного кінця, а лежить на тому,
+            // що по інший бік стику: якщо причепився до кінця цієї секції, то на її сусіді, і навпаки
+            bool ownEnd = first ? sign > 0 : sign < 0;
+            Section track = section;
+            bool trackJointAtStart = atStart;
+            if (ownEnd)
+            {
+                List<SectionLink> links = section.GetLinks(atStart);
+                track = links.Count == 1 ? FindClientSection(links[0]) : null;
+                trackJointAtStart = links.Count == 1 && links[0].AtStart;
+            }
+
+            // Маршрут чіпляється до кінця, з якого колія вже йде далі: тут виникне стрілка.
+            // Поруч з іншою стрілкою її ставити не можна
+            if (track != null && SwitchZone.IsBlocked(section, atStart, FindClientSection))
+            {
+                snapRefusal = "Надто близько до іншої стрілки";
+                return null;
+            }
+
+            // Нахил полотна в стику, у знаку маршруту: його нормаль дивиться ліворуч від напрямку руху,
+            // а нормаль секції може дивитися і в інший бік
+            Vec3f normal = atStart ? section.StartNormal : section.EndNormal;
+            double sameSide = normal.X * -heading.Z + normal.Z * heading.X >= 0 ? 1 : -1;
+            double cant = Math.Asin(GameMath.Clamp(sameSide * normal.Y, -1, 1));
+
+            return new Marker
+            {
+                Block = position.AsBlockPos,
+                Position = position,
+                Heading = heading,
+                Snapped = true,
+                Cant = cant,
+                Track = track,
+                TrackJointAtStart = trackJointAtStart
+            };
+        }
+
+        // Чи можна в цьому стику приєднати маршрут, що йде в бік sign відносно виходу із секції.
+        // Маршрут чіпляється до того кінця, який дивиться йому назустріч: це або кінець самої секції,
+        // або кінець її сусіда по той бік стику. У цього кінця має бути вільне місце для другого сусіда
+        private bool JointHasRoom(Section section, bool atStart, bool first, int sign)
+        {
+            // Маршрут, що виходить зі стику в бік виходу із секції, продовжує її саму. Маршрут, що приходить
+            // у стик проти виходу, теж упирається в неї. В інших двох випадках ідеться про сусіда
+            bool ownEnd = first ? sign > 0 : sign < 0;
+            List<SectionLink> links = section.GetLinks(atStart);
+            if (ownEnd) return links.Count < SectionLinker.MaxLinksPerEnd;
+
+            // Сусід має бути рівно один: якщо їх два, цей стик уже стрілка, і по той бік дві різні колії
+            if (links.Count != 1) return false;
+            Section neighbour = FindClientSection(links[0]);
+            return neighbour != null && neighbour.GetLinks(links[0].AtStart).Count < SectionLinker.MaxLinksPerEnd;
+        }
+
+        private Section FindClientSection(SectionLink link)
+        {
+            List<SectionBox> boxes = system.GetClientBoxes(link.Chunk);
+            if (boxes == null) return null;
+
+            foreach (SectionBox box in boxes)
+            {
+                if (box.Part == SectionPart.Whole && box.Section.IndexInChunk == link.Index) return box.Section;
+            }
+            return null;
         }
 
         // Блок під прицілом для розмітки. Від звичайного прицілу гри відрізняється двома речами:
@@ -314,7 +418,11 @@ namespace RailWorld
                     }
                 }
 
-                route.Add(new RoutePoint { Position = position, Tangent = tangent });
+                route.Add(new RoutePoint
+                {
+                    Position = position, Tangent = tangent, Cant = marker.Cant,
+                    Track = marker.Track, TrackJointAtStart = marker.TrackJointAtStart
+                });
             }
             return route;
         }
@@ -403,12 +511,12 @@ namespace RailWorld
             }
 
             meshOrigin = new Vec3d(shown[0].Block.X, shown[0].Block.Y, shown[0].Block.Z);
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(BuildRoute(shown));
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(BuildRoute(shown), FindClientSection, out string conflict);
 
             int boxes = shown.Count + (preview ? points.Count / 2 * 5 : Math.Max(0, points.Count - 1) * 2);
             MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
 
-            bool[] problems = CheckRoute(points, out double minRadius, out double minVerticalRadius, out bool crossesItself);
+            bool[] problems = CheckRoute(points, out double minRadius, out double minVerticalRadius, out bool crossesItself, out bool broken);
 
             double maxSlope = 0;
             if (preview) AddPreviewSections(data, points, problems);
@@ -432,6 +540,8 @@ namespace RailWorld
             if (minRadius < MinRadius - RadiusTolerance) reasons.Add("поворот крутіший за радіус " + MinRadius);
             if (minVerticalRadius < MinRadius - RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + MinRadius);
             if (crossesItself) reasons.Add("маршрут перетинає сам себе");
+            if (broken) reasons.Add("рейки розриваються по висоті");
+            if (conflict != null) reasons.Add(conflict);
             routeProblem = reasons.Count == 0 ? null : string.Join(", ", reasons);
 
             hud.Show(string.Format("{0}\nТочок: {1}\nНайбільший ухил: {2:0.0}°\nНайменший радіус: {3}, по висоті: {4}{5}",
@@ -449,14 +559,39 @@ namespace RailWorld
         /// Перевіряє нарізаний маршрут. Повертає для кожної точки, чи є в ній порушення: поворот у плані або перелом
         /// по висоті крутіший за найменший радіус, або інший виток маршруту проходить тут ближче за просвіт.
         /// </summary>
-        private static bool[] CheckRoute(List<PointOnBezierCurve> points, out double minRadius, out double minVerticalRadius, out bool crossesItself)
+        /// <summary>
+        /// Коротка причина, чому нарізаний маршрут не можна будувати, або null, якщо можна.
+        /// Сервер перевіряє цим те, що надіслав клієнт: дані клієнта могли застаріти.
+        /// </summary>
+        public static string FindProblem(List<PointOnBezierCurve> points)
+        {
+            CheckRoute(points, out double minRadius, out double minVerticalRadius, out bool crossesItself, out bool broken);
+
+            if (broken) return "рейки розриваються по висоті";
+            if (minRadius < MinRadius - RadiusTolerance) return "поворот крутіший за радіус " + MinRadius;
+            if (minVerticalRadius < MinRadius - RadiusTolerance) return "перелом по висоті крутіший за радіус " + MinRadius;
+            if (crossesItself) return "маршрут перетинає сам себе";
+            return null;
+        }
+
+        private static bool[] CheckRoute(List<PointOnBezierCurve> points, out double minRadius, out double minVerticalRadius, out bool crossesItself, out bool broken)
         {
             int count = points.Count;
             bool[] problems = new bool[count];
             minRadius = double.MaxValue;
             minVerticalRadius = double.MaxValue;
             crossesItself = false;
+            broken = false;
             if (count < 3) return problems;
+
+            // Сходинка: сусідні точки нарізки стоять на різній висоті майже одна над одною
+            for (int i = 0; i + 1 < count; i++)
+            {
+                if (SlopeDeg(points[i].position, points[i + 1].position) <= BreakSlopeDeg) continue;
+                problems[i] = true;
+                problems[i + 1] = true;
+                broken = true;
+            }
 
             // Відстань уздовж колії від початку маршруту
             double[] run = new double[count];

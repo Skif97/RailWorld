@@ -87,6 +87,22 @@ void main()
         }
 
         /// <summary>
+        /// Додає важіль стрілки. Малюється тим самим рендером, що й шпали, і зникає разом зі шпалами свого чанка.
+        /// </summary>
+        public void AddLever(Vec3i chunkCoord, Vec3d position, Vec3f rotation)
+        {
+            const string key = "#switchlever";
+            if (!sleeperRenderers.TryGetValue(key, out var renderer))
+            {
+                ItemStack stack = CreateStack("switchlever", "iron");
+                if (stack == null) return;
+                renderer = new SleeperRenderer(capi, stack);
+                sleeperRenderers[key] = renderer;
+            }
+            renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+        }
+
+        /// <summary>
         /// Видаляє всі шпали чанка.
         /// </summary>
         public void RemoveChunkParts(Vec3i chunkCoord)

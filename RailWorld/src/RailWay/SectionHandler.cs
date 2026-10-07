@@ -96,6 +96,12 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public virtual bool OnSectionInteractStart(IWorldAccessor world, IPlayer byPlayer, SectionSelection sel)
         {
+            if (sel.Part == SectionPart.Switch)
+            {
+                if (world.Side == EnumAppSide.Server) ToggleSwitch(world, sel);
+                return true;
+            }
+
             if (sel.Section.IsInstalled(sel.Part)) return false;
 
             ItemSlot slot = byPlayer.InventoryManager.ActiveHotbarSlot;
@@ -103,6 +109,33 @@ namespace RailWorld.src.RailWay
 
             if (world.Side == EnumAppSide.Server) InstallPart(world, byPlayer, sel, slot);
             return true;
+        }
+
+        /// <summary>
+        /// Переводить стрілку секції на іншу гілку. Викликається на сервері. Якщо стрілки на обох кінцях секції,
+        /// переводиться та, до важеля якої гравець ближче цілився.
+        /// </summary>
+        protected virtual void ToggleSwitch(IWorldAccessor world, SectionSelection sel)
+        {
+            DataInChunk data = DataInChunk.Get(world, sel.Chunk);
+            if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
+
+            bool atStart;
+            if (section.HasSwitch(true) && section.HasSwitch(false))
+            {
+                Vec3d hit = sel.HitPosition ?? section.GetGlobalPos();
+                atStart = hit.SquareDistanceTo(SectionPicker.LeverPosition(section, true)) < hit.SquareDistanceTo(SectionPicker.LeverPosition(section, false));
+            }
+            else if (section.HasSwitch(true)) atStart = true;
+            else if (section.HasSwitch(false)) atStart = false;
+            else return;
+
+            section.ToggleSwitch(atStart, world.ElapsedMilliseconds);
+            DataInChunk.Save(world, sel.Chunk, data);
+            RailWorld.SendChunkDataToClients(sel.Chunk, data);
+
+            Vec3d lever = SectionPicker.LeverPosition(section, atStart);
+            world.PlaySoundAt(new AssetLocation("game:sounds/toggleswitch"), lever.X, lever.Y, lever.Z, null, true, 16);
         }
 
         /// <summary>
@@ -253,6 +286,8 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public virtual float GetResistance(IWorldAccessor world, SectionSelection sel)
         {
+            // Важіль стрілки не знімається: він зникає сам разом із відгалуженням
+            if (sel.Part == SectionPart.Switch) return float.MaxValue;
             // Секція цілком знімається інструментом одразу
             if (sel.Part == SectionPart.Whole) return 0f;
             return sel.Part == SectionPart.Sleeper || sel.Part == SectionPart.Ballast ? 1.5f : 3f;
@@ -263,6 +298,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public virtual float OnGettingBroken(IPlayer player, SectionSelection sel, ItemSlot itemslot, float remainingResistance, float dt, int counter)
         {
+            if (sel.Part == SectionPart.Switch) return remainingResistance;
             return remainingResistance - dt;
         }
 
@@ -273,6 +309,7 @@ namespace RailWorld.src.RailWay
         public virtual ItemStack[] GetDrops(IWorldAccessor world, SectionSelection sel, IPlayer byPlayer)
         {
             var drops = new List<ItemStack>();
+            if (sel.Part == SectionPart.Switch) return drops.ToArray();
 
             if (sel.Part == SectionPart.Whole)
             {
@@ -315,6 +352,8 @@ namespace RailWorld.src.RailWay
         public virtual void OnSectionBroken(IWorldAccessor world, SectionSelection sel, IPlayer byPlayer)
         {
             if (world.Side != EnumAppSide.Server) return;
+            // У креативі ламається все одразу, але важіль стрілки зламати не можна
+            if (sel.Part == SectionPart.Switch) return;
 
             RailDataSession session = new RailDataSession(world);
             DataInChunk data = session.Get(sel.Chunk);

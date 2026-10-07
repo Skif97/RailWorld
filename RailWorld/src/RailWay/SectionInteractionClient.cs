@@ -168,6 +168,8 @@ namespace RailWorld
         // З предметом для прокладання колії виділяється лише секція цілком, без нього лише окремі деталі
         private bool PickFilter(SectionBox box, ItemStack held, bool sectionTool)
         {
+            // Важіль стрілки доступний із будь-чим у руці, крім предмета для прокладання колії
+            if (box.Part == SectionPart.Switch) return !sectionTool;
             if (sectionTool) return box.Part == SectionPart.Whole;
             if (box.Part == SectionPart.Whole) return false;
             if (box.Installed) return true;

@@ -134,6 +134,20 @@ namespace RailWorld.src.RailWay
         public const double DirectionTolerance = -0.95;
 
         /// <summary>
+        /// Наскільки близько мають лежати обидва кінці двох секцій, щоб вважати їх однією і тією самою.
+        /// Навмисно набагато тісніше за PositionTolerance: перші секції відгалуження відходять від основної
+        /// колії на частки сантиметра, і з грубішою міркою їх викидало як повтори, а стрілка зсувалася далі.
+        /// Справжній повтор (той самий маршрут прокладено вдруге) збігається точно.
+        /// </summary>
+        public const double DuplicateTolerance = 0.001;
+
+        /// <summary>
+        /// Скільки сусідів може бути в одного кінця секції. Один це звичайна колія, два це стрілка:
+        /// основна колія і відгалуження. Потрійних стрілок не буває.
+        /// </summary>
+        public const int MaxLinksPerEnd = 2;
+
+        /// <summary>
         /// Чи лежить у чанку секція з тими самими кінцями, в будь-якому з двох напрямків.
         /// </summary>
         public static bool HasSameSection(DataInChunk data, Section section)
@@ -146,8 +160,8 @@ namespace RailWorld.src.RailWay
                 Vec3d otherStart = other.FullStartPosition;
                 Vec3d otherEnd = other.FullEndPosition;
 
-                bool same = otherStart.DistanceTo(start) <= PositionTolerance && otherEnd.DistanceTo(end) <= PositionTolerance;
-                bool reversed = otherStart.DistanceTo(end) <= PositionTolerance && otherEnd.DistanceTo(start) <= PositionTolerance;
+                bool same = otherStart.DistanceTo(start) <= DuplicateTolerance && otherEnd.DistanceTo(end) <= DuplicateTolerance;
+                bool reversed = otherStart.DistanceTo(end) <= DuplicateTolerance && otherEnd.DistanceTo(start) <= DuplicateTolerance;
                 if (same || reversed) return true;
             }
             return false;
@@ -205,6 +219,11 @@ namespace RailWorld.src.RailWay
 
                         Vec3f otherDir = other.GetOutwardDirection(otherAtStart);
                         if (dir.X * otherDir.X + dir.Y * otherDir.Y + dir.Z * otherDir.Z > DirectionTolerance) continue;
+
+                        // До стрілки третю гілку не приєднуємо. Зв'язок, який уже є, це не зачіпає
+                        bool known = other.GetLinks(otherAtStart).Exists(link => link.PointsTo(section));
+                        if (!known && (other.GetLinks(otherAtStart).Count >= MaxLinksPerEnd
+                            || section.GetLinks(atStart).Count >= MaxLinksPerEnd)) continue;
 
                         Link(session, section, atStart, other, otherAtStart);
                     }

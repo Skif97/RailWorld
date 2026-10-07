@@ -99,13 +99,27 @@ namespace RailWorld
             // Шматок нульової довжини: середина секції збіглася з її краєм
             if (piece == null) instances.Remove(key);
             else instances[key] = piece;
+            layoutDirty = true;
         }
+
+        // Матриця шматка складається з повороту з розтягом, які не міняються, і положення відносно камери,
+        // яке міняється щокадру. Перше рахується один раз, коли набір шматків чи їхнє світло змінилися,
+        // і лежить у буфері; щокадру переписуються лише три числа положення на шматок.
+        // layoutDirty каже, що нерухому частину треба порахувати заново
+        private bool layoutDirty = true;
+        // Положення кожного шматка у світі, разом зі зсувом, який дає сама матриця: по три числа на шматок,
+        // у тому самому порядку, що й у буфері
+        private double[] basePositions = new double[0];
+        private float[] scale = new float[] { 1f, 1f, 1f };
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
             string prefix = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_";
             foreach (var key in instances.Keys.Where(k => k.StartsWith(prefix)).ToList())
+            {
                 instances.Remove(key);
+                layoutDirty = true;
+            }
         }
 
         // Шматок рейки між двома точками осі колії. offset це зсув рейки вбік від осі
@@ -176,10 +190,35 @@ namespace RailWorld
         {
             foreach (RailInstanceData d in instances.Values)
                 d.Light = GetLight(d.Position);
+            layoutDirty = true;
         }
 
         // Скільки інстансів лежить у буфері після останнього PrepareFrame
         private int preparedCount;
+
+        // Буфер матриць у відеокарті має розмір, заданий при завантаженні меша, і сам не росте.
+        // Якщо інстансів стало більше, ніж у нього вміщається, оновлення мовчки відкидається відеокартою,
+        // у буфері лишаються старі матриці, пораховані відносно старого положення камери, і вся колія
+        // починає їздити за камерою. Тому меш завантажується заново з більшим буфером, із запасом удвічі
+        private void Grow(int instancesNeeded)
+        {
+            int size = Math.Max(instancesNeeded * 2, 1024) * 20;
+            matrixAndLightFloats = new CustomMeshDataPartFloat(size)
+            {
+                Instanced = true,
+                InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
+                InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
+                InterleaveStride = 80,
+                StaticDraw = false
+            };
+            matrixAndLightFloats.Values = new float[size];
+            matrixAndLightFloats.SetAllocationSize(size);
+            itemMesh.CustomFloats = matrixAndLightFloats;
+
+            meshref?.Dispose();
+            meshref = capi.Render.UploadMesh(itemMesh);
+            layoutDirty = true;
+        }
 
         /// <summary>
         /// Раз на кадр: рахує матриці всіх рейок відносно камери і заливає їх у відеокарту.
@@ -192,37 +231,50 @@ namespace RailWorld
             int count      = instances.Count;
             int floatCount = count * 20;
 
-            if (matrixAndLightFloats.Values == null || matrixAndLightFloats.Values.Length < floatCount)
+            if (matrixAndLightFloats.Values == null || matrixAndLightFloats.Values.Length < floatCount) Grow(count);
+            if (meshref == null) return;
+
+            float[] values = matrixAndLightFloats.Values;
+
+            if (layoutDirty)
             {
-                matrixAndLightFloats.Values = new float[floatCount + 400];
-                matrixAndLightFloats.SetAllocationSize(matrixAndLightFloats.Values.Length);
+                // Нерухома частина матриць і світло всіх шматків
+                if (basePositions.Length < count * 3) basePositions = new double[count * 3 * 2];
+
+                int n = 0;
+                foreach (RailInstanceData d in instances.Values)
+                {
+                    Mat4f.Identity(tmpMat);
+                    Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
+                    Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
+                    Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
+                    scale[2] = d.ScaleZ;
+                    Mat4f.Scale(tmpMat, tmpMat, scale);
+                    // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
+                    Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, 0f);
+
+                    int j = n * 20;
+                    values[j] = d.Light.R; values[j+1] = d.Light.G; values[j+2] = d.Light.B; values[j+3] = d.Light.A;
+                    for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
+
+                    // Зсув, який дала сама матриця, додається до положення шматка
+                    basePositions[n * 3] = d.Position.X + tmpMat[12];
+                    basePositions[n * 3 + 1] = d.Position.Y + tmpMat[13];
+                    basePositions[n * 3 + 2] = d.Position.Z + tmpMat[14];
+                    n++;
+                }
+                layoutDirty = false;
             }
 
+            // Щокадру міняється лише положення відносно камери: три числа в кожній матриці
             Vec3d camPos = capi.World.Player.Entity.CameraPos;
-            float[] values = matrixAndLightFloats.Values;
-            int i = 0;
-
-            foreach (var kvp in instances)
+            for (int i = 0; i < count; i++)
             {
-                RailInstanceData d = kvp.Value;
-                tmp.Set(
-                    (float)(d.Position.X - camPos.X),
-                    (float)(d.Position.Y - camPos.Y),
-                    (float)(d.Position.Z - camPos.Z));
-
-                Mat4f.Identity(tmpMat);
-                Mat4f.Translate(tmpMat, tmpMat, tmp.X, tmp.Y, tmp.Z);
-                Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
-                Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
-                Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
-                Mat4f.Scale(tmpMat, tmpMat, new float[] { 1f, 1f, d.ScaleZ });
-                // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
-                Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, 0f);
-
-                int j = i * 20;
-                values[j] = d.Light.R; values[j+1] = d.Light.G; values[j+2] = d.Light.B; values[j+3] = d.Light.A;
-                for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
-                i++;
+                int j = i * 20 + 16;
+                int b = i * 3;
+                values[j] = (float)(basePositions[b] - camPos.X);
+                values[j + 1] = (float)(basePositions[b + 1] - camPos.Y);
+                values[j + 2] = (float)(basePositions[b + 2] - camPos.Z);
             }
 
             matrixAndLightFloats.Count = floatCount;

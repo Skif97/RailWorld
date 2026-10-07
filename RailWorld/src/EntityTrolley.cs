@@ -529,6 +529,15 @@ namespace RailWorld
                 return EnterResult.Derailed;
             }
 
+            // Стрілку саме переводять: гостряки між двома положеннями, проїхати не можна ні з якого боку.
+            // Це або стрілка на кінці, з якого виїжджаємо, або та, на яку заїжджаємо з боку її гілок
+            long now = World.ElapsedMilliseconds;
+            if (section.IsSwitching(leaveAtStart, now) || next.Section.IsSwitching(next.EnterAtStart, now))
+            {
+                Derail(section);
+                return EnterResult.Derailed;
+            }
+
             sectionsWithoutSleeper = next.Section.SleeperInstalled ? 0 : sectionsWithoutSleeper + 1;
             if (sectionsWithoutSleeper >= MaxSectionsWithoutSleeper)
             {

@@ -56,6 +56,15 @@ namespace RailWorld
         [ProtoMember(4)] public double[] TangentX;
         [ProtoMember(5)] public double[] TangentY;
         [ProtoMember(6)] public double[] TangentZ;
+        // Нахил полотна в точках, що стоять на вже покладеній колії; NaN для решти
+        [ProtoMember(7)] public double[] Cant;
+        // Секція покладеної колії, поверх якої маршрут лежить за точкою: її чанк, номер у чанку і котрим кінцем
+        // вона в цій точці. Номер -1, якщо такої секції немає
+        [ProtoMember(8)] public int[] TrackChunkX;
+        [ProtoMember(9)] public int[] TrackChunkY;
+        [ProtoMember(10)] public int[] TrackChunkZ;
+        [ProtoMember(11)] public int[] TrackIndex;
+        [ProtoMember(12)] public bool[] TrackJointAtStart;
     }
 
     public class RailWorld : ModSystem
@@ -153,7 +162,10 @@ namespace RailWorld
             RoutePacket packet = new RoutePacket
             {
                 X = new double[count], Y = new double[count], Z = new double[count],
-                TangentX = new double[count], TangentY = new double[count], TangentZ = new double[count]
+                TangentX = new double[count], TangentY = new double[count], TangentZ = new double[count],
+                Cant = new double[count],
+                TrackChunkX = new int[count], TrackChunkY = new int[count], TrackChunkZ = new int[count],
+                TrackIndex = new int[count], TrackJointAtStart = new bool[count]
             };
 
             for (int i = 0; i < count; i++)
@@ -164,6 +176,17 @@ namespace RailWorld
                 packet.TangentX[i] = route[i].Tangent.X;
                 packet.TangentY[i] = route[i].Tangent.Y;
                 packet.TangentZ[i] = route[i].Tangent.Z;
+                packet.Cant[i] = route[i].Cant;
+
+                Section track = route[i].Track;
+                packet.TrackIndex[i] = track == null ? -1 : track.IndexInChunk;
+                if (track != null)
+                {
+                    packet.TrackChunkX[i] = track.ChunkAddres.X;
+                    packet.TrackChunkY[i] = track.ChunkAddres.Y;
+                    packet.TrackChunkZ[i] = track.ChunkAddres.Z;
+                    packet.TrackJointAtStart[i] = route[i].TrackJointAtStart;
+                }
             }
 
             _clientChannel?.SendPacket(packet);
@@ -181,6 +204,7 @@ namespace RailWorld
             if (packet.Y?.Length != count || packet.Z?.Length != count) return;
             if (packet.TangentX?.Length != count || packet.TangentY?.Length != count || packet.TangentZ?.Length != count) return;
 
+            RailDataSession zoneLookup = new RailDataSession(_sapi.World);
             var route = new List<RoutePoint>();
             for (int i = 0; i < count; i++)
             {
@@ -190,10 +214,52 @@ namespace RailWorld
                 Vec3d position = new Vec3d(packet.X[i], packet.Y[i], packet.Z[i]);
                 if (i > 0 && position.DistanceTo(route[i - 1].Position) > MaxRouteSpan) return;
 
-                route.Add(new RoutePoint { Position = position, Tangent = tangent.Normalize() });
+                double cant = packet.Cant != null && packet.Cant.Length == count ? packet.Cant[i] : double.NaN;
+                // Нахил колії не буває більшим за найбільший дозволений; решту вважаємо сміттям
+                if (!double.IsNaN(cant) && Math.Abs(cant) > ModMath.MaxCantRad * 1.5) cant = double.NaN;
+
+                RoutePoint point = new RoutePoint { Position = position, Tangent = tangent.Normalize(), Cant = cant };
+
+                // Секцію, поверх якої піде маршрут, шукаємо у своїх даних. Клієнтові віримо лише в тому,
+                // котра це секція, і лише якщо її кінець справді лежить у цій точці
+                bool hasTrack = packet.TrackIndex != null && packet.TrackIndex.Length == count && packet.TrackIndex[i] >= 0
+                    && packet.TrackChunkX?.Length == count && packet.TrackChunkY?.Length == count && packet.TrackChunkZ?.Length == count
+                    && packet.TrackJointAtStart?.Length == count;
+                if (hasTrack)
+                {
+                    Vec3i chunk = new Vec3i(packet.TrackChunkX[i], packet.TrackChunkY[i], packet.TrackChunkZ[i]);
+                    Section track = null;
+                    DataInChunk.Get(_sapi.World, chunk)?.RailWaySections.TryGetValue(packet.TrackIndex[i], out track);
+
+                    bool jointAtStart = packet.TrackJointAtStart[i];
+                    if (track != null && track.GetEndPosition(jointAtStart).DistanceTo(position) <= SectionLinker.PositionTolerance)
+                    {
+                        // Тут маршрут дасть нову стрілку. Клієнт це вже перевірив, але його дані могли застаріти
+                        if (SwitchZone.IsBlocked(track, jointAtStart, zoneLookup.GetSection))
+                        {
+                            fromPlayer.SendIngameError("railswitchzone", "Надто близько до іншої стрілки");
+                            return;
+                        }
+
+                        point.Track = track;
+                        point.TrackJointAtStart = jointAtStart;
+                    }
+                }
+
+                route.Add(point);
             }
 
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route);
+            RailDataSession lookup = new RailDataSession(_sapi.World);
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict);
+
+            // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
+            // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден
+            string problem = conflict ?? RoutePlanner.FindProblem(points);
+            if (problem != null)
+            {
+                fromPlayer.SendIngameError("railrouteproblem", "Маршрут не будується: " + problem);
+                return;
+            }
             if (points.Count < 3) return;
 
             TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
