@@ -1,0 +1,170 @@
+using System.Collections.Generic;
+using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
+
+namespace RailWorld.src.RailWay
+{
+    /// <summary>
+    /// Тримає записи про стрілки в чанках у згоді з колією. Працює тільки на сервері.
+    /// Запис перераховується, коли міняється щось у зоні стрілки: з'явився чи зник зв'язок, поставили чи зняли
+    /// рейку. Усі такі зміни проходять через RailDataSession.SaveAll, тому звідти його й викликають.
+    /// </summary>
+    public static class SwitchRegistry
+    {
+        /// <summary>
+        /// Перераховує стрілки, яких стосуються зміни в цих чанках: ті, що в них записані, ті, що мають там
+        /// з'явитися, і ті, на чиїх гілках лежать секції цих чанків.
+        /// </summary>
+        public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks)
+        {
+            var seen = new HashSet<string>();
+            var targets = new List<SwitchRef>();
+            void Want(int chunkX, int chunkY, int chunkZ, int key)
+            {
+                if (seen.Add(chunkX + "_" + chunkY + "_" + chunkZ + "_" + key)) targets.Add(new SwitchRef { ChunkX = chunkX, ChunkY = chunkY, ChunkZ = chunkZ, Key = key });
+            }
+
+            foreach (Vec3i chunk in changedChunks)
+            {
+                DataInChunk data = session.Get(chunk);
+                if (data == null) continue;
+
+                foreach (int key in data.Switches.Keys) Want(chunk.X, chunk.Y, chunk.Z, key);
+                foreach (Section section in data.RailWaySections.Values)
+                {
+                    for (int end = 0; end < 2; end++)
+                    {
+                        bool atStart = end == 0;
+                        if (section.HasSwitch(atStart)) Want(chunk.X, chunk.Y, chunk.Z, RailSwitch.KeyOf(section.IndexInChunk, atStart));
+
+                        SwitchRef member = section.GetSwitchRef(atStart);
+                        if (member != null) Want(member.ChunkX, member.ChunkY, member.ChunkZ, member.Key);
+                    }
+                }
+            }
+
+            foreach (SwitchRef target in targets)
+            {
+                Update(session, new Vec3i(target.ChunkX, target.ChunkY, target.ChunkZ), target.Key / 2, target.Key % 2 == 0);
+            }
+        }
+
+        /// <summary>
+        /// Дописує стрілки чанка, яких у записах ще немає (світ збережено до їх появи) або які пораховані
+        /// неповністю, бо чанк гілки тоді не був завантажений. Повертає true, якщо щось змінилося.
+        /// </summary>
+        public static bool Complete(RailDataSession session, Vec3i chunk)
+        {
+            DataInChunk data = session.Get(chunk);
+            if (data == null) return false;
+
+            var missing = new List<int>();
+            foreach (Section section in data.RailWaySections.Values)
+            {
+                for (int end = 0; end < 2; end++)
+                {
+                    bool atStart = end == 0;
+                    if (!section.HasSwitch(atStart)) continue;
+
+                    int key = RailSwitch.KeyOf(section.IndexInChunk, atStart);
+                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved) missing.Add(key);
+                }
+            }
+
+            foreach (int key in missing) Update(session, chunk, key / 2, key % 2 == 0);
+            return missing.Count > 0;
+        }
+
+        /// <summary>
+        /// Запис про стрілку на кінці секції, порахований, якщо його ще немає. null, якщо стрілки там немає.
+        /// </summary>
+        public static RailSwitch Get(RailDataSession session, Vec3i chunk, int trunkIndex, bool atStart)
+        {
+            DataInChunk data = session.Get(chunk);
+            if (data == null) return null;
+
+            int key = RailSwitch.KeyOf(trunkIndex, atStart);
+            if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved) Update(session, chunk, trunkIndex, atStart);
+
+            data.Switches.TryGetValue(key, out known);
+            return known;
+        }
+
+        // Рахує стрілку заново і записує її разом із посиланнями в секціях її гілок
+        private static void Update(RailDataSession session, Vec3i chunk, int trunkIndex, bool atStart)
+        {
+            DataInChunk data = session.Get(chunk);
+            // Чанк стрілки не завантажений: перерахуємо, коли з'явиться
+            if (data == null) return;
+
+            int key = RailSwitch.KeyOf(trunkIndex, atStart);
+            data.Switches.TryGetValue(key, out RailSwitch old);
+            data.RailWaySections.TryGetValue(trunkIndex, out Section trunk);
+            RailSwitch built = trunk == null ? null : SwitchBuilder.Build(trunk, atStart, session.GetSection);
+
+            // Секції, що входили в стрілку раніше, а тепер ні, мають про неї забути
+            if (old != null) Mark(session, old, chunk, key, built);
+
+            if (built == null)
+            {
+                if (old != null)
+                {
+                    data.Switches.Remove(key);
+                    session.MarkDirty(chunk);
+                }
+                if (trunk != null && trunk.ResetSwitch(atStart)) session.MarkDirty(chunk);
+                return;
+            }
+
+            data.Switches[key] = built;
+            session.MarkDirty(chunk);
+
+            for (int branch = 0; branch < built.Branches.Count; branch++)
+            {
+                List<SectionLink> members = built.Branches[branch].Members;
+                for (int n = 0; n < members.Count; n++)
+                {
+                    Section member = session.GetSection(members[n]);
+                    if (member == null) continue;
+
+                    var reference = new SwitchRef { ChunkX = chunk.X, ChunkY = chunk.Y, ChunkZ = chunk.Z, Key = key, Branch = branch, Number = n + 1 };
+                    if (member.SetSwitchRef(members[n].AtStart, reference)) session.MarkDirty(member.ChunkAddres);
+                }
+            }
+
+            // Бік важеля залежить від того, куди йдуть гілки, а вони могли подовжитися
+            SectionLinker.PlaceLever(session, trunk, atStart);
+        }
+
+        // Прибирає посилання на стрілку в секціях, яких у новому записі вже немає
+        private static void Mark(RailDataSession session, RailSwitch old, Vec3i chunk, int key, RailSwitch built)
+        {
+            foreach (SwitchBranch branch in old.Branches)
+            {
+                foreach (SectionLink link in branch.Members)
+                {
+                    if (built != null && Contains(built, link)) continue;
+
+                    Section member = session.GetSection(link);
+                    if (member == null) continue;
+
+                    SwitchRef reference = member.GetSwitchRef(link.AtStart);
+                    if (reference != null && reference.PointsTo(chunk, key) && member.SetSwitchRef(link.AtStart, null)) session.MarkDirty(member.ChunkAddres);
+                }
+            }
+        }
+
+        private static bool Contains(RailSwitch record, SectionLink link)
+        {
+            foreach (SwitchBranch branch in record.Branches)
+            {
+                foreach (SectionLink member in branch.Members)
+                {
+                    if (member.ChunkX == link.ChunkX && member.ChunkY == link.ChunkY && member.ChunkZ == link.ChunkZ
+                        && member.Index == link.Index && member.AtStart == link.AtStart) return true;
+                }
+            }
+            return false;
+        }
+    }
+}

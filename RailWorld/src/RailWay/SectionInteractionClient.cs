@@ -29,6 +29,12 @@ namespace RailWorld
         /// <summary>Деталь, на яку зараз дивиться гравець, або null.</summary>
         public SectionSelection Current { get; private set; }
 
+        /// <summary>
+        /// Деталь, на яку гравець дивився останньою. Лишається, коли він відвів погляд або відкрив чат:
+        /// з відкритим вікном під прицілом нічого немає.
+        /// </summary>
+        public SectionSelection LastLooked { get; private set; }
+
         /// <summary>Наскільки зламана поточна деталь, 0..1.</summary>
         public float BreakProgress => isBreaking && totalResistance > 0 ? 1 - remainingResistance / totalResistance : 0;
 
@@ -78,6 +84,7 @@ namespace RailWorld
         {
             if (instance == this) instance = null;
             Current = null;
+            LastLooked = null;
         }
 
         // Після того як гра знайшла блок і сутність під прицілом, шукаємо секцію тим самим променем
@@ -124,6 +131,7 @@ namespace RailWorld
             entity.BlockSelection = null;
             entity.EntitySelection = null;
 
+            LastLooked = Current;
             bool firstTick = !Current.SamePart(previous);
             if (firstTick) system.SendSectionAction(EnumSectionAction.Select, Current);
             system.Handler.OnBeingLookedAt(capi.World.Player, Current, firstTick);

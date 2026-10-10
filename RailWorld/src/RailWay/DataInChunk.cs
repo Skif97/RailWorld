@@ -17,10 +17,15 @@ namespace RailWorld.src.RailWay
         [ProtoMember(2)]
         public Dictionary<int, Section> RailWaySections;
 
+        // Стрілки, чия спільна секція лежить у цьому чанку, за ключем RailSwitch.Key
+        [ProtoMember(3)]
+        public Dictionary<int, RailSwitch> Switches;
+
         public DataInChunk()
         {
             index = 0;
             RailWaySections = new Dictionary<int, Section>();
+            Switches = new Dictionary<int, RailSwitch>();
         }
 
         // Секція не зберігає свій номер, він є ключем словника. Роздаємо номери після читання
@@ -28,6 +33,8 @@ namespace RailWorld.src.RailWay
         private void OnDeserialized()
         {
             if (RailWaySections == null) RailWaySections = new Dictionary<int, Section>();
+            // У збереженнях, зроблених до появи списку стрілок, його немає
+            if (Switches == null) Switches = new Dictionary<int, RailSwitch>();
             foreach (var kvp in RailWaySections)
                 kvp.Value.IndexInChunk = kvp.Key;
         }

@@ -10,64 +10,8 @@ namespace RailWorld.Tests
     /// SwitchGeometry: де сходяться внутрішні рейки двох гілок стрілки і скільки секцій займає гостряк.
     /// Стрілка в тестах це дві колії з однієї точки: пряма на схід і дуга, що відходить від неї на південь.
     /// </summary>
-    public class SwitchGeometryTests
+    public class SwitchGeometryTests : TrackTestBase
     {
-        private const double ArcRadius = 20;
-
-        private readonly Dictionary<string, Section> sections = new Dictionary<string, Section>();
-        private int nextIndex;
-
-        private static string Key(Vec3i chunk, int index)
-        {
-            return chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + index;
-        }
-
-        private Section Resolve(SectionLink link)
-        {
-            sections.TryGetValue(Key(link.Chunk, link.Index), out Section section);
-            return section;
-        }
-
-        // Кладе колію по маршруту так само, як це робить мод: точки нарізки, по три на секцію, сусідні зв'язані
-        private List<Section> Lay(params RoutePoint[] route)
-        {
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(new List<RoutePoint>(route));
-            var track = new List<Section>();
-            for (int i = 0; i + 2 < points.Count; i += 2)
-            {
-                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
-                section.IndexInChunk = nextIndex++;
-                sections[Key(section.ChunkAddres, section.IndexInChunk)] = section;
-
-                if (track.Count > 0)
-                {
-                    Section previous = track[track.Count - 1];
-                    previous.AddLink(false, new SectionLink(section, true));
-                    section.AddLink(true, new SectionLink(previous, false));
-                }
-                track.Add(section);
-            }
-            return track;
-        }
-
-        private static RoutePoint Point(double x, double z, double tangentX, double tangentZ)
-        {
-            return new RoutePoint { Position = new Vec3d(x, 0, z), Tangent = new Vec3d(tangentX, 0, tangentZ).Normalize() };
-        }
-
-        private List<Section> Straight()
-        {
-            return Lay(Point(0, 0, 1, 0), Point(24, 0, 1, 0));
-        }
-
-        // Дуга з тієї самої точки в тому самому напрямку, що відходить убік, на 60 градусів
-        private List<Section> Arc()
-        {
-            double angle = Math.PI / 3;
-            return Lay(Point(0, 0, 1, 0),
-                Point(ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-        }
-
         [Fact]
         public void InnerRailRunsOnTheSideOfTheOtherBranch()
         {

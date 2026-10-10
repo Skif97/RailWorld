@@ -442,6 +442,60 @@ namespace RailWorld.src.RailWay
         [ProtoMember(40)]
         private int _endLeverSide;
 
+        // До якої стрілки секція належить як частина гілки. Кінець тут це той, яким секція ближча до стрілки:
+        // секція може лежати на гілках двох стрілок одразу, по одній з кожного боку. null, якщо не належить
+        [ProtoMember(41)]
+        private SwitchRef _startSwitchRef;
+        [ProtoMember(42)]
+        private SwitchRef _endSwitchRef;
+
+        /// <summary>
+        /// Стрілка, на гілці якої лежить секція, якщо дивитися з кінця atStart, або null.
+        /// </summary>
+        public SwitchRef GetSwitchRef(bool atStart)
+        {
+            return atStart ? _startSwitchRef : _endSwitchRef;
+        }
+
+        /// <summary>
+        /// Записує, до якої стрілки належить секція з боку кінця atStart; null прибирає запис.
+        /// Повертає true, якщо запис змінився.
+        /// </summary>
+        public bool SetSwitchRef(bool atStart, SwitchRef value)
+        {
+            SwitchRef current = atStart ? _startSwitchRef : _endSwitchRef;
+            if (current == null ? value == null : current.SameAs(value)) return false;
+
+            if (atStart) _startSwitchRef = value;
+            else _endSwitchRef = value;
+            return true;
+        }
+
+        /// <summary>
+        /// Скидає стан стрілки на цьому кінці: стрілки тут більше немає. Без цього стара позначка «увімкнена
+        /// друга гілка» і старий бік важеля дісталися б наступній стрілці, покладеній на цьому ж кінці.
+        /// Повертає true, якщо було що скидати.
+        /// </summary>
+        public bool ResetSwitch(bool atStart)
+        {
+            bool changed;
+            if (atStart)
+            {
+                changed = _activeStartLink != 0 || _startSwitchMs != 0 || _startLeverSide != 0;
+                _activeStartLink = 0;
+                _startSwitchMs = 0;
+                _startLeverSide = 0;
+            }
+            else
+            {
+                changed = _activeEndLink != 0 || _endSwitchMs != 0 || _endLeverSide != 0;
+                _activeEndLink = 0;
+                _endSwitchMs = 0;
+                _endLeverSide = 0;
+            }
+            return changed;
+        }
+
         /// <summary>
         /// З якого боку колії стоїть важіль стрілки на цьому кінці: 1 з боку нормалі секції, -1 з протилежного.
         /// </summary>
@@ -449,6 +503,12 @@ namespace RailWorld.src.RailWay
         {
             int side = atStart ? _startLeverSide : _endLeverSide;
             return side < 0 ? -1 : 1;
+        }
+
+        /// <summary>Чи бік важеля на цьому кінці вже вибрано.</summary>
+        public bool HasLeverSide(bool atStart)
+        {
+            return (atStart ? _startLeverSide : _endLeverSide) != 0;
         }
 
         public void SetLeverSide(bool atStart, int side)

@@ -19,7 +19,9 @@ namespace RailWorld
         InteractStep = 3,
         InteractStop = 4,
         InteractCancel = 5,
-        Break = 6
+        Break = 6,
+        // Команда .railinfo: розказати, що сервер знає про секцію
+        Info = 7
     }
 
     /// <summary>
@@ -113,6 +115,12 @@ namespace RailWorld
 
             interaction = new SectionInteractionClient(api, this, harmony);
 
+            // Команда клієнтська: лише клієнт знає, на що гравець дивився. Поки відкритий чат, під прицілом
+            // нічого немає, тому беремо секцію, на яку він дивився останньою. Відповідає сервер: дані в нього
+            api.ChatCommands.Create("railinfo")
+                .WithDescription("Shows the rail section you looked at last and what the server knows about it")
+                .HandleWith(OnRailInfoCommand);
+
             // Камера пасажира нахиляється разом із вагонеткою
             TrolleyCameraPatch.Init(harmony, api);
         }
@@ -125,16 +133,13 @@ namespace RailWorld
             // Кеш статичний і міг лишитися від попереднього світу
             DataInChunk.ClearServerCache();
 
+            // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
+            api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
+
             api.Network
                 .RegisterChannel(ChannelName)
                 .RegisterMessageType<SectionActionPacket>()
                 .SetMessageHandler<SectionActionPacket>(OnSectionAction);
-
-            api.ChatCommands.Create("railinfo")
-                .WithDescription("Shows the rail section you are looking at and what its ends are connected to")
-                .RequiresPrivilege(Privilege.chat)
-                .RequiresPlayer()
-                .HandleWith(OnRailInfoCommand);
 
             // Гравець зламав або поставив блок: перевіряємо, чи не змінилося щось під секціями поруч
             api.Event.DidBreakBlock += (byPlayer, oldBlockId, blockSel) =>
@@ -177,6 +182,15 @@ namespace RailWorld
         }
 
         // ── Клієнт ───────────────────────────────────────────────────────────
+
+        private TextCommandResult OnRailInfoCommand(TextCommandCallingArgs args)
+        {
+            SectionSelection sel = interaction?.LastLooked;
+            if (sel == null) return TextCommandResult.Error("Look at a rail section first");
+
+            SendSectionAction(EnumSectionAction.Info, sel);
+            return TextCommandResult.Success();
+        }
 
         public void SendSectionAction(EnumSectionAction action, SectionSelection sel, EnumItemUseCancelReason cancelReason = EnumItemUseCancelReason.ReleasedMouse)
         {
@@ -1408,6 +1422,12 @@ namespace RailWorld
                 serverSelections.Remove(uid);
                 return;
             }
+            if (action == EnumSectionAction.Info)
+            {
+                // Лише читання, тому дотягуватися до секції не обов'язково
+                fromPlayer.SendMessage(Vintagestory.API.Config.GlobalConstants.CurrentChatGroup, DescribeSection(new Vec3i(packet.ChunkX, packet.ChunkY, packet.ChunkZ), packet.Index), EnumChatType.CommandSuccess);
+                return;
+            }
 
             SectionSelection sel = Resolve(fromPlayer, packet, out string rejectReason);
             if (sel == null)
@@ -1451,25 +1471,80 @@ namespace RailWorld
             }
         }
 
-        private TextCommandResult OnRailInfoCommand(TextCommandCallingArgs args)
+        // Щойно завантажена колонка чанків: дописує її стрілки, яких ще немає в записах, і дораховує стрілки
+        // сусідніх чанків, чиї гілки сюди заходять
+        private void OnChunkColumnLoaded(Vec2i column, IWorldChunk[] chunks)
         {
-            SectionSelection sel = GetSelection(args.Caller.Player);
-            if (sel == null) return TextCommandResult.Error("Look at a rail section first");
+            RailDataSession session = null;
+            for (int y = 0; y < chunks.Length; y++)
+            {
+                Vec3i chunk = new Vec3i(column.X, y, column.Y);
+                DataInChunk data = DataInChunk.Get(sapi.World, chunk);
+                if (data == null || data.RailWaySections.Count == 0) continue;
 
+                if (session == null) session = new RailDataSession(sapi.World);
+                SwitchRegistry.Complete(session, chunk);
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    for (int dy = -1; dy <= 1; dy++)
+                    {
+                        for (int dz = -1; dz <= 1; dz++)
+                        {
+                            if (dx != 0 || dy != 0 || dz != 0) SwitchRegistry.Complete(session, new Vec3i(chunk.X + dx, chunk.Y + dy, chunk.Z + dz));
+                        }
+                    }
+                }
+            }
+            if (session != null && session.HasChanges) session.SaveAll();
+        }
+
+        // Що сервер знає про секцію: її деталі, сусідів і стрілки
+        private string DescribeSection(Vec3i chunk, int index)
+        {
             RailDataSession session = new RailDataSession(sapi.World);
-            DataInChunk data = session.Get(sel.Chunk);
-            if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section))
-                return TextCommandResult.Error("Section not found");
+            DataInChunk data = session.Get(chunk);
+            if (data == null || !data.RailWaySections.TryGetValue(index, out Section section))
+                return "Section " + index + " not found in chunk " + chunk;
 
             // Заразом доз'єднує колію, прокладену до появи зв'язків
             string start = DescribeEnd(session, section, true);
             string end = DescribeEnd(session, section, false);
+            string switches = DescribeSwitches(session, data, section);
             if (session.HasChanges) session.SaveAll();
 
-            return TextCommandResult.Success(string.Format(
-                "Section {0} in chunk {1}. Sleeper: {2}, rails: {3}/{4}. Start -> {5}. End -> {6}.",
+            return string.Format(
+                // Чат гри розбирає текст як розмітку: кутових дужок у ньому бути не може
+                "Section {0} in chunk {1}. Sleeper: {2}, rails: {3}/{4}. Start: {5}. End: {6}.{7}",
                 section.IndexInChunk, section.ChunkAddres,
-                section.SleeperInstalled, section.FirstRailInstalled, section.SecondRailInstalled, start, end));
+                section.SleeperInstalled, section.FirstRailInstalled, section.SecondRailInstalled, start, end, switches);
+        }
+
+        // Що сервер записав про стрілки, до яких секція має стосунок
+        private static string DescribeSwitches(RailDataSession session, DataInChunk data, Section section)
+        {
+            string text = "";
+            for (int end = 0; end < 2; end++)
+            {
+                bool atStart = end == 0;
+                string name = atStart ? "start" : "end";
+
+                RailSwitch own = section.HasSwitch(atStart) ? SwitchRegistry.Get(session, section.ChunkAddres, section.IndexInChunk, atStart) : null;
+                if (own != null && own.Branches.Count == 2)
+                {
+                    SwitchBranch a = own.Branches[0], b = own.Branches[1];
+                    text += string.Format(" Switch at {0}: complete {1}, resolved {2}, position {3}; blade {4}, frog {5}-{6}, shared sleepers {7}, zone {8}, members {9}/{10}.",
+                        name, own.Complete, own.Resolved, section.GetSwitchPosition(atStart), a.BladeSections, a.FrogFrom, a.FrogTo,
+                        a.PairSections, a.ZoneSections, a.Members.Count, b.Members.Count);
+                }
+
+                SwitchRef member = section.GetSwitchRef(atStart);
+                if (member != null)
+                {
+                    text += string.Format(" From its {0} it is section {1} of branch {2} of switch {3} in chunk {4}/{5}/{6}.",
+                        name, member.Number, member.Branch, member.Key, member.ChunkX, member.ChunkY, member.ChunkZ);
+                }
+            }
+            return text;
         }
 
         private static string DescribeEnd(RailDataSession session, Section section, bool atStart)

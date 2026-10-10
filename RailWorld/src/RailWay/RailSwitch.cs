@@ -1,0 +1,199 @@
+using ProtoBuf;
+using System;
+using System.Collections.Generic;
+
+namespace RailWorld.src.RailWay
+{
+    /// <summary>
+    /// Посилання секції на стрілку, на гілці якої вона лежить: де запис про стрілку, котра це гілка
+    /// і котра за рахунком секція на ній, від стрілки з одиниці.
+    /// </summary>
+    [ProtoContract]
+    public class SwitchRef
+    {
+        [ProtoMember(1)] public int ChunkX;
+        [ProtoMember(2)] public int ChunkY;
+        [ProtoMember(3)] public int ChunkZ;
+        /// <summary>Ключ стрілки в її чанку, RailSwitch.Key.</summary>
+        [ProtoMember(4)] public int Key;
+        [ProtoMember(5)] public int Branch;
+        [ProtoMember(6)] public int Number;
+
+        public bool SameAs(SwitchRef other)
+        {
+            return other != null && ChunkX == other.ChunkX && ChunkY == other.ChunkY && ChunkZ == other.ChunkZ
+                && Key == other.Key && Branch == other.Branch && Number == other.Number;
+        }
+
+        public bool PointsTo(Vintagestory.API.MathTools.Vec3i chunk, int key)
+        {
+            return ChunkX == chunk.X && ChunkY == chunk.Y && ChunkZ == chunk.Z && Key == key;
+        }
+    }
+
+    /// <summary>
+    /// Одна з двох гілок стрілки: її секції по порядку від стрілки і місця деталей стрілки на ній.
+    /// Номери секцій рахуються від стрілки з одиниці.
+    /// </summary>
+    [ProtoContract]
+    public class SwitchBranch
+    {
+        /// <summary>
+        /// Секції гілки від стрілки до кінця її зони. AtStart у кожного посилання каже, котрим кінцем
+        /// секція ближча до стрілки. Перша з них виходить просто зі стику.
+        /// </summary>
+        [ProtoMember(1)]
+        public List<SectionLink> Members = new List<SectionLink>();
+
+        /// <summary>Скільки перших секцій мають спільну шпалу з секцією другої гілки під тим самим номером.</summary>
+        [ProtoMember(2)]
+        public int PairSections;
+
+        /// <summary>Скільки перших секцій лежать на другій гілці: її вісь ближча, ніж довжина шпали.</summary>
+        [ProtoMember(3)]
+        public int OverlapSections;
+
+        /// <summary>Скільки перших секцій займає гостряк.</summary>
+        [ProtoMember(4)]
+        public int BladeSections;
+
+        /// <summary>Перша і остання секції, зайняті хрестовиною. Нулі, якщо хрестовини немає.</summary>
+        [ProtoMember(5)]
+        public int FrogFrom;
+        [ProtoMember(6)]
+        public int FrogTo;
+
+        /// <summary>До якої секції включно гілка це ще стрілка: тут рейки мають стояти, щоб стрілка працювала.</summary>
+        public int ZoneSections => Math.Max(Math.Max(PairSections, OverlapSections), FrogTo);
+
+        [ProtoAfterDeserialization]
+        private void OnDeserialized()
+        {
+            if (Members == null) Members = new List<SectionLink>();
+        }
+    }
+
+    /// <summary>
+    /// Стрілка: кінець секції, з якого колія розходиться на дві гілки. Зберігається в чанку своєї спільної
+    /// секції разом із тим, що про неї можна порахувати наперед, щоб ніхто не шукав цього щоразу ходінням
+    /// по зв'язках. Рахує її SwitchBuilder, коли стрілка з'являється або коли колія в її зоні змінюється.
+    /// Положення стрілки і час останнього переведення лежать на самій спільній секції: їх на кожному стику
+    /// читає вагонетка.
+    /// </summary>
+    [ProtoContract]
+    public class RailSwitch
+    {
+        /// <summary>Спільна секція і її кінець, з якого виходять гілки.</summary>
+        [ProtoMember(1)]
+        public int TrunkIndex;
+        [ProtoMember(2)]
+        public bool AtStart;
+
+        /// <summary>Дві гілки в тому самому порядку, що й зв'язки спільної секції: перша це основна.</summary>
+        [ProtoMember(3)]
+        public List<SwitchBranch> Branches = new List<SwitchBranch>();
+
+        /// <summary>На обох гілках у зоні стрілки стоять обидві рейки: стрілку можна переводити і малювати стрілкою.</summary>
+        [ProtoMember(4)]
+        public bool Complete;
+
+        /// <summary>
+        /// Усі секції зони вдалося прочитати. Якщо ні (чанк гілки не був завантажений), стрілка порахована
+        /// неповністю, вважається незібраною і має бути перерахована, коли чанк з'явиться.
+        /// </summary>
+        [ProtoMember(5)]
+        public bool Resolved;
+
+        /// <summary>Ключ стрілки в чанку: у секції два кінці, і на кожному може бути своя.</summary>
+        public int Key => KeyOf(TrunkIndex, AtStart);
+
+        public static int KeyOf(int trunkIndex, bool atStart)
+        {
+            return trunkIndex * 2 + (atStart ? 0 : 1);
+        }
+
+        [ProtoAfterDeserialization]
+        private void OnDeserialized()
+        {
+            if (Branches == null) Branches = new List<SwitchBranch>();
+        }
+    }
+
+    /// <summary>
+    /// Рахує стрілку з колії. Чиста геометрія і зв'язки секцій: сусідні секції дістає через resolve,
+    /// тому працює однаково на сервері, на клієнті й у тестах.
+    /// </summary>
+    public static class SwitchBuilder
+    {
+        /// <summary>
+        /// Стрілка на кінці atStart секції trunk, або null, якщо з цього кінця не виходить рівно дві колії.
+        /// </summary>
+        public static RailSwitch Build(Section trunk, bool atStart, Func<SectionLink, Section> resolve)
+        {
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            if (links.Count != 2) return null;
+
+            var result = new RailSwitch { TrunkIndex = trunk.IndexInChunk, AtStart = atStart, Resolved = true };
+
+            Section[] first = { resolve(links[0]), resolve(links[1]) };
+            if (first[0] == null || first[1] == null)
+            {
+                // Перша ж секція якоїсь гілки недоступна: про стрілку відомо лише, що вона є
+                result.Resolved = false;
+                result.Branches.Add(new SwitchBranch());
+                result.Branches.Add(new SwitchBranch());
+                return result;
+            }
+
+            bool railsInPlace = true;
+            for (int k = 0; k < 2; k++)
+            {
+                Section mine = first[k], other = first[1 - k];
+                bool mineAtStart = links[k].AtStart, otherAtStart = links[1 - k].AtStart;
+
+                BranchGeometry geometry = SwitchGeometry.Branch(mine, mineAtStart, other, otherAtStart, resolve);
+                double heelAt = SwitchZone.CrossingDistance(mine, mineAtStart, other, otherAtStart, resolve, SwitchZone.BladeHeelSeparation);
+
+                var branch = new SwitchBranch
+                {
+                    PairSections = SwitchZone.PairSections(mine, mineAtStart, other, otherAtStart, resolve),
+                    OverlapSections = SwitchZone.OverlapSections(trunk, atStart, mine, resolve),
+                    BladeSections = SwitchGeometry.BladeSections(heelAt, geometry),
+                    FrogFrom = geometry.Throat >= 0 ? geometry.HideFrom : 0,
+                    FrogTo = geometry.Throat >= 0 ? geometry.HideTo : 0
+                };
+
+                // Секції гілки: зона стрілки і ще кілька секцій за нею, закритих для нових стрілок
+                int zone = branch.ZoneSections;
+                int length = zone + SwitchZone.ClearSections;
+
+                Section current = mine;
+                bool entered = mineAtStart;
+                for (int number = 1; number <= length; number++)
+                {
+                    branch.Members.Add(new SectionLink(current, entered));
+                    if (number <= zone && !current.RailsInstalled) railsInPlace = false;
+
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    // Гілка скінчилася або сама розходиться: далі це вже не ця стрілка
+                    if (ahead.Count != 1) break;
+
+                    Section next = resolve(ahead[0]);
+                    if (next == null)
+                    {
+                        // Колія далі є, але прочитати її не вдалося
+                        if (number < length) result.Resolved = false;
+                        break;
+                    }
+                    entered = ahead[0].AtStart;
+                    current = next;
+                }
+
+                result.Branches.Add(branch);
+            }
+
+            result.Complete = railsInPlace && result.Resolved;
+            return result;
+        }
+    }
+}

@@ -165,7 +165,7 @@ namespace RailWorld.src.RailWay
         /// відходить від рамної рейки сусідньої рівно на стільки ж, на скільки розійшлися осі.
         /// Гілки проходяться парами секцій від стрілки.
         /// </summary>
-        private static double CrossingDistance(Section first, bool firstEntered, Section second, bool secondEntered,
+        internal static double CrossingDistance(Section first, bool firstEntered, Section second, bool secondEntered,
             Func<SectionLink, Section> resolve, double apartNeeded)
         {
             double previousApart = 0, previousAlong = 0;
@@ -214,6 +214,21 @@ namespace RailWorld.src.RailWay
                 current = resolve(ahead[0]);
             }
             return current;
+        }
+
+        /// <summary>
+        /// Скільки перших секцій двох гілок стоять у парі: шпали секцій з однаковим номером від стрілки
+        /// перетинаються, і замість двох малюється одна спільна. first і second це перші секції гілок.
+        /// </summary>
+        internal static int PairSections(Section first, bool firstEntered, Section second, bool secondEntered, Func<SectionLink, Section> resolve)
+        {
+            int pairs = 0;
+            for (int number = 1; number <= MaxPairWalk; number++)
+            {
+                if (!SleepersOverlap(Nth(first, firstEntered, number, resolve), Nth(second, secondEntered, number, resolve))) break;
+                pairs = number;
+            }
+            return pairs;
         }
 
         // Чи перетинаються шпали двох секцій: їхні середини ближчі, ніж пів шпали однієї плюс пів шпали іншої
@@ -285,7 +300,7 @@ namespace RailWorld.src.RailWay
         /// іншої, ніж довжина шпали, шпали двох гілок перетинаються, і це ще стрілка.
         /// trunk і trunkAtStart це кінець, з якого колії розходяться, branch це перша секція потрібної гілки.
         /// </summary>
-        private static int OverlapSections(Section trunk, bool trunkAtStart, Section branch, Func<SectionLink, Section> resolve)
+        internal static int OverlapSections(Section trunk, bool trunkAtStart, Section branch, Func<SectionLink, Section> resolve)
         {
             SectionLink mine = null, theirs = null;
             foreach (SectionLink link in trunk.GetLinks(trunkAtStart))

@@ -131,7 +131,10 @@ namespace RailWorld.src.RailWay
             else return;
 
             // Недобудовану чи розібрану стрілку перевести не можна
-            if (!SwitchZone.IsComplete(section, atStart, new RailDataSession(world).GetSection)) return;
+            var session = new RailDataSession(world);
+            RailSwitch record = SwitchRegistry.Get(session, sel.Chunk, section.IndexInChunk, atStart);
+            if (session.HasChanges) session.SaveAll();
+            if (record == null || !record.Complete) return;
 
             section.ToggleSwitch(atStart, world.ElapsedMilliseconds);
             DataInChunk.Save(world, sel.Chunk, data);
@@ -176,8 +179,8 @@ namespace RailWorld.src.RailWay
 
             if (!section.InstallPart(sel.Part, type, material)) return;
 
-            DataInChunk.Save(world, sel.Chunk, data);
-            RailWorld.SendChunkDataToClients(sel.Chunk, data);
+            // Поставлена рейка могла доповнити стрілку: зберігаємо через сесію, вона перерахує записи стрілок
+            RailDataSession.SaveChunk(world, sel.Chunk);
 
             // З першою деталлю секція займає свої клітинки, з наступними оновлює їхню форму
             TrackBed.Sync(world, section);

@@ -107,10 +107,26 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Записує один чанк, дані якого щойно змінили, і розсилає його клієнтам; заразом перераховує
+        /// стрілки, яких ця зміна стосується. Для змін, що не проходять через власну сесію.
+        /// </summary>
+        public static void SaveChunk(IWorldAccessor world, Vec3i chunkCoord)
+        {
+            var session = new RailDataSession(world);
+            if (session.Get(chunkCoord) == null) return;
+            session.MarkDirty(chunkCoord);
+            session.SaveAll();
+        }
+
+        /// <summary>
         /// Записує змінені чанки і розсилає їх клієнтам.
         /// </summary>
         public void SaveAll()
         {
+            // Записи про стрілки мають відповідати колії вже в тому, що зараз піде у збереження й клієнтам.
+            // Перерахунок сам позначає чанки, які зачепив
+            SwitchRegistry.Refresh(this, new List<Vec3i>(dirty));
+
             foreach (Vec3i chunkCoord in dirty)
             {
                 if (!loaded.TryGetValue(chunkCoord, out DataInChunk data)) continue;
@@ -236,9 +252,8 @@ namespace RailWorld.src.RailWay
             if (a.AddLink(aAtStart, new SectionLink(b, bAtStart))) session.MarkDirty(a.ChunkAddres);
             if (b.AddLink(bAtStart, new SectionLink(a, aAtStart))) session.MarkDirty(b.ChunkAddres);
 
-            // Якщо з якогось кінця тепер виходять дві колії, там з'явилася стрілка: вирішуємо, де стати важелю
-            PlaceLever(session, a, aAtStart);
-            PlaceLever(session, b, bAtStart);
+            // Якщо з якогось кінця тепер виходять дві колії, там з'явилася стрілка. Її запис і бік важеля
+            // порахує SwitchRegistry, коли сесія зберігатиме зміни
         }
 
         // Як далеко вздовж гілок дивитися, щоб зрозуміти, котра з них пряміша, у секціях
@@ -248,7 +263,7 @@ namespace RailWorld.src.RailWay
         /// Вибирає бік для важеля стрілки: із зовнішнього боку прямішої з двох колій, тобто з протилежного
         /// від того, куди відхиляється друга. Тоді важіль не стоїть між коліями.
         /// </summary>
-        private static void PlaceLever(RailDataSession session, Section trunk, bool atStart)
+        internal static void PlaceLever(RailDataSession session, Section trunk, bool atStart)
         {
             List<SectionLink> links = trunk.GetLinks(atStart);
             if (links.Count < 2) return;
@@ -284,6 +299,7 @@ namespace RailWorld.src.RailWay
             int side = diverging > 0 ? -1 : 1;
 
 
+            if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;
             trunk.SetLeverSide(atStart, side);
             session.MarkDirty(trunk.ChunkAddres);
         }
