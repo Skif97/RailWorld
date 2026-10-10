@@ -157,7 +157,7 @@ void main()
             foreach (LoftPart part in parts) hash = BladeMesh.Mix(hash, part);
             if (bladeRenderer.Keep(key, hash)) return;
 
-            MeshData mesh = BladeMesh.BuildLoft(renderer.TemplateMesh, parts, out BladeFrame basis);
+            MeshData mesh = BladeMesh.BuildLoft(renderer.TemplateMesh, parts, out RailFrame basis);
             if (mesh == null) return;
             bladeRenderer.Set(key, hash, mesh, basis, renderer.TextureId);
         }

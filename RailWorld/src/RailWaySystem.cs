@@ -536,66 +536,15 @@ namespace RailWorld
             Renderer.AddSleeper(chunkCoord, a.SleeperMaterial ?? "oak", position, new Vec3f(pitch, yaw, roll), (float)length);
         }
 
-        // Гостряк стрілки: початок внутрішньої рейки кожної з двох колій, окрема деталь зі своїм мешем.
-        // Розміри взято зі справжніх стрілок і перераховано на нашу рейку, головка якої 0.075 блока.
-        // Довжина: до місця, де рейка гостряка відійшла від рамної рейки на головку плюс жолоб
-        // (SwitchZone.BladeHeelSeparation), але не коротше і не довше за ці межі в секціях: від 3.5 до 8 ширин
-        // колії, як на справжній залізниці. При колії 0.78 це від 3 до 6 блоків
-        private static readonly int MinBladeSections = (int)Math.Ceiling(TrackGauge.StandardWidth * 3.5 / 0.5);
-        private static readonly int MaxBladeSections = (int)Math.Floor(TrackGauge.StandardWidth * 8.0 / 0.5);
         // Хід вістря: на скільки блоків відведений гостряк відходить від рамної рейки
         private const double BladeThrow = 0.12;
 
-        // Котра рейка секції лежить з боку сусідньої колії стрілки: 1 перша (з боку нормалі), -1 друга
-        private static double TowardPartner(Section section, Section partner)
-        {
-            Vec3d center = Middle(section), partnerCenter = Middle(partner);
-            Vec3f normal = section.CenterNormal;
-            return (partnerCenter.X - center.X) * normal.X + (partnerCenter.Z - center.Z) * normal.Z >= 0 ? 1 : -1;
-        }
 
-        // Скільки секцій завдовжки гостряк, якщо його корінь за heelAt блоків від стрілки
-        private static int BladeSections(double heelAt)
-        {
-            return GameMath.Clamp((int)Math.Ceiling(heelAt / 0.5 - 1e-6), MinBladeSections, MaxBladeSections);
-        }
 
-        // Те саме, але гостряк не заходить у хрестовину. На крутій стрілці вона починається ближче, ніж
-        // найменша довжина гостряка, і тоді гостряк коротший: закінчується там, де починається хрестовина
-        private static int BladeSections(double heelAt, SwitchSide side)
-        {
-            int sections = BladeSections(heelAt);
-            if (side != null && side.Throat >= 0) sections = Math.Min(sections, Math.Max(side.HideFrom - 1, 1));
-            return sections;
-        }
 
-        // Хрестовина. Розміри зі справжніх стрілок, перераховані на нашу рейку.
-        // Жолоб для гребеня колеса між вусовиком і осердям, блоків
-        private const double FrogFlangeway = 0.05;
-        // Як далеко від стрілки шукати хрестовину, у секціях
-        private const int MaxFrogSections = 40;
-
-        /// <summary>
-        /// Усе про внутрішню рейку однієї з двох колій стрілки: її лінія і де на ній хрестовина.
-        /// </summary>
-        private class SwitchSide
-        {
-            // Перерізи внутрішньої рейки від стрілки, через чверть блока
-            public List<BladeFrame> Frames;
-            // Ті самі перерізи внутрішньої рейки сусідньої колії
-            public List<BladeFrame> Other;
-            // Де сусідня внутрішня рейка відносно своєї в кожному перерізі, блоків у бік сусідньої колії.
-            // Біля стрілки вона з іншого боку, на ширину колії, далі рейки сходяться, перетинаються і розходяться
-            public double[] Across;
-            // Номери перерізів: де рейка підійшла до сусідньої на жолоб, де починається осердя,
-            // де рейки перетинаються і де осердя набрало повну ширину. -1, якщо хрестовини немає
-            public int Throat = -1, Tip, Crossing, Full;
-            // Секції, на яких звичайна рейка не малюється, бо там хрестовина. Номери від стрілки, з одиниці
-            public int HideFrom, HideTo;
-        }
 
         // Розраховані колії стрілок, за першою секцією колії. Живе одну перебудову чанка
-        private Dictionary<Section, SwitchSide> switchSides = new Dictionary<Section, SwitchSide>();
+        private Dictionary<Section, BranchGeometry> switchSides = new Dictionary<Section, BranchGeometry>();
         // Чи стрілка зібрана повністю, за її ключем. Живе стільки ж, скільки switchSides
         private Dictionary<string, bool> switchComplete = new Dictionary<string, bool>();
 
@@ -624,7 +573,7 @@ namespace RailWorld
                 Section other = FindClientSection(links[1 - k]);
                 if (branch == null || other == null) continue;
 
-                SwitchSide side = GetSwitchSide(branch, links[k].AtStart, other);
+                BranchGeometry side = GetBranchGeometry(branch, links[k].AtStart, other);
                 if (side.Throat < 0) continue;
 
                 Section current = branch;
@@ -643,144 +592,21 @@ namespace RailWorld
             return complete;
         }
 
-        /// <summary>
-        /// Перерізи внутрішньої рейки колії від стрілки. first це перша секція колії, switchAtStart котрим кінцем
-        /// вона до стрілки, toward з якого боку її нормалі лежить сусідня колія.
-        /// </summary>
-        private List<BladeFrame> RailFrames(Section first, bool switchAtStart, double toward, int sections)
-        {
-            var frames = new List<BladeFrame>();
-            Section current = first;
-            bool enteredAtStart = switchAtStart;
-            Vec3d side = null;
-
-            for (int n = 0; n < sections; n++)
-            {
-                // Три точки секції в порядку від стрілки. Перша збігається з останньою точкою попередньої секції
-                Vec3d[] axis = { current.FullStartPosition, current.GetGlobalPos(), current.FullEndPosition };
-                Vec3f[] normals = { current.StartNormal, current.CenterNormal, current.EndNormal };
-                Vec3f[] tangents = { current.StartTangent, current.CenterTangent, current.EndTangent };
-                double direction = enteredAtStart ? 1 : -1;
-                if (!enteredAtStart)
-                {
-                    Array.Reverse(axis);
-                    Array.Reverse(normals);
-                    Array.Reverse(tangents);
-                }
-
-                for (int k = n == 0 ? 0 : 1; k < 3; k++)
-                {
-                    // Бік: нормаль секції, спрямована до сусідньої колії. У першій точці це відомо, далі
-                    // тримаємося того самого боку: нормалі сусідніх секцій можуть дивитися в різні боки
-                    Vec3d normal = new Vec3d(normals[k].X, normals[k].Y, normals[k].Z).Normalize();
-                    if (side == null) normal.Mul(toward);
-                    else if (normal.X * side.X + normal.Z * side.Z < 0) normal.Mul(-1);
-                    side = normal;
-
-                    Vec3d along = new Vec3d(tangents[k].X * direction, tangents[k].Y * direction, tangents[k].Z * direction);
-                    along.Sub(side.Clone().Mul(along.Dot(side)));
-                    if (along.Length() < 1e-6) along = new Vec3d(-side.Z, 0, side.X);
-                    along.Normalize();
-
-                    Vec3d up = side.Cross(along);
-                    if (up.Y < 0) up.Mul(-1);
-
-                    frames.Add(new BladeFrame
-                    {
-                        Center = new Vec3d(axis[k].X + side.X * current.TrackWidth / 2, axis[k].Y + side.Y * current.TrackWidth / 2, axis[k].Z + side.Z * current.TrackWidth / 2),
-                        Side = side.Clone(),
-                        Up = up,
-                        Along = along
-                    });
-                }
-
-                // Наступна секція колії. Якщо колія скінчилася, перерізи закінчуються там само
-                List<SectionLink> links = current.GetLinks(!enteredAtStart);
-                if (links.Count != 1) break;
-                Section next = FindClientSection(links[0]);
-                if (next == null) break;
-                current = next;
-                enteredAtStart = links[0].AtStart;
-            }
-
-            return frames;
-        }
 
         /// <summary>
         /// Розраховує внутрішню рейку колії стрілки і місце хрестовини на ній. first це перша секція колії.
         /// </summary>
-        private SwitchSide GetSwitchSide(Section first, bool switchAtStart, Section partnerFirst)
+
+        private BranchGeometry GetBranchGeometry(Section first, bool switchAtStart, Section partnerFirst)
         {
-            if (switchSides.TryGetValue(first, out SwitchSide known)) return known;
+            if (switchSides.TryGetValue(first, out BranchGeometry known)) return known;
 
-            SwitchSide result = new SwitchSide();
+            // Друга гілка має справді виходити з тієї самої стрілки
+            bool partnerSwitchAtStart = true;
+            bool paired = partnerFirst != null && Sibling(first, switchAtStart, out Section sibling, out partnerSwitchAtStart) && sibling == partnerFirst;
+
+            BranchGeometry result = SwitchGeometry.Branch(first, switchAtStart, partnerFirst, paired ? partnerSwitchAtStart : (bool?)null, FindClientSection);
             switchSides[first] = result;
-            result.Frames = RailFrames(first, switchAtStart, TowardPartner(first, partnerFirst), MaxFrogSections);
-
-            if (partnerFirst == null || !Sibling(first, switchAtStart, out Section sibling, out bool partnerSwitchAtStart) || sibling != partnerFirst) return result;
-
-            result.Other = RailFrames(partnerFirst, partnerSwitchAtStart, TowardPartner(partnerFirst, first), MaxFrogSections);
-            int count = Math.Min(result.Frames.Count, result.Other.Count);
-            result.Across = new double[count];
-
-            double head = BladeMesh.HeadHalfWidth * 2;
-            // Відстань між серединами рейок, за якої між їхніми головками лишається жолоб
-            double clearance = head + FrogFlangeway;
-            int tip = -1, crossing = -1, full = -1;
-
-            // Відстань між рейками в кожному перерізі, упоперек бісектриси їхніх напрямків. Саме впоперек:
-            // точки двох колій з однаковим номером не стоять одна навпроти одної, бо колії порізані на шматки
-            // трохи різної довжини і відгалуження йде дугою. Пряма відстань між такими точками біля перетину
-            // лишається чималою, хоча самі рейки там уже зійшлися.
-            // Відстань зі знаком: до перетину сусідня рейка з боку осі своєї колії, це від'ємний бік, після
-            // з протилежного. Число однакове, з якої колії не дивись, тому й межі хрестовини в обох ті самі
-            double[] apart = new double[count];
-            for (int q = 0; q < count; q++)
-            {
-                BladeFrame own = result.Frames[q], other = result.Other[q];
-                double dx = other.Center.X - own.Center.X, dz = other.Center.Z - own.Center.Z;
-                double ax = own.Along.X + other.Along.X, az = own.Along.Z + other.Along.Z;
-                double length = Math.Sqrt(ax * ax + az * az);
-                if (length < 1e-6)
-                {
-                    apart[q] = q > 0 ? apart[q - 1] : -Math.Sqrt(dx * dx + dz * dz);
-                    continue;
-                }
-                double px = -az / length, pz = ax / length;
-                double facing = own.Side.X * px + own.Side.Z * pz;
-                apart[q] = (dx * px + dz * pz) * (facing < 0 ? -1 : 1);
-            }
-
-            for (int q = 0; q < count; q++)
-            {
-                double across = apart[q];
-                result.Across[q] = across;
-
-                // Вусовик починає відходити від своєї лінії заздалегідь, за два жолоби до сусідньої рейки
-                if (result.Throat < 0 && across > -2 * clearance) result.Throat = q;
-                // Осердя починається там, де сходяться робочі грані двох рейок: за ширину головки до перетину осей
-                if (tip < 0 && across > -head * 0.8) tip = q;
-                if (crossing < 0 && across >= 0) crossing = q;
-                // Хрестовина закінчується там, де рейки двох колій розійшлися так само далеко, як на її
-                // початку: на два жолоби. Доти між променями осердя лежить лите дно, а не вузька щілина
-                // до самої землі між двома звичайними рейками
-                if (full < 0 && across >= 2 * clearance) full = q;
-            }
-
-            // Рейки так і не зійшлися в межах пройденого: хрестовини тут немає
-            if (result.Throat < 0 || tip < 0 || crossing < 0)
-            {
-                result.Throat = -1;
-                return result;
-            }
-            if (full < 0) full = count - 1;
-
-            result.Tip = tip;
-            result.Crossing = crossing;
-            result.Full = full;
-            // Переріз q лежить у секції з номером (q - 1) / 2 + 1
-            result.HideFrom = Math.Max(result.Throat - 1, 0) / 2 + 1;
-            result.HideTo = Math.Max(full - 1, 0) / 2 + 1;
             return result;
         }
 
@@ -815,15 +641,15 @@ namespace RailWorld
                 // Хрестовина на крутій стрілці сягає далі, ніж спільні шпали, тому пара шукається на будь-якій відстані
                 if (!SwitchZone.FindPairToward(section, switchAtStart, FindClientSection, out Section partner, out _, out int number,
                     out _, out double heelAt, true) || partner == null) continue;
-                if (left != TowardPartner(section, partner) > 0) continue;
+                if (left != SwitchGeometry.TowardPartner(section, partner) > 0) continue;
 
                 if (!FindFirst(section, switchAtStart, number, out Section first, out bool firstSwitchAtStart)) continue;
                 // Недобудована стрілка: звичайні рейки
                 if (!SwitchComplete(first, firstSwitchAtStart)) continue;
                 if (!Sibling(first, firstSwitchAtStart, out Section partnerFirst, out _)) continue;
 
-                SwitchSide own = GetSwitchSide(first, firstSwitchAtStart, partnerFirst);
-                if (number <= BladeSections(heelAt, own)) return new RailShape { Hidden = true };
+                BranchGeometry own = GetBranchGeometry(first, firstSwitchAtStart, partnerFirst);
+                if (number <= SwitchGeometry.BladeSections(heelAt, own)) return new RailShape { Hidden = true };
                 if (own.Throat >= 0 && number >= own.HideFrom && number <= own.HideTo) return new RailShape { Hidden = true };
             }
             return null;
@@ -871,12 +697,12 @@ namespace RailWorld
             // Недобудована стрілка малюється звичайними рейками, без деталей стрілки
             if (!SwitchComplete(section, switchAtStart)) return;
 
-            bool left = TowardPartner(section, partner) > 0;
+            bool left = SwitchGeometry.TowardPartner(section, partner) > 0;
             SectionPart part = left ? SectionPart.FirstRail : SectionPart.SecondRail;
             if (!section.IsInstalled(part)) return;
 
             string material = section.GetMaterial(part) ?? "iron";
-            SwitchSide own = GetSwitchSide(section, switchAtStart, partner);
+            BranchGeometry own = GetBranchGeometry(section, switchAtStart, partner);
 
             // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
             // Під час переведення стрілки він між цими положеннями
@@ -889,7 +715,7 @@ namespace RailWorld
             }
 
             // ── Гостряк ──
-            int bladePoints = Math.Min(BladeSections(heelAt, own) * 2 + 1, own.Frames.Count);
+            int bladePoints = Math.Min(SwitchGeometry.BladeSections(heelAt, own) * 2 + 1, own.Frames.Count);
             if (bladePoints >= 2)
             {
                 // Де в кожному перерізі рамна рейка: зовнішня рейка сусідньої колії. Біля стрілки вона лежить
@@ -898,11 +724,11 @@ namespace RailWorld
                 double[] stock = new double[bladePoints];
                 for (int i = 0; i < bladePoints; i++)
                 {
-                    BladeFrame frame = own.Frames[i];
+                    RailFrame frame = own.Frames[i];
                     stock[i] = (double)i / (bladePoints - 1) * BladeMesh.HeadHalfWidth * 4;
                     if (own.Other != null && i < own.Other.Count)
                     {
-                        BladeFrame other = own.Other[i];
+                        RailFrame other = own.Other[i];
                         double reach = section.TrackWidth;
                         stock[i] = (other.Center.X - other.Side.X * reach - frame.Center.X) * frame.Side.X
                             + (other.Center.Y - other.Side.Y * reach - frame.Center.Y) * frame.Side.Y
@@ -918,7 +744,7 @@ namespace RailWorld
                 {
                     int before = Math.Min((int)Math.Floor(position), bladePoints - 2);
                     double fraction = position - before;
-                    BladeFrame frame = fraction < 1e-6 ? own.Frames[before]
+                    RailFrame frame = fraction < 1e-6 ? own.Frames[before]
                         : fraction > 1 - 1e-6 ? own.Frames[before + 1] : Between(own.Frames[before], own.Frames[before + 1], fraction);
                     double stockAt = stock[before] + (stock[before + 1] - stock[before]) * fraction;
 
@@ -1011,7 +837,7 @@ namespace RailWorld
         /// два торці і вкладиші окремими частинами.
         /// inner каже, з якого боку секції внутрішня рейка колії; контррейка стоїть біля протилежної.
         /// </summary>
-        private void AddCheckRail(Vec3i chunkCoord, Section section, bool inner, SwitchSide own)
+        private void AddCheckRail(Vec3i chunkCoord, Section section, bool inner, BranchGeometry own)
         {
             SectionPart part = inner ? SectionPart.SecondRail : SectionPart.FirstRail;
             if (!section.IsInstalled(part)) return;
@@ -1024,7 +850,7 @@ namespace RailWorld
             double half = BladeMesh.HeadHalfWidth;
             // Перерізи стоять на внутрішній рейці, бік дивиться від осі колії до неї. Зовнішня рейка лежить
             // за ширину колії в протилежний бік, контррейка ближче до осі на головку рейки і жолоб
-            double gap = half * 2 + FrogFlangeway;
+            double gap = half * 2 + SwitchGeometry.FrogFlangeway;
             double running = -section.TrackWidth;
             double offset = running + gap;
 
@@ -1032,7 +858,7 @@ namespace RailWorld
             var axis = new List<Vec3d>();
             for (int q = from; q <= to; q++)
             {
-                BladeFrame frame = own.Frames[q];
+                RailFrame frame = own.Frames[q];
                 double x = offset + (q == from || q == to ? CheckRailFlare : 0);
                 axis.Add(new Vec3d(frame.Center.X + frame.Side.X * x, frame.Center.Y + frame.Side.Y * x, frame.Center.Z + frame.Side.Z * x));
             }
@@ -1040,14 +866,14 @@ namespace RailWorld
             var rail = new LoftPart();
             for (int i = 0; i < axis.Count; i++)
             {
-                BladeFrame frame = own.Frames[from + i];
+                RailFrame frame = own.Frames[from + i];
                 // Через відгин лінія контррейки не йде точно вздовж колії: напрямок веде вона сама
                 Vec3d before = axis[Math.Max(i - 1, 0)], after = axis[Math.Min(i + 1, axis.Count - 1)];
                 Vec3d along = new Vec3d(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
                 along = along.Length() < 1e-9 ? frame.Along : along.Normalize();
 
-                BladeFrame at = new BladeFrame { Center = axis[i], Side = frame.Side, Up = frame.Up };
-                rail.Stations.Add(RailProfile(at, 0, along));
+                RailFrame at = new RailFrame { Center = axis[i], Side = frame.Side, Up = frame.Up };
+                rail.Stations.Add(RailContour(at, 0, along));
 
                 // Торці: повний переріз рейки трьома прямокутниками, підошва, шийка і головка
                 if (i == 0 || i == axis.Count - 1)
@@ -1063,12 +889,12 @@ namespace RailWorld
             // Вкладиші: посередині кожної секції, тобто між шпалами, крім відігнутих кінців
             for (int q = from + 1; q < to; q += 2)
             {
-                BladeFrame frame = own.Frames[q];
+                RailFrame frame = own.Frames[q];
                 var spacer = new LoftPart();
                 for (int end = -1; end <= 1; end += 2)
                 {
                     double shift = end * SpacerLength / 2;
-                    BladeFrame at = new BladeFrame
+                    RailFrame at = new RailFrame
                     {
                         Center = new Vec3d(frame.Center.X + frame.Along.X * shift, frame.Center.Y + frame.Along.Y * shift, frame.Center.Z + frame.Along.Z * shift),
                         Side = frame.Side, Up = frame.Up
@@ -1099,7 +925,7 @@ namespace RailWorld
         /// рахуються з того, де кожен гостряк стоїть саме зараз, тож під час переведення вона їде з ними.
         /// stock і firstFull це вже пораховане для свого гостряка: де рамна рейка і з якого перерізу він є.
         /// </summary>
-        private LoftPart TieBar(Section section, SwitchSide own, int bladePoints, double[] stock, int firstFull, double open, int number)
+        private LoftPart TieBar(Section section, BranchGeometry own, int bladePoints, double[] stock, int firstFull, double open, int number)
         {
             int count = Math.Min(bladePoints, own.Other.Count);
             double width = section.TrackWidth;
@@ -1107,7 +933,7 @@ namespace RailWorld
             // Де рамна рейка для сусіднього гостряка: зовнішня рейка своєї колії
             double OtherStock(int i)
             {
-                BladeFrame mine = own.Frames[i], theirs = own.Other[i];
+                RailFrame mine = own.Frames[i], theirs = own.Other[i];
                 return Math.Max(0, (mine.Center.X - mine.Side.X * width - theirs.Center.X) * theirs.Side.X
                     + (mine.Center.Y - mine.Side.Y * width - theirs.Center.Y) * theirs.Side.Y
                     + (mine.Center.Z - mine.Side.Z * width - theirs.Center.Z) * theirs.Side.Z);
@@ -1121,7 +947,7 @@ namespace RailWorld
             // Де стоїть стінка шийки гостряка з боку колії: зміщення біля вістря плюс відведення
             double t = (double)at / (bladePoints - 1);
             double throwAt = BladeThrow * (1 - t * t * (3 - 2 * t));
-            Vec3d WebFace(BladeFrame frame, double stockAt, double opened)
+            Vec3d WebFace(RailFrame frame, double stockAt, double opened)
             {
                 double move = Math.Max(0, RailWebHalf - (stockAt - RailFootHalf)) + opened * throwAt;
                 // Трохи всередину шийки, щоб між тягою і гостряком не було щілини
@@ -1129,7 +955,7 @@ namespace RailWorld
                 return new Vec3d(frame.Center.X + frame.Side.X * x, frame.Center.Y + frame.Side.Y * x, frame.Center.Z + frame.Side.Z * x);
             }
 
-            BladeFrame near = own.Frames[at];
+            RailFrame near = own.Frames[at];
             Vec3d from = WebFace(near, stock[at], open);
             Vec3d to = WebFace(own.Other[at], OtherStock(at), 1 - open);
             Vec3d along = to.SubCopy(from);
@@ -1140,7 +966,7 @@ namespace RailWorld
             foreach (Vec3d end in new[] { from, to })
             {
                 // Переріз планки: упоперек неї це напрямок колії
-                BladeFrame frame = new BladeFrame { Center = end, Side = near.Along, Up = near.Up };
+                RailFrame frame = new RailFrame { Center = end, Side = near.Along, Up = near.Up };
                 LoftPoint[] box = Box(frame, -TieBarWidth / 2, TieBarWidth / 2, TieBarBottom, TieBarTop);
                 bar.Stations.Add(new LoftStation { Along = along, Points = new[] { box[0], box[3], box[2], box[1] } });
                 (bar.Stations.Count == 1 ? bar.StartCaps : bar.EndCaps).Add(box);
@@ -1174,7 +1000,7 @@ namespace RailWorld
         /// withHead: чи є в цьому перерізі головка. Біля самого вістря її немає, є лише тіло.
         /// ends це торець у цьому перерізі: підошва, шийка й головка.
         /// </summary>
-        private static LoftStation BladeProfile(BladeFrame frame, double stock, double thrown, bool withHead, out LoftPoint[][] ends)
+        private static LoftStation BladeProfile(RailFrame frame, double stock, double thrown, bool withHead, out LoftPoint[][] ends)
         {
             double half = BladeMesh.HeadHalfWidth;
             const double floor = FrogBodyTop;
@@ -1225,27 +1051,27 @@ namespace RailWorld
         }
 
         // Переріз рейки між двома сусідніми: part від 0 (перший) до 1 (другий)
-        private static BladeFrame Between(BladeFrame a, BladeFrame b, double part)
+        private static RailFrame Between(RailFrame a, RailFrame b, double part)
         {
             Vec3d Mixed(Vec3d p, Vec3d q) => new Vec3d(p.X + (q.X - p.X) * part, p.Y + (q.Y - p.Y) * part, p.Z + (q.Z - p.Z) * part);
-            return new BladeFrame { Center = Mixed(a.Center, b.Center), Side = Mixed(a.Side, b.Side).Normalize(), Up = Mixed(a.Up, b.Up).Normalize(), Along = Mixed(a.Along, b.Along).Normalize() };
+            return new RailFrame { Center = Mixed(a.Center, b.Center), Side = Mixed(a.Side, b.Side).Normalize(), Up = Mixed(a.Up, b.Up).Normalize(), Along = Mixed(a.Along, b.Along).Normalize() };
         }
 
         // Прямокутник у перерізі: кути по колу, починаючи з лівого нижнього, далі правий нижній
-        private static LoftPoint[] Box(BladeFrame at, double left, double right, double bottom, double top)
+        private static LoftPoint[] Box(RailFrame at, double left, double right, double bottom, double top)
         {
             return new[] { Point(at, left, bottom), Point(at, right, bottom), Point(at, right, top), Point(at, left, top) };
         }
 
         // Хрестовина лита, один суцільний блок. Висоти його частин над підошвою рейки, блоків: тіло доходить
         // до низу головки рейки, поверхні кочення до її верху. Числа з моделі рейки (shapes/item/rail.json)
-        private const double FrogBodyTop = 1.8 / 16;
-        private const double FrogRailTop = 2.5 / 16;
+        private const double FrogBodyTop = RailProfile.HeadBottom;
+        private const double FrogRailTop = RailProfile.Top;
 
         // Профіль звичайної рейки, блоків (shapes/item/rail.json): пів ширини підошви, її висота, пів товщини шийки
-        private const double RailFootHalf = 1.0 / 16;
-        private const double RailFootTop = 0.3 / 16;
-        private const double RailWebHalf = 0.2 / 16;
+        private const double RailFootHalf = RailProfile.FootHalfWidth;
+        private const double RailFootTop = RailProfile.FootTop;
+        private const double RailWebHalf = RailProfile.WebHalfWidth;
 
         /// <summary>
         /// Збирає хрестовину: одну литу деталь. У кожному перерізі задано її контур, і меш це поверхня,
@@ -1263,11 +1089,11 @@ namespace RailWorld
         /// добудовано хвостик: повний профіль рейки, усі його точки. Стінка торця закриває проміжок між
         /// хвостиками.
         /// </summary>
-        private void AddFrog(Vec3i chunkCoord, Section section, bool left, string material, SwitchSide own)
+        private void AddFrog(Vec3i chunkCoord, Section section, bool left, string material, BranchGeometry own)
         {
             double half = BladeMesh.HeadHalfWidth;
             // Відстань між серединами рейок, за якої між їхніми головками лишається жолоб
-            double clearance = half * 2 + FrogFlangeway;
+            double clearance = half * 2 + SwitchGeometry.FrogFlangeway;
             const double floor = FrogBodyTop, top = FrogRailTop;
 
             int count = own.Across.Length;
@@ -1295,7 +1121,7 @@ namespace RailWorld
             {
                 // Перерізи внутрішніх рейок двох колій у цьому місці: своєї і сусідньої. Сусідня повернута боком
                 // у той самий бік, що й своя
-                BladeFrame mine = own.Frames[q], theirs = Mirrored(own.Other[q]);
+                RailFrame mine = own.Frames[q], theirs = Mirrored(own.Other[q]);
                 bool first = q == from, last = q == to;
 
                 // Спільний переріз вузла
@@ -1315,7 +1141,7 @@ namespace RailWorld
                 if (first || last)
                 {
                     double shift = 0;
-                    foreach (BladeFrame rail in new[] { mine, theirs })
+                    foreach (RailFrame rail in new[] { mine, theirs })
                     {
                         for (int corner = -1; corner <= 1; corner += 2)
                         {
@@ -1328,7 +1154,7 @@ namespace RailWorld
                     shift = GameMath.Clamp(shift, -0.2, 0.2);
                     center = new Vec3d(center.X + along.X * shift, center.Y + along.Y * shift, center.Z + along.Z * shift);
                 }
-                BladeFrame station = new BladeFrame { Center = center, Side = side, Up = up, Along = along };
+                RailFrame station = new RailFrame { Center = center, Side = side, Up = up, Along = along };
 
                 // Де дві рейки перетинають цей переріз. До перетину рейок своя з додатного боку, сусідня
                 // з від'ємного, після перетину навпаки: знак виходить сам
@@ -1430,8 +1256,8 @@ namespace RailWorld
                 {
                     // Торець: стінка між шийками двох вусовиків. Самі вусовики продовжуються хвостиками до рейок
                     startCaps.Add(new[] { P(wingLeft + RailWebHalf, 0), P(wingRight - RailWebHalf, 0), P(wingRight - RailWebHalf, floor), P(wingLeft + RailWebHalf, floor) });
-                    parts.Add(Tail( RailProfile(theirs, 0, theirs.Along), RailProfile(station, wingLeft, theirs.Along)));
-                    parts.Add(Tail( RailProfile(mine, 0, mine.Along), RailProfile(station, wingRight, mine.Along)));
+                    parts.Add(Tail( RailContour(theirs, 0, theirs.Along), RailContour(station, wingLeft, theirs.Along)));
+                    parts.Add(Tail( RailContour(mine, 0, mine.Along), RailContour(station, wingRight, mine.Along)));
                 }
                 if (last)
                 {
@@ -1442,8 +1268,8 @@ namespace RailWorld
                     endCaps.Add(new[] { P(wingLeft - half, floor), P(wingLeft + half, floor), P(wingLeft + half, top), P(wingLeft - half, top) });
                     endCaps.Add(new[] { P(wingRight - half, floor), P(wingRight + half, floor), P(wingRight + half, top), P(wingRight - half, top) });
                     endCaps.Add(new[] { P(wingRight + RailWebHalf, 0), P(wingRight + RailFootHalf, 0), P(wingRight + RailFootHalf, RailFootTop), P(wingRight + RailWebHalf, RailFootTop) });
-                    parts.Add(Tail( RailProfile(station, mineAt, mine.Along), RailProfile(mine, 0, mine.Along)));
-                    parts.Add(Tail( RailProfile(station, theirsAt, theirs.Along), RailProfile(theirs, 0, theirs.Along)));
+                    parts.Add(Tail( RailContour(station, mineAt, mine.Along), RailContour(mine, 0, mine.Along)));
+                    parts.Add(Tail( RailContour(station, theirsAt, theirs.Along), RailContour(theirs, 0, theirs.Along)));
                 }
             }
 
@@ -1459,14 +1285,14 @@ namespace RailWorld
             return part;
         }
 
-        private static LoftPoint Point(BladeFrame at, double x, double y)
+        private static LoftPoint Point(RailFrame at, double x, double y)
         {
             return new LoftPoint { Center = at.Center, Side = at.Side, Up = at.Up, X = x, Y = y };
         }
 
         // Де лінія рейки перетинає площину перерізу вузла: відстань від його середини вздовж його боку.
         // Рейка біля перерізу вважається прямою
-        private static double Across(BladeFrame rail, BladeFrame station)
+        private static double Across(RailFrame rail, RailFrame station)
         {
             double dx = station.Center.X - rail.Center.X, dy = station.Center.Y - rail.Center.Y, dz = station.Center.Z - rail.Center.Z;
             double facing = rail.Along.Dot(station.Along);
@@ -1475,12 +1301,12 @@ namespace RailWorld
         }
 
         // Повний профіль звичайної рейки в перерізі at, з віссю за x блоків від його середини: усі дванадцять точок
-        private static LoftStation RailProfile(BladeFrame at, double x, Vec3d along)
+        private static LoftStation RailContour(RailFrame at, double x, Vec3d along)
         {
             double half = BladeMesh.HeadHalfWidth;
             // Початок відліку ставимо на вісь рейки: лінію хвостика між двома перерізами веде крива
             // від початку відліку одного до початку відліку іншого, і вона має йти вздовж рейки
-            BladeFrame axis = new BladeFrame
+            RailFrame axis = new RailFrame
             {
                 Center = new Vec3d(at.Center.X + at.Side.X * x, at.Center.Y + at.Side.Y * x, at.Center.Z + at.Side.Z * x),
                 Side = at.Side, Up = at.Up
@@ -1500,9 +1326,9 @@ namespace RailWorld
 
         // Переріз сусідньої рейки, повернутий боком у той самий бік, що й спільні перерізи вузла. Її власний бік
         // дивиться назустріч, і якби лишити його, поверхня між сусідніми перерізами вивернулася б навиворіт
-        private static BladeFrame Mirrored(BladeFrame frame)
+        private static RailFrame Mirrored(RailFrame frame)
         {
-            return new BladeFrame { Center = frame.Center, Side = frame.Side.Clone().Mul(-1), Up = frame.Up, Along = frame.Along };
+            return new RailFrame { Center = frame.Center, Side = frame.Side.Clone().Mul(-1), Up = frame.Up, Along = frame.Along };
         }
 
         private static Vec3d RailPoint(Vec3d axis, Vec3f normal, double offset)

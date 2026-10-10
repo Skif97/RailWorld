@@ -4,24 +4,10 @@ using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using RailWorld.src.RailWay;
 
 namespace RailWorld
 {
-    /// <summary>
-    /// Переріз рейки колії в одній точці вздовж неї: де вона, і куди дивляться її осі.
-    /// </summary>
-    internal class BladeFrame
-    {
-        /// <summary>Середина рейки своєї колії в цій точці: де лежала б звичайна рейка.</summary>
-        public Vec3d Center;
-        /// <summary>Упоперек колії, у бік рамної рейки, до якої гостряк притискається. Одиничний.</summary>
-        public Vec3d Side;
-        /// <summary>Угору від полотна. Одиничний.</summary>
-        public Vec3d Up;
-        /// <summary>Уздовж колії, від стрілки. Одиничний.</summary>
-        public Vec3d Along;
-    }
-
     /// <summary>
     /// Точка контуру деталі в одному перерізі: X уздовж Side і Y уздовж Up від точки Center, у блоках.
     /// </summary>
@@ -63,7 +49,7 @@ namespace RailWorld
     internal static class BladeMesh
     {
         // Пів ширини головки рейки в моделі (shapes/item/rail.json: головка 1.2 вокселя)
-        public const double HeadHalfWidth = 0.6 / 16;
+        public const double HeadHalfWidth = RailProfile.HeadHalfWidth;
 
         // На скільки відрізків ділиться проміжок між двома сусідніми перерізами. Перерізи стоять через
         // чверть блока; між ними лінія гостряка веде плавна крива, і частіший поділ робить дугу гладкою
@@ -119,7 +105,7 @@ namespace RailWorld
         /// лише коли всі три взаємно перпендикулярні. Сам переріз таким бути не мусить: у хрестовини бік
         /// перерізу дивиться від однієї рейки до іншої, навскоси до колії. Тому осі вирівнюються тут.
         /// </summary>
-        public static BladeFrame Basis(BladeFrame first)
+        public static RailFrame Basis(RailFrame first)
         {
             Vec3d along = first.Along.Clone().Normalize();
 
@@ -131,7 +117,7 @@ namespace RailWorld
             Vec3d up = side.Cross(along);
             if (up.Dot(first.Up) < 0) up.Mul(-1);
 
-            return new BladeFrame { Center = first.Center, Side = side, Up = up, Along = along };
+            return new RailFrame { Center = first.Center, Side = side, Up = up, Along = along };
         }
 
         /// <summary>
@@ -143,7 +129,7 @@ namespace RailWorld
         /// упоперек розгортається по контуру, 16 пікселів на блок.
         /// basis це осі, в яких зібрано меш: їх треба передати рендеру.
         /// </summary>
-        public static MeshData BuildLoft(MeshData template, List<LoftPart> parts, out BladeFrame basis)
+        public static MeshData BuildLoft(MeshData template, List<LoftPart> parts, out RailFrame basis)
         {
             basis = null;
             if (template == null || template.VerticesCount == 0 || parts == null) return null;
@@ -163,7 +149,7 @@ namespace RailWorld
 
             LoftStation firstStation = parts[0].Stations[0];
             LoftPoint origin = firstStation.Points[firstStation.Points.Length / 2];
-            basis = Basis(new BladeFrame { Center = origin.Center, Side = origin.Side, Up = origin.Up, Along = firstStation.Along });
+            basis = Basis(new RailFrame { Center = origin.Center, Side = origin.Side, Up = origin.Up, Along = firstStation.Along });
 
             // Той самий набір даних на вершину, що й у меша рейки
             MeshData mesh = template.Clone();
@@ -265,7 +251,7 @@ namespace RailWorld
                 cz + (p.Side.Z + (q.Side.Z - p.Side.Z) * t) * x + (p.Up.Z + (q.Up.Z - p.Up.Z) * t) * y);
         }
 
-        private static void AddCaps(MeshData mesh, BladeFrame basis, List<LoftPoint[]> caps, Vec3d outward, float u0, float u1, float v0, float v1)
+        private static void AddCaps(MeshData mesh, RailFrame basis, List<LoftPoint[]> caps, Vec3d outward, float u0, float u1, float v0, float v1)
         {
             if (caps == null) return;
             foreach (LoftPoint[] cap in caps)
@@ -280,7 +266,7 @@ namespace RailWorld
         }
 
         // Чотирикутна грань з вершинами по колу. Грань нульової площі пропускається. Нормаль дивиться в бік outward
-        private static void AddQuad(MeshData mesh, BladeFrame basis, Vec3d outward, Vec3d a, Vec3d b, Vec3d c, Vec3d d,
+        private static void AddQuad(MeshData mesh, RailFrame basis, Vec3d outward, Vec3d a, Vec3d b, Vec3d c, Vec3d d,
             float ua, float va, float ub, float vb, float uc, float vc, float ud, float vd)
         {
             Vec3d ab = b.SubCopy(a), ac = c.SubCopy(a), ad = d.SubCopy(a);
@@ -304,7 +290,7 @@ namespace RailWorld
             else mesh.AddIndices(new[] { start, start + 1, start + 2, start, start + 2, start + 3 });
         }
 
-        private static void AddVertex(MeshData mesh, BladeFrame basis, Vec3d p, float u, float v, int flags)
+        private static void AddVertex(MeshData mesh, RailFrame basis, Vec3d p, float u, float v, int flags)
         {
             double x = p.X - basis.Center.X, y = p.Y - basis.Center.Y, z = p.Z - basis.Center.Z;
             mesh.AddVertexWithFlags(
@@ -351,7 +337,7 @@ namespace RailWorld
         /// Ставить гостряк. key починається з чанка секції, якій він належить: за ним гостряк прибирається.
         /// mesh у координатах першого перерізу first, як його збирає BladeMesh.
         /// </summary>
-        public void Set(string key, long hash, MeshData mesh, BladeFrame first, int textureId)
+        public void Set(string key, long hash, MeshData mesh, RailFrame first, int textureId)
         {
             Remove(key);
             if (mesh == null) return;
