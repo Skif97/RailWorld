@@ -18,6 +18,11 @@
 		"renderer": "Shape",
 		"shape": { "base": "entity/trolley" },
 		"texture": { "base": "game:block/metal/plate/{type}" },
+		"animations": [
+			{ "code": "spin", "animation": "spin", "animationSpeed": 0, "weight": 1, "blendMode": "Add", "clientSide": true },
+			{ "code": "sway", "animation": "sway", "animationSpeed": 1, "weight": 1, "blendMode": "Add", "easeInSpeed": 2, "easeOutSpeed": 2, "clientSide": true },
+			{ "code": "bump", "animation": "bump", "animationSpeed": 1, "weight": 1, "blendMode": "Add", "clientSide": true }
+		],
 		"behaviors": [
 			{
 				"code": "controlledphysics",

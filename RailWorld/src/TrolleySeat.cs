@@ -35,14 +35,14 @@ namespace RailWorld
 
         /// <summary>
         /// Куди дивиться перед вагонетки і куди її верх, у світових координатах.
-        /// Рахується тим самим поворотом, яким рендер ставить її модель, перед моделі це її вісь -X.
+        /// Рахується тим самим поворотом, яким рендер ставить її модель, перед моделі це її вісь +X.
         /// </summary>
         public static void GetTrolleyFrame(Entity trolley, Matrixf tmp, out Vec3d forward, out Vec3d up)
         {
             tmp.Identity();
             RotateLikeRenderer(trolley, tmp);
 
-            Vec4f f = tmp.TransformVector(new Vec4f(-1, 0, 0, 0));
+            Vec4f f = tmp.TransformVector(new Vec4f(1, 0, 0, 0));
             Vec4f u = tmp.TransformVector(new Vec4f(0, 1, 0, 0));
             forward = new Vec3d(f.X, f.Y, f.Z);
             up = new Vec3d(u.X, u.Y, u.Z);

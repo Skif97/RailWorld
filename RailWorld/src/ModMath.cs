@@ -267,9 +267,11 @@ namespace RailWorld
         /// </summary>
         public static void TrackFrameToEntityAngles(Vec3d along, Vec3d side, Vec3d up, out float yaw, out float tilt, out float cant)
         {
-            // Вісь X моделі дивиться проти напрямку колії. Її підйом над горизонтом це ухил, а напрямок у плані це курс
-            double turn = Math.Atan2(along.Z, -along.X);
-            double slope = Math.Asin(GameMath.Clamp(-along.Y, -1, 1));
+            // Перед моделі це її вісь +X, як заведено в грі: рендер повертає модель на курс плюс чверть оберту,
+            // і саме тоді +X моделі збігається з тим, куди дивиться сутність (EntityPos.GetViewVector).
+            // Підйом цієї осі над горизонтом це ухил, а її напрямок у плані це курс
+            double turn = Math.Atan2(-along.Z, along.X);
+            double slope = Math.Asin(GameMath.Clamp(along.Y, -1, 1));
 
             double cosTurn = Math.Cos(turn), sinTurn = Math.Sin(turn);
             double cosSlope = Math.Cos(slope), sinSlope = Math.Sin(slope);

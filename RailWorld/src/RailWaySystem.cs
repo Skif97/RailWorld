@@ -106,9 +106,6 @@ namespace RailWorld
             // Плавне переведення стрілок: щокадру, поки котрась рухається
             api.Event.RegisterGameTickListener(OnSwitchAnimationTick, 15);
 
-            // Вагонетки на екрані ставляться на рейки раз на кадр, після того як гра пересунула сутності
-            api.Event.RegisterRenderer(new TrolleyFrameRenderer(api), EnumRenderStage.Before, "railworld-trolleyframe");
-
             // Harmony патч для події вивантаження чанку
             Harmony harmony = new Harmony("com.railworld.myMod");
             MyChunkEvents.Init(harmony);
@@ -1703,35 +1700,6 @@ namespace RailWorld
         {
             base.Dispose();
             DisposeRenderers();
-        }
-    }
-
-    /// <summary>
-    /// Раз на кадр дає кожній вагонетці поставити себе на рейки на екрані. Стоїть у самому кінці кроку Before:
-    /// на цей час гра вже довела положення сутностей до присланих сервером.
-    /// </summary>
-    internal class TrolleyFrameRenderer : IRenderer
-    {
-        private ICoreClientAPI capi;
-
-        public TrolleyFrameRenderer(ICoreClientAPI capi)
-        {
-            this.capi = capi;
-        }
-
-        public double RenderOrder => 1;
-        public int RenderRange => 9999;
-
-        public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
-        {
-            foreach (Vintagestory.API.Common.Entities.Entity entity in capi.World.LoadedEntities.Values)
-            {
-                if (entity is EntityTrolley trolley) trolley.ClientFrame(deltaTime);
-            }
-        }
-
-        public void Dispose()
-        {
         }
     }
 }
