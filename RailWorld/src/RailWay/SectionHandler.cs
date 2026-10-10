@@ -130,6 +130,9 @@ namespace RailWorld.src.RailWay
             else if (section.HasSwitch(false)) atStart = false;
             else return;
 
+            // Недобудовану чи розібрану стрілку перевести не можна
+            if (!SwitchZone.IsComplete(section, atStart, new RailDataSession(world).GetSection)) return;
+
             section.ToggleSwitch(atStart, world.ElapsedMilliseconds);
             DataInChunk.Save(world, sel.Chunk, data);
             RailWorld.SendChunkDataToClients(sel.Chunk, data);

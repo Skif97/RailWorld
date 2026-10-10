@@ -64,6 +64,38 @@ namespace RailWorld.src.RailWay
         private const int MaxPairWalk = 48;
 
         /// <summary>
+        /// Чи стрілка зібрана повністю: на обох гілках, поки вони лежать одна на одній, стоять обидві рейки
+        /// кожної секції. Лише таку стрілку можна переводити, і лише вона малюється як стрілка, з гостряками
+        /// і хрестовиною; недобудована чи розібрана це просто дві колії зі звичайних рейок, і веде вона туди,
+        /// куди її перевели востаннє.
+        /// trunk і atStart це кінець секції, з якого колія розходиться.
+        /// </summary>
+        public static bool IsComplete(Section trunk, bool atStart, Func<SectionLink, Section> resolve)
+        {
+            if (trunk == null || resolve == null) return false;
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            if (links.Count != 2) return false;
+
+            foreach (SectionLink link in links)
+            {
+                Section current = resolve(link);
+                bool entered = link.AtStart;
+                for (int n = 1; n <= MaxPairWalk && current != null; n++)
+                {
+                    // Гілки розійшлися: далі це вже не стрілка
+                    if (!FindPair(current, resolve, out _, out _, out _, out int number) || number != n) break;
+                    if (!current.FirstRailInstalled || !current.SecondRailInstalled) return false;
+
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    entered = ahead[0].AtStart;
+                    current = resolve(ahead[0]);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Чи лежить секція в стрілці, і якщо так, то яка секція сусідньої гілки стоїть із нею в парі.
         /// У стрілці шпали двох гілок перетинаються, тому замість двох шпал там малюється одна спільна,
         /// на обидві колії. Пара це секції з однаковим номером від стрілки: перша з першою, друга з другою.
@@ -101,6 +133,24 @@ namespace RailWorld.src.RailWay
             if (FindPairThrough(section, true, resolve, ref partner, ref primary, ref fromEnd, ref number, ref active, ref crossing, anyDistance)) return true;
             switchAtStart = false;
             return FindPairThrough(section, false, resolve, ref partner, ref primary, ref fromEnd, ref number, ref active, ref crossing, anyDistance);
+        }
+
+        /// <summary>
+        /// Те саме, але стрілка шукається лише з одного боку секції: з того, куди веде її кінець exitAtStart.
+        /// Потрібно там, де стрілки стоять густо: секція може бути гілкою однієї стрілки з одного боку
+        /// і гілкою іншої з другого, і тоді важливо, про котру з них мова.
+        /// </summary>
+        public static bool FindPairToward(Section section, bool exitAtStart, Func<SectionLink, Section> resolve, out Section partner,
+            out bool primary, out int number, out bool active, out double crossing, bool anyDistance)
+        {
+            partner = null;
+            primary = false;
+            number = 0;
+            active = false;
+            crossing = 0;
+            int fromEnd = 2;
+            if (section == null || resolve == null) return false;
+            return FindPairThrough(section, exitAtStart, resolve, ref partner, ref primary, ref fromEnd, ref number, ref active, ref crossing, anyDistance);
         }
 
         /// <summary>

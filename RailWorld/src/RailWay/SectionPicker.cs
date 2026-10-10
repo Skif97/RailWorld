@@ -55,6 +55,8 @@ namespace RailWorld.src.RailWay
         public const double RailHalfWidth     = 0.08;
         // Важіль стрілки: на скільки він відступає від краю шпали, пів ширини і висота його бокса
         public const double LeverGap          = 0.25;
+        // На скільки блоків важіль стоїть далі за стик, з якого колія розходиться: одна секція
+        public const double LeverAhead        = 0.5;
         public const double LeverHalfWidth    = 0.12;
         public const double LeverHeight       = 0.85;
 
@@ -246,7 +248,15 @@ namespace RailWorld.src.RailWay
             Vec3d end = s.GetEndPosition(atStart);
             Vec3f normal = atStart ? s.StartNormal : s.EndNormal;
             double offset = (s.SleeperLength / 2 + SectionBox.LeverGap) * s.GetLeverSide(atStart);
-            return new Vec3d(end.X + normal.X * offset, end.Y + normal.Y * offset, end.Z + normal.Z * offset);
+
+            // Важіль стоїть не на самому стику, з якого колія розходиться, а на секцію далі: навпроти стику
+            // першої і другої секцій стрілки. Там між гостряками лежить тяга, і там же проміжок між шпалами.
+            // Місце рахується продовженням спільної колії: за одну секцію гілки ще не встигають відійти від нього
+            Vec3f outward = s.GetOutwardDirection(atStart);
+            double along = SectionBox.LeverAhead;
+
+            return new Vec3d(end.X + outward.X * along + normal.X * offset, end.Y + outward.Y * along + normal.Y * offset,
+                end.Z + outward.Z * along + normal.Z * offset);
         }
 
         /// <summary>

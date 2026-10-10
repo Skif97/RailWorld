@@ -54,6 +54,12 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public const int HoldSections = 5;
 
+        // Довжина переходу по висоті від стрілки до власної висоти маршруту: стільки блоків на кожен блок
+        // різниці висот, але не коротше і не довше за ці межі
+        private const double RampPerBlock = 6;
+        private const double RampMin = 4;
+        private const double RampMax = 16;
+
         // Найдовша ділянка, на якій відгалуження йде поверх основної колії, у точках нарізки. Запобіжник
         private const int MaxFollowPoints = 512;
 
@@ -97,7 +103,12 @@ namespace RailWorld.src.RailWay
         /// стрілкою) і вони вимагають різної висоти в одному місці або не лишають місця на перехід між собою,
         /// conflict каже, що саме не так, і такий маршрут будувати не можна: рейки на межі розірвало б сходинкою.
         /// </summary>
-        public static List<PointOnBezierCurve> BuildPoints(List<RoutePoint> route, Func<SectionLink, Section> resolve, out string conflict)
+        /// sectionsIn каже, які секції покладеної колії зберігаються в чанку; потрібен, щоб знайти колії,
+        /// які маршрут перетинає. Без нього перетини не шукаються.
+        /// conflictAt, якщо заданий, збирає номери точок нарізки, де маршрут порушує правила перетину:
+        /// за ними показ підсвічує саме це місце.
+        public static List<PointOnBezierCurve> BuildPoints(List<RoutePoint> route, Func<SectionLink, Section> resolve, out string conflict,
+            Func<Vec3i, IEnumerable<Section>> sectionsIn = null, List<int> conflictAt = null)
         {
             conflict = null;
             var all = new List<PointOnBezierCurve>();
@@ -111,23 +122,8 @@ namespace RailWorld.src.RailWay
                 RoutePoint a = route[i];
                 RoutePoint b = route[i + 1];
 
-                double span = a.Position.DistanceTo(b.Position);
-                if (span < MinSpan) continue;
-
-                double handle = span * HandleFactor(a.Tangent, b.Tangent);
-                CubicBezierCurve3d curve = new CubicBezierCurve3d(
-                    a.Position.X, a.Position.Y, a.Position.Z,
-                    a.Position.X + a.Tangent.X * handle, a.Position.Y + a.Tangent.Y * handle, a.Position.Z + a.Tangent.Z * handle,
-                    b.Position.X - b.Tangent.X * handle, b.Position.Y - b.Tangent.Y * handle, b.Position.Z - b.Tangent.Z * handle,
-                    b.Position.X, b.Position.Y, b.Position.Z,
-                    1, Weight, Weight, 1);
-
-                List<PointOnBezierCurve> points = curve.CutIntoEqualPieces(PieceLength);
-
-                // Нарізка інколи дає зайву точку впритул до кінцевої. Тут це зсунуло б усі наступні секції
-                // на пів секції, тому таку точку прибираємо, і точок у кривої завжди непарна кількість
-                if (points.Count % 2 == 0 && points.Count >= 2) points.RemoveAt(points.Count - 2);
-                if (points.Count < 3) continue;
+                List<PointOnBezierCurve> points = Leg(a, b);
+                if (points == null) continue;
 
                 // Кінець попередньої кривої і початок цієї це та сама точка
                 if (all.Count > 0) points.RemoveAt(0);
@@ -145,11 +141,367 @@ namespace RailWorld.src.RailWay
             double[] trackCant = new double[all.Count];
 
             bool followed = FollowTracks(all, first, last, resolve, weight, trackCant, joints, ref conflict);
+            // Де маршрут перетинає вже покладену колію на близькій висоті, він лягає в її площину
+            if (sectionsIn != null && LevelCrossings(all, first, last, resolve, sectionsIn, weight, trackCant, conflictAt, ref conflict)) followed = true;
             if (followed) RecomputeSlopes(all);
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
             if (followed) BlendCant(all, weight, trackCant);
             return all;
+        }
+
+        // ── Перетини з уже покладеними коліями ──
+
+        /// <summary>Найгостріший кут, під яким маршрут може перетнути іншу колію, градуси.</summary>
+        public const double MinCrossingAngleDeg = 15;
+
+        /// <summary>
+        /// Якщо колія, яку маршрут перетинає в плані, вища чи нижча за нього менше ніж на стільки блоків,
+        /// це перетин в одному рівні, і маршрут вирівнюється по ній. Якщо більше, маршрут проходить над нею
+        /// або під нею, і вони одна одної не стосуються.
+        /// </summary>
+        public const double CrossingClearance = 3;
+
+        // Скільки блоків за краєм перетину маршрут іще йде площиною чужої колії
+        private const double CrossingMargin = 0.5;
+        // Довжина переходу від площини перетину до власної висоти маршруту: стільки блоків на кожен блок
+        // різниці висот, але не коротше і не довше за ці межі
+        private const double CrossingRampPerBlock = 6;
+        private const double CrossingRampMin = 3;
+        private const double CrossingRampMax = 12;
+
+        private class Crossing
+        {
+            public double At;
+            public Section Section;
+            public double Angle;
+        }
+
+        /// <summary>
+        /// Шукає, де маршрут перетинає вже покладені колії, і для кожного такого місця вирішує, що це.
+        /// Колія далеко вгорі чи внизу: проїзд над нею або під нею, нічого не міняється.
+        /// Колія на близькій висоті: перетин в одному рівні. На всій його довжині, поки рейки двох колій
+        /// перетинаються, маршрут лягає в площину тієї колії, а до і після плавно переходить до своєї висоти,
+        /// так само, як біля стрілки.
+        /// Перетнути стрілку не можна ніде, і перетнути колію гостріше за MinCrossingAngleDeg теж: тоді conflict
+        /// каже, що не так, і маршрут не будується.
+        /// Повертає true, якщо висоти маршруту змінилися.
+        /// </summary>
+        private static bool LevelCrossings(List<PointOnBezierCurve> points, RoutePoint first, RoutePoint last,
+            Func<SectionLink, Section> resolve, Func<Vec3i, IEnumerable<Section>> sectionsIn, double[] weight, double[] trackCant,
+            List<int> conflictAt, ref string conflict)
+        {
+            int count = points.Count;
+            // Позначає місце порушення, з кількома точками по боках, щоб його було видно
+            void Mark(int index)
+            {
+                if (conflictAt == null) return;
+                for (int i = Math.Max(index - 3, 0); i <= Math.Min(index + 3, count - 1); i++) conflictAt.Add(i);
+            }
+
+            // Секції покладеної колії поблизу маршруту: з чанків, яких він торкається, із запасом
+            const int chunkSize = 32;
+            var chunks = new HashSet<Vec3i>();
+            for (int i = 0; i < count; i += 2)
+            {
+                Vec3d p = points[i].position;
+                for (int dx = -4; dx <= 4; dx += 8)
+                {
+                    for (int dy = -1; dy <= 1; dy += 2)
+                    {
+                        for (int dz = -4; dz <= 4; dz += 8)
+                        {
+                            chunks.Add(new Vec3i((int)Math.Floor((p.X + dx) / chunkSize), (int)Math.Floor((p.Y + dy * (CrossingClearance + 1)) / chunkSize),
+                                (int)Math.Floor((p.Z + dz) / chunkSize)));
+                        }
+                    }
+                }
+            }
+            var candidates = new List<Section>();
+            foreach (Vec3i chunk in chunks)
+            {
+                IEnumerable<Section> found = sectionsIn(chunk);
+                if (found != null) candidates.AddRange(found);
+            }
+            if (candidates.Count == 0) return false;
+
+            // Відстань у плані вздовж маршруту від його початку
+            double[] run = new double[count];
+            for (int k = 1; k < count; k++)
+            {
+                Vec3d a = points[k - 1].position, b = points[k].position;
+                run[k] = run[k - 1] + Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
+            }
+
+            // Біля своїх стрілок маршрут лежить поверх колії, від якої відходить: це не перетин
+            int ownUntil = -1, ownFrom = count;
+            if (first.Track != null)
+            {
+                while (ownUntil + 1 < count && weight[ownUntil + 1] >= 1) ownUntil++;
+            }
+            if (last.Track != null)
+            {
+                while (ownFrom - 1 >= 0 && weight[ownFrom - 1] >= 1) ownFrom--;
+            }
+
+            double minAngle = MinCrossingAngleDeg * Math.PI / 180;
+            var crossings = new List<Crossing>();
+            for (int k = 0; k + 1 < count; k++)
+            {
+                Vec3d a = points[k].position, b = points[k + 1].position;
+                bool atOwnSwitch = k + 1 <= ownUntil || k >= ownFrom;
+
+                foreach (Section section in candidates)
+                {
+                    Vec3d c = section.FullStartPosition, d = section.FullEndPosition;
+                    double rx = b.X - a.X, rz = b.Z - a.Z, sx = d.X - c.X, sz = d.Z - c.Z;
+                    double denominator = rx * sz - rz * sx;
+                    if (Math.Abs(denominator) < 1e-12) continue;
+                    double t = ((c.X - a.X) * sz - (c.Z - a.Z) * sx) / denominator;
+                    double u = ((c.X - a.X) * rz - (c.Z - a.Z) * rx) / denominator;
+                    if (t < 0 || t >= 1 || u < 0 || u >= 1) continue;
+
+                    // Самий початок і кінець маршруту: там він стикується з колією, яку продовжує
+                    double at = run[k] + (run[k + 1] - run[k]) * t;
+                    if (at < 0.3 || at > run[count - 1] - 0.3) continue;
+
+                    Vec3d where = new Vec3d(a.X + rx * t, a.Y + (b.Y - a.Y) * t, a.Z + rz * t);
+                    if (!CrossPlane(section, where, rx, rz, out double planeY, out _)) continue;
+                    // Проїзд над колією або під нею
+                    if (Math.Abs(planeY - where.Y) >= CrossingClearance) continue;
+
+                    double cos = Math.Abs(rx * sx + rz * sz) / Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
+                    double angle = Math.Acos(GameMath.Clamp(cos, -1, 1));
+
+                    if (atOwnSwitch)
+                    {
+                        // Колія, від якої маршрут відходить: він лежить у її площині і розходиться з нею
+                        // під малим кутом. Усе інше тут це чужа колія під стрілкою або над нею
+                        if (Math.Abs(planeY - where.Y) < 0.1 && angle < minAngle) continue;
+                        conflict = conflict ?? "стрілка маршруту лягає на перетин з іншою колією";
+                        Mark(k);
+                        continue;
+                    }
+                    if (section.HasSwitch(true) || section.HasSwitch(false)
+                        || SwitchZone.IsBlocked(section, true, resolve) || SwitchZone.IsBlocked(section, false, resolve))
+                    {
+                        conflict = conflict ?? "маршрут перетинає стрілку";
+                        Mark(k);
+                        continue;
+                    }
+
+                    if (angle < minAngle)
+                    {
+                        conflict = conflict ?? "перетин з іншою колією гостріший за " + MinCrossingAngleDeg.ToString("0") + "°";
+                        Mark(k);
+                        continue;
+                    }
+
+                    crossings.Add(new Crossing { At = at, Section = section, Angle = angle });
+                }
+            }
+            if (crossings.Count == 0) return false;
+            crossings.Sort((x, y) => x.At.CompareTo(y.At));
+
+            // Власні висоти маршруту, якими вони були до вирівнювання
+            double[] original = new double[count];
+            for (int i = 0; i < count; i++) original[i] = points[i].position.Y;
+
+            // Спершу всі перетини кладуться у площини своїх колій, потім до них ведуться переходи
+            var zones = new List<int[]>();
+            foreach (Crossing crossing in crossings)
+            {
+                // Поки рейки двох колій перетинаються: далі від точки перетину осей, якщо кут гостріший
+                double width = crossing.Section.TrackWidth;
+                double half = width / 2 * (1 / Math.Sin(crossing.Angle) + 1 / Math.Tan(crossing.Angle)) + CrossingMargin;
+
+                int from = -1, to = -1;
+                for (int i = 0; i < count; i++)
+                {
+                    if (Math.Abs(run[i] - crossing.At) > half) continue;
+
+                    Vec3d p = points[i].position;
+                    Vec3f travel = points[i].tangent;
+                    Section plane = NearestInChain(crossing.Section, p, resolve);
+                    if (!CrossPlane(plane, p, travel.X, travel.Z, out double planeY, out double cant)) continue;
+
+                    if (weight[i] > 0)
+                    {
+                        // Тут уже своя жорстка умова: стрілка маршруту або інший перетин
+                        if (weight[i] < 1 || Math.Abs(p.Y - planeY) > HeightTolerance)
+                        {
+                            conflict = conflict ?? "перетин надто близько до стрілки маршруту або до іншого перетину на іншій висоті";
+                            Mark(i);
+                        }
+                    }
+                    else
+                    {
+                        PointOnBezierCurve point = points[i];
+                        point.position = new Vec3d(p.X, planeY, p.Z);
+                        points[i] = point;
+                        weight[i] = 1;
+                        trackCant[i] = cant;
+                    }
+
+                    if (from < 0) from = i;
+                    to = i;
+                }
+                if (from >= 0) zones.Add(new[] { from, to });
+            }
+
+            foreach (int[] zone in zones)
+            {
+                string before = conflict;
+                Ramp(points, zone[0], -1, original, run, weight, trackCant, ref conflict);
+                Ramp(points, zone[1], 1, original, run, weight, trackCant, ref conflict);
+                if (conflict != before)
+                {
+                    Mark(zone[0]);
+                    Mark(zone[1]);
+                }
+            }
+            return true;
+        }
+
+        // Перехід від краю перетину edge до власної висоти маршруту; direction це куди від перетину, 1 або -1
+        private static void Ramp(List<PointOnBezierCurve> points, int edge, int direction, double[] original, double[] run,
+            double[] weight, double[] trackCant, ref string conflict)
+        {
+            int count = points.Count;
+            double want = GameMath.Clamp(Math.Abs(points[edge].position.Y - original[edge]) * CrossingRampPerBlock, CrossingRampMin, CrossingRampMax);
+
+            // Іде від перетину, поки не набереться довжина переходу. Якщо раніше або одразу за нею трапиться
+            // ділянка з власною жорсткою висотою (стрілка, інший перетин), перехід веде просто до неї
+            int target = edge, hit = -1;
+            for (int i = edge + direction; i >= 0 && i < count; i += direction)
+            {
+                double gone = Math.Abs(run[i] - run[edge]);
+                if (weight[i] > 0)
+                {
+                    hit = i;
+                    break;
+                }
+                if (gone <= want) target = i;
+                else if (gone > want + CrossingRampMax) break;
+            }
+
+            if (hit >= 0)
+            {
+                if (hit == edge + direction) return;
+                if (weight[hit] < 1 || Math.Abs(hit - edge) < 2)
+                {
+                    if (weight[hit] < 1 || Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance * 5)
+                        conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
+                    return;
+                }
+                int low = Math.Min(edge, hit), high = Math.Max(edge, hit);
+                Transition(points, low, high, VirtualSlope(points, run, low, 1), VirtualSlope(points, run, high, -1), run, weight, trackCant, 2);
+                return;
+            }
+
+            if (Math.Abs(target - edge) < 2) return;
+            if (direction > 0)
+            {
+                Transition(points, edge, target, VirtualSlope(points, run, edge, 1), SlopeAlong(points[target].tangent, 1), run, weight, trackCant, 0);
+            }
+            else
+            {
+                Transition(points, target, edge, SlopeAlong(points[target].tangent, 1), VirtualSlope(points, run, edge, -1), run, weight, trackCant, 1);
+            }
+        }
+
+        // Секція тієї самої колії, що й section, найближча в плані до точки: площина колії міняється вздовж неї
+        private static Section NearestInChain(Section section, Vec3d p, Func<SectionLink, Section> resolve)
+        {
+            Section best = section;
+            double bestDistance = PlanDistance(section, p);
+            if (resolve == null) return best;
+
+            for (int end = 0; end < 2; end++)
+            {
+                Section current = section;
+                bool exitAtStart = end == 0;
+                for (int hop = 0; hop < 12; hop++)
+                {
+                    List<SectionLink> links = current.GetLinks(exitAtStart);
+                    if (links.Count != 1) break;
+                    Section next = resolve(links[0]);
+                    if (next == null) break;
+
+                    double distance = PlanDistance(next, p);
+                    if (distance < bestDistance)
+                    {
+                        best = next;
+                        bestDistance = distance;
+                    }
+                    else if (distance > bestDistance + 1) break;
+
+                    current = next;
+                    exitAtStart = !links[0].AtStart;
+                }
+            }
+            return best;
+        }
+
+        private static double PlanDistance(Section section, Vec3d p)
+        {
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            double mx = (start.X + end.X) / 2 - p.X, mz = (start.Z + end.Z) / 2 - p.Z;
+            return Math.Sqrt(mx * mx + mz * mz);
+        }
+
+        // Висота площини секції над точкою і нахил цієї площини для маршруту, що перетинає її в напрямку
+        // (travelX, travelZ): наскільки вона піднімається ліворуч від руху. На відміну від TrackPlane,
+        // маршрут тут іде не вздовж колії, а навскоси, тож нахил полотна в нього виходить свій
+        private static bool CrossPlane(Section section, Vec3d p, double travelX, double travelZ, out double planeY, out double cant)
+        {
+            planeY = p.Y;
+            cant = 0;
+            Vec3d start = section.FullStartPosition;
+            Vec3d end = section.FullEndPosition;
+            Vec3d chord = new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z);
+            if (chord.Length() < 1e-9) return false;
+            chord.Normalize();
+
+            Vec3f normal = section.CenterNormal;
+            Vec3d side = new Vec3d(normal.X, normal.Y, normal.Z);
+            side.Sub(chord.Clone().Mul(side.Dot(chord)));
+            if (side.Length() < 1e-9) return false;
+            side.Normalize();
+
+            Vec3d up = side.Cross(chord);
+            if (Math.Abs(up.Y) < 0.2) return false;
+
+            double mx = (start.X + end.X) / 2, my = (start.Y + end.Y) / 2, mz = (start.Z + end.Z) / 2;
+            planeY = my - (up.X * (p.X - mx) + up.Z * (p.Z - mz)) / up.Y;
+
+            double length = Math.Sqrt(travelX * travelX + travelZ * travelZ);
+            if (length < 1e-9) return true;
+            double leftX = -travelZ / length, leftZ = travelX / length;
+            cant = Math.Atan(-(up.X * leftX + up.Z * leftZ) / up.Y);
+            return true;
+        }
+
+        // Крива між двома сусідніми точками маршруту, нарізана на точки; null, якщо точки надто близько
+        private static List<PointOnBezierCurve> Leg(RoutePoint a, RoutePoint b)
+        {
+            double span = a.Position.DistanceTo(b.Position);
+            if (span < MinSpan) return null;
+
+            double handle = span * HandleFactor(a.Tangent, b.Tangent);
+            CubicBezierCurve3d curve = new CubicBezierCurve3d(
+                a.Position.X, a.Position.Y, a.Position.Z,
+                a.Position.X + a.Tangent.X * handle, a.Position.Y + a.Tangent.Y * handle, a.Position.Z + a.Tangent.Z * handle,
+                b.Position.X - b.Tangent.X * handle, b.Position.Y - b.Tangent.Y * handle, b.Position.Z - b.Tangent.Z * handle,
+                b.Position.X, b.Position.Y, b.Position.Z,
+                1, Weight, Weight, 1);
+
+            List<PointOnBezierCurve> points = curve.CutIntoEqualPieces(PieceLength);
+
+            // Нарізка інколи дає зайву точку впритул до кінцевої. Тут це зсунуло б усі наступні секції
+            // на пів секції, тому таку точку прибираємо, і точок у кривої завжди непарна кількість
+            if (points.Count % 2 == 0 && points.Count >= 2) points.RemoveAt(points.Count - 2);
+            return points.Count < 3 ? null : points;
         }
 
         // Що відомо про стрілку на одному з кінців маршруту після проходу вздовж основної колії
@@ -210,15 +562,40 @@ namespace RailWorld.src.RailWay
                 return true;
             }
 
-            // Справжні точки маршруту у вільній частині: найближча до кожної стрілки
+            // Точки маршруту у вільній частині, до яких веде перехід по висоті від кожної стрілки.
+            // Беремо не просто найближчу: точки можуть стояти густо (початок і кінець кожної дуги теж точки),
+            // і перехід до точки за два блоки від стрілки вийшов би горбом. Потрібна перша точка, до якої
+            // вистачає місця: ділянка площиною основної колії плюс довжина переходу, що залежить від різниці висот
+            double holdNeeded = HoldSections * PieceLength * 2;
             int nearStart = -1, nearEnd = -1;
+            int firstFree = -1, lastFree = -1;
             foreach (int joint in joints)
             {
                 if (joint < freeFrom || joint > freeTo) continue;
                 if (start != null && joint == 0) continue;
                 if (end != null && joint == count - 1) continue;
-                if (nearStart < 0 || joint < nearStart) nearStart = joint;
-                if (joint > nearEnd) nearEnd = joint;
+                if (firstFree < 0 || joint < firstFree) firstFree = joint;
+                if (joint > lastFree) lastFree = joint;
+
+                if (start != null)
+                {
+                    double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[start.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
+                    if (run[joint] - run[freeFrom] >= holdNeeded + ramp && (nearStart < 0 || joint < nearStart)) nearStart = joint;
+                }
+                if (end != null)
+                {
+                    double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[end.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
+                    if (run[freeTo] - run[joint] >= holdNeeded + ramp && joint > nearEnd) nearEnd = joint;
+                }
+            }
+            // Жодна точка не лежить достатньо далеко: беремо найдальшу, яка є
+            if (start != null && nearStart < 0) nearStart = lastFree;
+            if (end != null && nearEnd < 0) nearEnd = firstFree;
+            // Стрілки на обох кінцях, і їхні переходи зайшли б один за одного: тоді перехід один, між стрілками
+            if (start != null && end != null && nearStart >= 0 && nearEnd >= 0 && nearStart > nearEnd)
+            {
+                nearStart = -1;
+                nearEnd = -1;
             }
 
             double holdLength = HoldSections * PieceLength * 2;

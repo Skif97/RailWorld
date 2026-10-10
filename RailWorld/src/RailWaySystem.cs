@@ -2,6 +2,7 @@ using HarmonyLib;
 using ProtoBuf;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -101,6 +102,9 @@ namespace RailWorld
 
             // Оновлюємо рендер коли чанк змінився
             api.Event.ChunkDirty += OnChunkDirty;
+
+            // Плавне переведення стрілок: щокадру, поки котрась рухається
+            api.Event.RegisterGameTickListener(OnSwitchAnimationTick, 15);
 
             // Harmony патч для події вивантаження чанку
             Harmony harmony = new Harmony("com.railworld.myMod");
@@ -209,6 +213,12 @@ namespace RailWorld
             return section;
         }
 
+        /// <summary>Секції колії, що зберігаються в чанку, якими їх знає клієнт; null, якщо колії там немає.</summary>
+        public IEnumerable<Section> ClientSectionsIn(Vec3i chunkCoord)
+        {
+            return clientSections.TryGetValue(chunkCoord, out IDictionary<int, Section> sections) ? sections.Values : null;
+        }
+
         public List<SectionBox> GetClientBoxes(Vec3i chunkCoord)
         {
             clientBoxes.TryGetValue(chunkCoord, out List<SectionBox> boxes);
@@ -220,8 +230,13 @@ namespace RailWorld
         /// </summary>
         public void SetChunkData(Vec3i chunkCoord, DataInChunk data)
         {
-            RemoveChunk(chunkCoord);
-            if (data == null) return;
+            // Колії в чанку більше немає: прибираємо все. Якщо ж дані просто замінюються новими, нічого наперед
+            // не викидаємо: перебудова сама прибере зайве, а незмінні деталі стрілок лишить як є
+            if (data == null)
+            {
+                RemoveChunk(chunkCoord);
+                return;
+            }
 
             Vec3i coord = chunkCoord.Clone();
             var boxes = new List<SectionBox>();
@@ -278,6 +293,119 @@ namespace RailWorld
         }
 
         // Збирає заново все, що малюється для колії чанка: шпали, важелі стрілок і рейки
+        // ── Переведення стрілки ──
+        // Сервер перемикає стрілку миттєво, і клієнт дізнається про це з нових даних чанка. Рух гостряків
+        // і важеля це лише вигляд: клієнт помічає, що положення стрілки змінилося, і далі сам плавно
+        // переводить деталі зі старого положення в нове.
+
+        // Скільки триває рух на екрані. Трохи довше за час, коли вагонетка на стрілці сходить із колії
+        private const int SwitchAnimationMs = Section.SwitchTimeMs + 200;
+
+        // Стрілка, яку клієнт уже бачив: у якому вона положенні і коли воно востаннє змінилося (час клієнта)
+        private class SwitchState
+        {
+            public Vec3i Chunk;
+            public int Index;
+            public bool AtStart;
+            public int Position;
+            // Де стрілка була в мить останньої зміни: 0 це перша гілка, 1 друга, між ними проміжні положення
+            public double From;
+            public long ChangedAtMs = long.MinValue / 2;
+            public bool Moving;
+        }
+
+        private Dictionary<string, SwitchState> switchStates = new Dictionary<string, SwitchState>();
+
+        // Стрілку визначає кінець секції, з якого колія розходиться
+        private static string SwitchKey(Vec3i chunk, int index, bool atStart)
+        {
+            return $"{chunk.X}_{chunk.Y}_{chunk.Z}_{index}_{(atStart ? "S" : "E")}";
+        }
+
+        // Запам'ятовує положення стрілки. Якщо воно не те, що бачили минулого разу, з цієї миті починається рух.
+        // Стрілка, яку бачимо вперше, одразу стоїть на місці
+        private void TrackSwitch(Vec3i chunkCoord, Section section, bool atStart)
+        {
+            string key = SwitchKey(chunkCoord, section.IndexInChunk, atStart);
+            int position = section.GetSwitchPosition(atStart);
+
+            if (!switchStates.TryGetValue(key, out SwitchState state))
+            {
+                switchStates[key] = new SwitchState { Chunk = chunkCoord.Clone(), Index = section.IndexInChunk, AtStart = atStart, Position = position, From = position };
+                return;
+            }
+            if (state.Position == position) return;
+
+            // Рух починається з того місця, де стрілка зараз: якщо її перевели назад, не дочекавшись кінця,
+            // вона розвертається з півдороги, а не перестрибує в крайнє положення
+            state.From = SwitchValue(state);
+            state.Position = position;
+            state.ChangedAtMs = capi.ElapsedMilliseconds;
+            state.Moving = true;
+        }
+
+        // Де стрілка зараз: 0 це перша гілка, 1 друга. Рух плавно розганяється і плавно зупиняється;
+        // неповний шлях займає відповідно менше часу
+        private double SwitchValue(SwitchState state)
+        {
+            double distance = Math.Abs(state.Position - state.From);
+            if (distance < 1e-6) return state.Position;
+
+            double passed = GameMath.Clamp((capi.ElapsedMilliseconds - state.ChangedAtMs) / (SwitchAnimationMs * distance), 0, 1);
+            return state.From + (state.Position - state.From) * passed * passed * (3 - 2 * passed);
+        }
+
+        // Наскільки стрілка вже стала в теперішнє положення, від 0 до 1
+        private double SwitchProgress(string key)
+        {
+            if (!switchStates.TryGetValue(key, out SwitchState state)) return 1;
+            double value = SwitchValue(state);
+            return state.Position == 1 ? value : 1 - value;
+        }
+
+        // Важіль стрілки. Стоїть прямо, а нахилом убік показує, котра з двох гілок увімкнена; під час
+        // переведення перекидається з одного боку на інший
+        private void AddLever(Vec3i chunkCoord, Section section, bool atStart)
+        {
+            Vec3d start = section.FullStartPosition;
+            Vec3d end = section.FullEndPosition;
+            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+            float yaw = (float)Math.Atan2(dx, dz);
+            float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
+
+            float target = section.GetSwitchPosition(atStart) == 0 ? LeverLean : -LeverLean;
+            double moved = SwitchProgress(SwitchKey(chunkCoord, section.IndexInChunk, atStart));
+            float lean = (float)(target * (2 * moved - 1));
+            Renderer.AddLever(chunkCoord, SectionPicker.LeverPosition(section, atStart), new Vec3f(pitch, yaw, lean));
+        }
+
+        // Щокадру, поки котрась стрілка рухається: ставить її важіль і гостряки в нове проміжне положення.
+        // Решту чанка не чіпає; хрестовина й контррейки не змінюються і лишаються з готовим мешем
+        private void OnSwitchAnimationTick(float dt)
+        {
+            if (Renderer == null) return;
+
+            foreach (SwitchState state in switchStates.Values)
+            {
+                if (!state.Moving) continue;
+                // Останній раз деталі ставляться вже в кінцевому положенні
+                if (capi.ElapsedMilliseconds - state.ChangedAtMs >= SwitchAnimationMs) state.Moving = false;
+
+                if (!clientSections.TryGetValue(state.Chunk, out IDictionary<int, Section> sections)
+                    || !sections.TryGetValue(state.Index, out Section trunk) || !trunk.HasSwitch(state.AtStart)) continue;
+
+                // Розрахунки стрілок дійсні лише на один прохід
+                switchSides.Clear();
+                switchComplete.Clear();
+                AddLever(state.Chunk, trunk, state.AtStart);
+                foreach (SectionLink link in trunk.GetLinks(state.AtStart))
+                {
+                    Section branch = FindClientSection(link);
+                    if (branch != null) AddBlade(link.Chunk, branch);
+                }
+            }
+        }
+
         private void RebuildChunkRender(Vec3i chunkCoord, IDictionary<int, Section> sections)
         {
             if (Renderer == null) return;
@@ -291,6 +419,7 @@ namespace RailWorld
             var bladeSections = new List<Section>();
             // Розрахунки стрілок дійсні лише на час однієї перебудови: колія могла змінитися
             switchSides.Clear();
+            switchComplete.Clear();
 
             foreach (var kvp in sections)
             {
@@ -329,13 +458,8 @@ namespace RailWorld
                     bool atStart = e == 0;
                     if (!section.HasSwitch(atStart)) continue;
 
-                    Vec3d start = section.FullStartPosition;
-                    Vec3d end = section.FullEndPosition;
-                    double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
-                    float yaw = (float)Math.Atan2(dx, dz);
-                    float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
-                    float lean = section.GetSwitchPosition(atStart) == 0 ? LeverLean : -LeverLean;
-                    Renderer.AddLever(chunkCoord, SectionPicker.LeverPosition(section, atStart), new Vec3f(pitch, yaw, lean));
+                    TrackSwitch(chunkCoord, section, atStart);
+                    AddLever(chunkCoord, section, atStart);
                 }
 
                 if (section.FirstRailInstalled || section.SecondRailInstalled)
@@ -472,6 +596,52 @@ namespace RailWorld
 
         // Розраховані колії стрілок, за першою секцією колії. Живе одну перебудову чанка
         private Dictionary<Section, SwitchSide> switchSides = new Dictionary<Section, SwitchSide>();
+        // Чи стрілка зібрана повністю, за її ключем. Живе стільки ж, скільки switchSides
+        private Dictionary<string, bool> switchComplete = new Dictionary<string, bool>();
+
+        /// <summary>
+        /// Чи стрілку, до якої гілка first приєднана кінцем switchAtStart, зібрано повністю: обидві рейки
+        /// на всіх секціях обох гілок, поки гілки лежать одна на одній і до кінця хрестовини.
+        /// Недобудована стрілка малюється як звичайні колії.
+        /// </summary>
+        private bool SwitchComplete(Section first, bool switchAtStart)
+        {
+            List<SectionLink> back = first.GetLinks(switchAtStart);
+            if (back.Count != 1) return false;
+            Section trunk = FindClientSection(back[0]);
+            if (trunk == null) return false;
+
+            string key = SwitchKey(back[0].Chunk, back[0].Index, back[0].AtStart);
+            if (switchComplete.TryGetValue(key, out bool known)) return known;
+            switchComplete[key] = true;
+
+            bool complete = SwitchZone.IsComplete(trunk, back[0].AtStart, FindClientSection);
+            List<SectionLink> links = trunk.GetLinks(back[0].AtStart);
+            for (int k = 0; complete && k < links.Count; k++)
+            {
+                // Хрестовина на крутій стрілці сягає далі, ніж гілки лежать одна на одній
+                Section branch = FindClientSection(links[k]);
+                Section other = FindClientSection(links[1 - k]);
+                if (branch == null || other == null) continue;
+
+                SwitchSide side = GetSwitchSide(branch, links[k].AtStart, other);
+                if (side.Throat < 0) continue;
+
+                Section current = branch;
+                bool entered = links[k].AtStart;
+                for (int n = 1; n <= side.HideTo && current != null; n++)
+                {
+                    if (!current.FirstRailInstalled || !current.SecondRailInstalled) complete = false;
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    entered = ahead[0].AtStart;
+                    current = FindClientSection(ahead[0]);
+                }
+            }
+
+            switchComplete[key] = complete;
+            return complete;
+        }
 
         /// <summary>
         /// Перерізи внутрішньої рейки колії від стрілки. first це перша секція колії, switchAtStart котрим кінцем
@@ -547,8 +717,7 @@ namespace RailWorld
             switchSides[first] = result;
             result.Frames = RailFrames(first, switchAtStart, TowardPartner(first, partnerFirst), MaxFrogSections);
 
-            if (partnerFirst == null || !SwitchZone.FindPair(partnerFirst, FindClientSection, out _, out _, out _, out int partnerNumber,
-                out _, out bool partnerSwitchAtStart, out _) || partnerNumber != 1) return result;
+            if (partnerFirst == null || !Sibling(first, switchAtStart, out Section sibling, out bool partnerSwitchAtStart) || sibling != partnerFirst) return result;
 
             result.Other = RailFrames(partnerFirst, partnerSwitchAtStart, TowardPartner(partnerFirst, first), MaxFrogSections);
             int count = Math.Min(result.Frames.Count, result.Other.Count);
@@ -592,7 +761,10 @@ namespace RailWorld
                 // Осердя починається там, де сходяться робочі грані двох рейок: за ширину головки до перетину осей
                 if (tip < 0 && across > -head * 0.8) tip = q;
                 if (crossing < 0 && across >= 0) crossing = q;
-                if (full < 0 && across >= head) full = q;
+                // Хрестовина закінчується там, де рейки двох колій розійшлися так само далеко, як на її
+                // початку: на два жолоби. Доти між променями осердя лежить лите дно, а не вузька щілина
+                // до самої землі між двома звичайними рейками
+                if (full < 0 && across >= 2 * clearance) full = q;
             }
 
             // Рейки так і не зійшлися в межах пройденого: хрестовини тут немає
@@ -635,21 +807,48 @@ namespace RailWorld
         /// </summary>
         private RailShape BladeShape(Section section, bool left)
         {
-            // Хрестовина на крутій стрілці сягає далі, ніж спільні шпали, тому пара шукається на будь-якій відстані
-            if (!SwitchZone.FindPair(section, FindClientSection, out Section partner, out _, out _, out int number, out _,
-                out bool switchAtStart, out double heelAt, true) || partner == null) return null;
-            if (left != TowardPartner(section, partner) > 0) return null;
-
-            if (!FindFirst(section, switchAtStart, number, out Section first, out bool firstSwitchAtStart))
+            // Стрілка може бути з будь-якого боку секції, і з обох одразу, якщо стрілки стоять густо:
+            // перевіряємо кожен бік окремо
+            for (int end = 0; end < 2; end++)
             {
-                return number <= BladeSections(heelAt) ? new RailShape { Hidden = true } : null;
-            }
-            SwitchZone.FindPair(first, FindClientSection, out Section partnerFirst, out _, out _, out _);
+                bool switchAtStart = end == 0;
+                // Хрестовина на крутій стрілці сягає далі, ніж спільні шпали, тому пара шукається на будь-якій відстані
+                if (!SwitchZone.FindPairToward(section, switchAtStart, FindClientSection, out Section partner, out _, out int number,
+                    out _, out double heelAt, true) || partner == null) continue;
+                if (left != TowardPartner(section, partner) > 0) continue;
 
-            SwitchSide own = GetSwitchSide(first, firstSwitchAtStart, partnerFirst);
-            if (number <= BladeSections(heelAt, own)) return new RailShape { Hidden = true };
-            if (own.Throat >= 0 && number >= own.HideFrom && number <= own.HideTo) return new RailShape { Hidden = true };
+                if (!FindFirst(section, switchAtStart, number, out Section first, out bool firstSwitchAtStart)) continue;
+                // Недобудована стрілка: звичайні рейки
+                if (!SwitchComplete(first, firstSwitchAtStart)) continue;
+                if (!Sibling(first, firstSwitchAtStart, out Section partnerFirst, out _)) continue;
+
+                SwitchSide own = GetSwitchSide(first, firstSwitchAtStart, partnerFirst);
+                if (number <= BladeSections(heelAt, own)) return new RailShape { Hidden = true };
+                if (own.Throat >= 0 && number >= own.HideFrom && number <= own.HideTo) return new RailShape { Hidden = true };
+            }
             return null;
+        }
+
+        // Друга гілка тієї самої стрілки: first це перша секція гілки, приєднана до стрілки кінцем switchAtStart.
+        // siblingAtStart каже, котрим кінцем друга гілка приєднана до стрілки
+        private bool Sibling(Section first, bool switchAtStart, out Section sibling, out bool siblingAtStart)
+        {
+            sibling = null;
+            siblingAtStart = true;
+
+            List<SectionLink> back = first.GetLinks(switchAtStart);
+            if (back.Count != 1) return false;
+            Section trunk = FindClientSection(back[0]);
+            if (trunk == null) return false;
+
+            foreach (SectionLink link in trunk.GetLinks(back[0].AtStart))
+            {
+                if (link.PointsTo(first)) continue;
+                sibling = FindClientSection(link);
+                siblingAtStart = link.AtStart;
+                return sibling != null;
+            }
+            return false;
         }
 
         /// <summary>
@@ -658,9 +857,19 @@ namespace RailWorld
         /// </summary>
         private void AddBlade(Vec3i chunkCoord, Section section)
         {
-            if (!SwitchZone.FindPair(section, FindClientSection, out Section partner, out bool primary, out _, out int number, out bool active,
-                out bool switchAtStart, out double heelAt)) return;
-            if (number != 1) return;
+            // Секція має бути першою на гілці стрілки; з котрого боку від неї стрілка, перевіряємо окремо
+            Section partner = null;
+            bool primary = false, active = false, switchAtStart = true, found = false;
+            double heelAt = 0;
+            for (int end = 0; end < 2 && !found; end++)
+            {
+                switchAtStart = end == 0;
+                found = SwitchZone.FindPairToward(section, switchAtStart, FindClientSection, out partner, out primary, out int number,
+                    out active, out heelAt, false) && number == 1 && partner != null;
+            }
+            if (!found) return;
+            // Недобудована стрілка малюється звичайними рейками, без деталей стрілки
+            if (!SwitchComplete(section, switchAtStart)) return;
 
             bool left = TowardPartner(section, partner) > 0;
             SectionPart part = left ? SectionPart.FirstRail : SectionPart.SecondRail;
@@ -668,6 +877,16 @@ namespace RailWorld
 
             string material = section.GetMaterial(part) ?? "iron";
             SwitchSide own = GetSwitchSide(section, switchAtStart, partner);
+
+            // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
+            // Під час переведення стрілки він між цими положеннями
+            double open = active ? 0 : 1;
+            List<SectionLink> back = section.GetLinks(switchAtStart);
+            if (back.Count == 1)
+            {
+                double moved = SwitchProgress(SwitchKey(back[0].Chunk, back[0].Index, back[0].AtStart));
+                open = active ? 1 - moved : moved;
+            }
 
             // ── Гостряк ──
             int bladePoints = Math.Min(BladeSections(heelAt, own) * 2 + 1, own.Frames.Count);
@@ -694,32 +913,78 @@ namespace RailWorld
 
                 var blade = new LoftPart();
                 LoftPoint[][] ends = null;
-                void AddStation(BladeFrame frame, double position, double stockAt)
+                // Ставить переріз гостряка за position перерізів колії від стрілки; position може бути дробом
+                void AddStation(double position, bool withHead)
                 {
+                    int before = Math.Min((int)Math.Floor(position), bladePoints - 2);
+                    double fraction = position - before;
+                    BladeFrame frame = fraction < 1e-6 ? own.Frames[before]
+                        : fraction > 1 - 1e-6 ? own.Frames[before + 1] : Between(own.Frames[before], own.Frames[before + 1], fraction);
+                    double stockAt = stock[before] + (stock[before + 1] - stock[before]) * fraction;
+
                     // Відведений гостряк відходить на повний хід біля вістря і повертається на свою лінію
                     // біля кореня, який не рухається
                     double t = position / (bladePoints - 1);
-                    double shift = active ? 0 : BladeThrow * (1 - t * t * (3 - 2 * t));
-                    blade.Stations.Add(BladeProfile(frame, stockAt, shift, out ends));
+                    double shift = open * BladeThrow * (1 - t * t * (3 - 2 * t));
+                    blade.Stations.Add(BladeProfile(frame, stockAt, shift, withHead, out ends));
                     if (blade.Stations.Count == 1) blade.StartCaps.AddRange(ends);
                 }
 
-                // Гостряк починається не від самої стрілки, а там, де від головки вже лишається найменша
-                // ширина: ближче до стрілки від профілю є лише клаптик підошви й шийки, і його не малюємо.
-                // Це місце зазвичай між двома перерізами колії, тож перший переріз гостряка ставиться між ними
-                int firstFull = 0;
-                while (firstFull < bladePoints && stock[firstFull] < BladeMinHead) firstFull++;
-                if (firstFull > 0 && firstFull < bladePoints)
+                // Де рамна рейка відійшла на stockNeeded блоків, у перерізах колії від стрілки, дробом
+                double Reaches(double stockNeeded, out int index)
                 {
-                    double fraction = (BladeMinHead - stock[firstFull - 1]) / (stock[firstFull] - stock[firstFull - 1]);
-                    if (fraction < 0.95) AddStation(Between(own.Frames[firstFull - 1], own.Frames[firstFull], fraction), firstFull - 1 + fraction, BladeMinHead);
+                    index = 0;
+                    while (index < bladePoints && stock[index] < stockNeeded) index++;
+                    if (index == 0 || index >= bladePoints) return index;
+                    return index - 1 + (stockNeeded - stock[index - 1]) / (stock[index] - stock[index - 1]);
                 }
-                for (int i = firstFull; i < bladePoints; i++) AddStation(own.Frames[i], i, stock[i]);
+
+                // Тіло гостряка, підошва з шийкою, починається на секцію ближче до стрілки, ніж місце, де
+                // головка набирає ширину BladeMinHead. Далі за сам стик стрілки воно не йде: там рейка
+                // ще одна на обидві колії
+                double begin = Math.Max(0, Reaches(BladeMinHead, out int firstFull) - BladeLead);
+                // І не пізніше, ніж за пів секції до тяги: тяга тримається за тіло обох гостряків
+                begin = Math.Min(begin, TieBarAt - 1);
+                // Головка починається пізніше, сходинкою, там, де від неї лишається ширина BladeHeadFrom:
+                // вужча була б лезом. До цього місця гостряк це лише тіло, врівень з низом головки
+                double headFrom = Math.Max(begin, Reaches(BladeHeadFrom, out _));
+
+                if (headFrom < bladePoints - 1)
+                {
+                    if (headFrom - begin > 0.05)
+                    {
+                        AddStation(begin, false);
+                        for (int i = (int)Math.Floor(begin) + 1; i < headFrom - 0.05; i++)
+                        {
+                            if (i - begin > 0.05) AddStation(i, false);
+                        }
+                        // Два перерізи в одному місці, без головки і з нею: між ними торець головки, сходинка
+                        AddStation(headFrom, false);
+                    }
+                    AddStation(headFrom, true);
+                    for (int i = (int)Math.Floor(headFrom) + 1; i < bladePoints; i++)
+                    {
+                        if (i - headFrom > 0.05) AddStation(i, true);
+                    }
+                }
 
                 if (blade.Stations.Count >= 2)
                 {
                     blade.EndCaps.AddRange(ends);
-                    Renderer.SetLoft(chunkCoord, section.IndexInChunk, left, "", material, new List<LoftPart> { blade });
+                    var parts = new List<LoftPart> { blade };
+
+                    // Тяга між двома гостряками: планка, що тримає їх на сталій відстані, тому вони й рухаються
+                    // разом. Одна на стрілку, її ставить перша гілка. Лежить між шпалами, біля вістря
+                    if (primary && own.Other != null)
+                    {
+                        for (int bar = 0; bar < TieBars; bar++)
+                        {
+                            LoftPart tie = TieBar(section, own, bladePoints, stock, firstFull, open, bar);
+                            if (tie != null) parts.Add(tie);
+                        }
+                    }
+
+                    Renderer.SetLoft(chunkCoord, section.IndexInChunk, left, "", material, parts);
                 }
             }
 
@@ -819,8 +1084,76 @@ namespace RailWorld
             Renderer.SetLoft(chunkCoord, section.IndexInChunk, !inner, "CR", material, parts);
         }
 
-        // Найменша ширина головки гостряка, блоків: з такої він починається біля вістря
+        // Тяга між гостряками: ширина вздовж колії, низ і верх над підошвою рейки, блоків
+        private const int TieBars = 1;
+        // На якому перерізі колії від стрілки стоїть тяга: 2 це кінець першої секції
+        private const int TieBarAt = 2;
+        private const double TieBarWidth = 0.09;
+        private const double TieBarBottom = 0.5 / 16;
+        private const double TieBarTop = 1.0 / 16;
+
+        /// <summary>
+        /// Тяга між гостряками: планка впоперек колії від шийки одного гостряка до шийки другого.
+        /// Стоїть на стику першої і другої секцій стрілки, тобто між шпалами, навпроти важеля; number це
+        /// котра вона за рахунком, наступні стоять через секцію. Кінці її
+        /// рахуються з того, де кожен гостряк стоїть саме зараз, тож під час переведення вона їде з ними.
+        /// stock і firstFull це вже пораховане для свого гостряка: де рамна рейка і з якого перерізу він є.
+        /// </summary>
+        private LoftPart TieBar(Section section, SwitchSide own, int bladePoints, double[] stock, int firstFull, double open, int number)
+        {
+            int count = Math.Min(bladePoints, own.Other.Count);
+            double width = section.TrackWidth;
+
+            // Де рамна рейка для сусіднього гостряка: зовнішня рейка своєї колії
+            double OtherStock(int i)
+            {
+                BladeFrame mine = own.Frames[i], theirs = own.Other[i];
+                return Math.Max(0, (mine.Center.X - mine.Side.X * width - theirs.Center.X) * theirs.Side.X
+                    + (mine.Center.Y - mine.Side.Y * width - theirs.Center.Y) * theirs.Side.Y
+                    + (mine.Center.Z - mine.Side.Z * width - theirs.Center.Z) * theirs.Side.Z);
+            }
+
+            // Перша тяга стоїть рівно на стику першої і другої секцій стрілки, навпроти важеля;
+            // наступні через секцію одна від одної
+            int at = TieBarAt + number * 2;
+            if (at > count - 1) return null;
+
+            // Де стоїть стінка шийки гостряка з боку колії: зміщення біля вістря плюс відведення
+            double t = (double)at / (bladePoints - 1);
+            double throwAt = BladeThrow * (1 - t * t * (3 - 2 * t));
+            Vec3d WebFace(BladeFrame frame, double stockAt, double opened)
+            {
+                double move = Math.Max(0, RailWebHalf - (stockAt - RailFootHalf)) + opened * throwAt;
+                // Трохи всередину шийки, щоб між тягою і гостряком не було щілини
+                double x = -(RailWebHalf * 0.5 + move);
+                return new Vec3d(frame.Center.X + frame.Side.X * x, frame.Center.Y + frame.Side.Y * x, frame.Center.Z + frame.Side.Z * x);
+            }
+
+            BladeFrame near = own.Frames[at];
+            Vec3d from = WebFace(near, stock[at], open);
+            Vec3d to = WebFace(own.Other[at], OtherStock(at), 1 - open);
+            Vec3d along = to.SubCopy(from);
+            if (along.Length() < 0.05) return null;
+            along.Normalize();
+
+            var bar = new LoftPart();
+            foreach (Vec3d end in new[] { from, to })
+            {
+                // Переріз планки: упоперек неї це напрямок колії
+                BladeFrame frame = new BladeFrame { Center = end, Side = near.Along, Up = near.Up };
+                LoftPoint[] box = Box(frame, -TieBarWidth / 2, TieBarWidth / 2, TieBarBottom, TieBarTop);
+                bar.Stations.Add(new LoftStation { Along = along, Points = new[] { box[0], box[3], box[2], box[1] } });
+                (bar.Stations.Count == 1 ? bar.StartCaps : bar.EndCaps).Add(box);
+            }
+            return bar;
+        }
+
+        // Ширина головки гостряка, блоків, від якої рахується його початок, і на скільки перерізів колії
+        // ближче до стрілки він починається насправді. Два перерізи це одна секція
         private const double BladeMinHead = 0.01;
+        private const double BladeLead = 2;
+        // Найменша ширина головки гостряка, блоків: з такої вона починається, сходинкою
+        private const double BladeHeadFrom = 0.005;
 
         // За якого зміщення гостряка підпора під головкою сягає низу шийки, блоків. За меншого вона коротша
         private const double SupportFullOffset = 0.05;
@@ -838,12 +1171,15 @@ namespace RailWorld
         ///    Тож біля вістря головка вузька, а шийка й підошва під нею ширші за неї з боку колії.
         /// stock це де вісь рамної рейки в цьому перерізі, блоків від лінії гостряка в бік Side.
         /// thrown це на скільки блоків гостряк відведений від рамної рейки.
+        /// withHead: чи є в цьому перерізі головка. Біля самого вістря її немає, є лише тіло.
         /// ends це торець у цьому перерізі: підошва, шийка й головка.
         /// </summary>
-        private static LoftStation BladeProfile(BladeFrame frame, double stock, double thrown, out LoftPoint[][] ends)
+        private static LoftStation BladeProfile(BladeFrame frame, double stock, double thrown, bool withHead, out LoftPoint[][] ends)
         {
             double half = BladeMesh.HeadHalfWidth;
-            const double floor = FrogBodyTop, top = FrogRailTop;
+            const double floor = FrogBodyTop;
+            // Без головки верх гостряка на рівні її низу
+            double top = withHead ? FrogRailTop : floor;
 
             // Робоча грань головки рамної рейки, від лінії гостряка
             double face = stock - half;
@@ -940,6 +1276,15 @@ namespace RailWorld
             if (to - from < 1) return;
 
             // Тіло вузла
+            // З якого перерізу осердя розходиться на два промені
+            int splitFrom = to;
+            for (int q = from; q <= to; q++)
+            {
+                if (own.Across[q] <= half * 2) continue;
+                splitFrom = q;
+                break;
+            }
+
             var body = new LoftPart();
             List<LoftStation> stations = body.Stations;
             List<LoftPoint[]> startCaps = body.StartCaps, endCaps = body.EndCaps;
@@ -1009,6 +1354,11 @@ namespace RailWorld
 
                 // Осердя: від робочої грані своєї рейки до робочої грані сусідньої. Поки рейки не розійшлися
                 // на ширину головки, воно суцільне, далі це два промені з дном між ними
+                // Осердя ділиться на два промені рівно посередині між двома рейками. Це не завжди середина
+                // перерізу: точки двох колій з однаковим номером не стоять одна навпроти одної, і в перерізі
+                // рейки лежать не дзеркально. Якби ділити по середині перерізу, один промінь відокремився б
+                // раніше за другий, і ямка між ними вийшла б кривобокою
+                double middle = (mineAt + theirsAt) / 2;
                 double noseA, noseB, noseC, noseD, noseTop = floor;
                 if (last)
                 {
@@ -1024,40 +1374,57 @@ namespace RailWorld
                 {
                     noseTop = top;
                     noseA = mineAt - half;
-                    noseB = Math.Min(mineAt + half, 0);
-                    noseC = Math.Max(theirsAt - half, 0);
+                    noseB = Math.Min(mineAt + half, middle);
+                    noseC = Math.Max(theirsAt - half, middle);
                     noseD = theirsAt + half;
                     noseA = Math.Min(Math.Max(noseA, wingLeft + half), noseB);
                     noseD = Math.Max(Math.Min(noseD, wingRight - half), noseC);
                 }
                 else
                 {
-                    noseA = noseB = noseC = noseD = GameMath.Clamp(0, wingLeft + half, wingRight - half);
+                    noseA = noseB = noseC = noseD = GameMath.Clamp(middle, wingLeft + half, wingRight - half);
+                    // Вістря осердя на повну висоту головки від самого початку: у перерізі перед першим
+                    // широким воно вже стоїть, нульової ширини. Тож осердя це гострий клин, а не схил від дна
+                    if (q >= own.Tip - 1) noseTop = top;
                 }
                 // Між променями дно, лише коли вони справді розійшлися
-                double between = noseC - noseB > 1e-6 ? floor : noseTop;
+                // Дно теж одразу на своєму рівні, від перерізу перед розходженням: стінки ямки між
+                // променями прямовисні, а не схил від верху головки
+                double between = q >= splitFrom - 1 || noseC - noseB > 1e-6 ? floor : noseTop;
 
                 LoftPoint P(double x, double y) => Point(station, x, y);
 
-                stations.Add(new LoftStation
+                // Контур перерізу з осердям висотою noseHeight і дном між променями на висоті gapHeight
+                LoftStation Contour(double noseHeight, double gapHeight)
                 {
-                    Along = along,
-                    Points = new[]
+                    return new LoftStation
                     {
-                        // Зовнішній бік лівого вусовика: профіль рейки
-                        P(wingLeft - RailFootHalf, 0), P(wingLeft - RailFootHalf, RailFootTop), P(wingLeft - RailWebHalf, RailFootTop),
-                        P(wingLeft - RailWebHalf, floor), P(wingLeft - half, floor), P(wingLeft - half, top),
-                        // Його верх і стінка жолоба
-                        P(wingLeft + half, top), P(wingLeft + half, floor),
-                        // Осердя: лівий промінь, дно між променями, правий промінь
-                        P(noseA, floor), P(noseA, noseTop), P(noseB, noseTop), P(noseB, between),
-                        P(noseC, between), P(noseC, noseTop), P(noseD, noseTop), P(noseD, floor),
-                        // Правий вусовик
-                        P(wingRight - half, floor), P(wingRight - half, top),
-                        P(wingRight + half, top), P(wingRight + half, floor), P(wingRight + RailWebHalf, floor),
-                        P(wingRight + RailWebHalf, RailFootTop), P(wingRight + RailFootHalf, RailFootTop), P(wingRight + RailFootHalf, 0)
-                    }
-                });
+                        Along = along,
+                        Points = new[]
+                        {
+                            // Зовнішній бік лівого вусовика: профіль рейки
+                            P(wingLeft - RailFootHalf, 0), P(wingLeft - RailFootHalf, RailFootTop), P(wingLeft - RailWebHalf, RailFootTop),
+                            P(wingLeft - RailWebHalf, floor), P(wingLeft - half, floor), P(wingLeft - half, top),
+                            // Його верх і стінка жолоба
+                            P(wingLeft + half, top), P(wingLeft + half, floor),
+                            // Осердя: лівий промінь, дно між променями, правий промінь
+                            P(noseA, floor), P(noseA, noseHeight), P(noseB, noseHeight), P(noseB, gapHeight),
+                            P(noseC, gapHeight), P(noseC, noseHeight), P(noseD, noseHeight), P(noseD, floor),
+                            // Правий вусовик
+                            P(wingRight - half, floor), P(wingRight - half, top),
+                            P(wingRight + half, top), P(wingRight + half, floor), P(wingRight + RailWebHalf, floor),
+                            P(wingRight + RailWebHalf, RailFootTop), P(wingRight + RailFootHalf, RailFootTop), P(wingRight + RailFootHalf, 0)
+                        }
+                    };
+                }
+
+                // Осердя і ямка між його променями починаються прямовисно. Щоб так вийшло, у місці, де
+                // вони починаються, стоять два перерізи поспіль: один ще без них, другий уже з ними, нульової
+                // ширини. Між такими перерізами поверхні немає, тож не виходить і грані нульової товщини,
+                // що тяглася б від вістря назад до дна жолоба
+                if (!last && q == own.Tip - 1) stations.Add(Contour(floor, floor));
+                if (!last && q == splitFrom - 1 && noseTop > floor && between < noseTop) stations.Add(Contour(noseTop, noseTop));
+                stations.Add(Contour(noseTop, between));
 
                 if (first)
                 {
@@ -1153,6 +1520,7 @@ namespace RailWorld
         {
             bool known = clientSections.Remove(chunkCoord);
             clientBoxes.Remove(chunkCoord);
+            foreach (string key in switchStates.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) switchStates.Remove(key);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
             // Колія в чанку зникла: сусіди могли малювати з нею спільні шпали
             if (known) QueueNeighbourRender(chunkCoord);

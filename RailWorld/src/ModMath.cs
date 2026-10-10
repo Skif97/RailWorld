@@ -285,6 +285,21 @@ namespace RailWorld
         }
 
         // Нахил полотна в поворотах (підвищення зовнішньої рейки)
+        /// <summary>
+        /// Чи нахиляти полотно в поворотах. Якщо вимкнути, нова колія лежить рівно і в кривих; там, де вона
+        /// примикає до вже покладеної нахиленої колії, нахил плавно сходить до нуля.
+        /// </summary>
+        public static readonly bool CantInCurves = true;
+
+        /// <summary>
+        /// Нахил є лише в крутих поворотах. На радіусі CantFromRadius і більшому його немає зовсім, на
+        /// CantTightRadius і меншому він найбільший, між ними плавно наростає. Обидва в ширинах колії:
+        /// при колії 0.78 це 10.5 і 5.3 блока, тобто три і півтора найменших радіуси маршруту.
+        /// Пологі криві, а з ними й перетини через них, лежать рівно.
+        /// </summary>
+        public const double CantFromRadius = TrackGauge.StandardWidth * 13.5;
+        public const double CantTightRadius = TrackGauge.StandardWidth * 6.75;
+
         public const double MaxCantRad = 6 * Math.PI / 180;  // найбільший кут нахилу
         // Обидві величини в ширинах колії, як і мінімальний радіус маршруту: при колії 0.78 це 31.2 і 6.24 блока.
         // При такому і меншому радіусі нахил максимальний
@@ -334,7 +349,10 @@ namespace RailWorld
                 double curvature = span > 1e-9 ? turn / span : 0;
                 if (double.IsNaN(curvature) || double.IsInfinity(curvature)) curvature = 0;
 
-                raw[i] = Math.Sign(curvature) * MaxCantRad * Math.Min(1, FullCantRadius * Math.Abs(curvature));
+                // Частка найбільшого нахилу: нуль на пологій кривій, одиниця на крутій, між ними плавно
+                double tight = GameMath.Clamp((Math.Abs(curvature) - 1 / CantFromRadius) / (1 / CantTightRadius - 1 / CantFromRadius), 0, 1);
+                tight = tight * tight * (3 - 2 * tight);
+                raw[i] = CantInCurves ? Math.Sign(curvature) * MaxCantRad * tight : 0;
             }
 
             // Середнє по відрізку навколо точки. Вікно їде разом із точкою, тому межі лише зсуваються вперед
