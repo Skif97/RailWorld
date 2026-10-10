@@ -80,6 +80,57 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void OppositeIsTheSectionWithTheSameNumberOnTheOtherBranch()
+        {
+            RailSwitch built = BuildSwitch();
+
+            var onStraight = new SwitchRef { Branch = 0, Number = 3 };
+            var onArc = new SwitchRef { Branch = 1, Number = 3 };
+            Assert.True(built.Opposite(onStraight).PointsTo(arc[2]));
+            Assert.True(built.Opposite(onArc).PointsTo(straight[2]));
+
+            // Далі, ніж записана друга гілка, сусідки немає
+            Assert.Null(built.Opposite(new SwitchRef { Branch = 0, Number = built.Branches[1].Members.Count + 1 }));
+            // Посилання на гілку, якої в записі немає
+            Assert.Null(built.Opposite(new SwitchRef { Branch = 2, Number = 1 }));
+        }
+
+        [Fact]
+        public void InnerRailIsReplacedUnderTheBladeAndTheFrogOnly()
+        {
+            SwitchBranch branch = BuildSwitch().Branches[0];
+
+            Assert.False(branch.ReplacesInnerRail(0));
+            Assert.True(branch.ReplacesInnerRail(1));
+            Assert.True(branch.ReplacesInnerRail(branch.BladeSections));
+            // Між гостряком і хрестовиною звичайна рейка
+            Assert.False(branch.ReplacesInnerRail(branch.BladeSections + 1));
+            Assert.True(branch.ReplacesInnerRail(branch.FrogFrom));
+            Assert.True(branch.ReplacesInnerRail(branch.FrogTo));
+            Assert.False(branch.ReplacesInnerRail(branch.FrogTo + 1));
+        }
+
+        [Fact]
+        public void BranchWithoutAFrogReplacesTheRailUnderTheBladeOnly()
+        {
+            var branch = new SwitchBranch { BladeSections = 4 };
+
+            Assert.True(branch.ReplacesInnerRail(4));
+            Assert.False(branch.ReplacesInnerRail(5));
+        }
+
+        [Fact]
+        public void SleepersAreSharedWhileTheBranchesLieOnEachOther()
+        {
+            SwitchBranch branch = BuildSwitch().Branches[0];
+
+            Assert.True(branch.PairSections > 0);
+            Assert.True(branch.SharesSleeper(1));
+            Assert.True(branch.SharesSleeper(branch.PairSections));
+            Assert.False(branch.SharesSleeper(branch.PairSections + 1));
+        }
+
+        [Fact]
         public void FullyLaidSwitchIsComplete()
         {
             RailSwitch built = BuildSwitch();

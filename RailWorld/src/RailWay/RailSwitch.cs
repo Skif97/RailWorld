@@ -19,6 +19,9 @@ namespace RailWorld.src.RailWay
         [ProtoMember(5)] public int Branch;
         [ProtoMember(6)] public int Number;
 
+        /// <summary>Чанк, у якому лежить запис про стрілку.</summary>
+        public Vintagestory.API.MathTools.Vec3i Chunk => new Vintagestory.API.MathTools.Vec3i(ChunkX, ChunkY, ChunkZ);
+
         public bool SameAs(SwitchRef other)
         {
             return other != null && ChunkX == other.ChunkX && ChunkY == other.ChunkY && ChunkZ == other.ChunkZ
@@ -66,6 +69,29 @@ namespace RailWorld.src.RailWay
         /// <summary>До якої секції включно гілка це ще стрілка: тут рейки мають стояти, щоб стрілка працювала.</summary>
         public int ZoneSections => Math.Max(Math.Max(PairSections, OverlapSections), FrogTo);
 
+        /// <summary>Секція гілки з таким номером від стрілки або null, якщо гілка коротша.</summary>
+        public SectionLink Member(int number)
+        {
+            return number >= 1 && number <= Members.Count ? Members[number - 1] : null;
+        }
+
+        /// <summary>Чи шпала секції з таким номером спільна із секцією другої гілки під тим самим номером.</summary>
+        public bool SharesSleeper(int number)
+        {
+            return number >= 1 && number <= PairSections;
+        }
+
+        /// <summary>
+        /// Чи на секції з таким номером внутрішню рейку гілки заміняє деталь стрілки: гостряк або хрестовина.
+        /// Звичайна рейка там не малюється.
+        /// </summary>
+        public bool ReplacesInnerRail(int number)
+        {
+            if (number < 1) return false;
+            if (number <= BladeSections) return true;
+            return FrogFrom > 0 && number >= FrogFrom && number <= FrogTo;
+        }
+
         [ProtoAfterDeserialization]
         private void OnDeserialized()
         {
@@ -110,6 +136,24 @@ namespace RailWorld.src.RailWay
         public static int KeyOf(int trunkIndex, bool atStart)
         {
             return trunkIndex * 2 + (atStart ? 0 : 1);
+        }
+
+        /// <summary>
+        /// Гілка, на яку вказує посилання секції, або null, якщо такої в записі немає: стрілку пораховано
+        /// неповністю або посилання застаріле.
+        /// </summary>
+        public SwitchBranch BranchOf(SwitchRef place)
+        {
+            return Branches.Count == 2 && place.Branch >= 0 && place.Branch < 2 ? Branches[place.Branch] : null;
+        }
+
+        /// <summary>
+        /// Секція другої гілки під тим самим номером, що й секція з посиланням place: її сусідка по стрілці.
+        /// null, якщо друга гілка коротша.
+        /// </summary>
+        public SectionLink Opposite(SwitchRef place)
+        {
+            return BranchOf(place) == null ? null : Branches[1 - place.Branch].Member(place.Number);
         }
 
         [ProtoAfterDeserialization]

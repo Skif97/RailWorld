@@ -216,6 +216,8 @@ namespace RailWorld
 
         // Секції кожного чанка за номером: щоб швидко пройти по колії через зв'язки між секціями
         private Dictionary<Vec3i, IDictionary<int, Section>> clientSections = new Dictionary<Vec3i, IDictionary<int, Section>>();
+        // Записи про стрілки кожного чанка за ключем RailSwitch.Key, якими їх прислав сервер
+        private Dictionary<Vec3i, IDictionary<int, RailSwitch>> clientSwitches = new Dictionary<Vec3i, IDictionary<int, RailSwitch>>();
 
         /// <summary>
         /// Секція, на яку вказує посилання, з того, що клієнт зараз знає про колію. null, якщо її чанку немає.
@@ -258,6 +260,7 @@ namespace RailWorld
                 Handler.GetSelectionBoxes(boxes, coord, kvp.Key, kvp.Value);
             clientBoxes[coord] = boxes;
             clientSections[coord] = data.RailWaySections;
+            clientSwitches[coord] = data.Switches;
             selectionRenderer?.MarkChunkDirty(coord);
 
             RebuildChunkRender(coord, data.RailWaySections);
@@ -408,9 +411,6 @@ namespace RailWorld
                 if (!clientSections.TryGetValue(state.Chunk, out IDictionary<int, Section> sections)
                     || !sections.TryGetValue(state.Index, out Section trunk) || !trunk.HasSwitch(state.AtStart)) continue;
 
-                // Розрахунки стрілок дійсні лише на один прохід
-                switchSides.Clear();
-                switchComplete.Clear();
                 AddLever(state.Chunk, trunk, state.AtStart);
                 foreach (SectionLink link in trunk.GetLinks(state.AtStart))
                 {
@@ -431,9 +431,6 @@ namespace RailWorld
 
             var railSections = new List<Section>();
             var bladeSections = new List<Section>();
-            // Розрахунки стрілок дійсні лише на час однієї перебудови: колія могла змінитися
-            switchSides.Clear();
-            switchComplete.Clear();
 
             foreach (var kvp in sections)
             {
@@ -442,13 +439,11 @@ namespace RailWorld
                 // У стрілці шпали двох гілок перетинаються, тому замість двох малюється одна спільна.
                 // Малює її секція першої гілки; секція другої свою шпалу пропускає
                 bool sharedSleeper = false;
-                if (section.SleeperInstalled && SwitchZone.FindPair(section, FindClientSection, out Section partner, out bool primary, out int fromEnd, out int pairNumber)
+                if (section.SleeperInstalled && FindSleeperPair(section, out Section partner, out bool primary, out int fromEnd, out int pairs)
                     && partner.SleeperInstalled)
                 {
                     sharedSleeper = true;
-                    // Скільки всього пар у стрілці, відомо лише для двох останніх; для них це і потрібно
-                    int pairs = fromEnd < 2 ? pairNumber + fromEnd : int.MaxValue;
-                    if (primary) AddSharedSleeper(chunkCoord, section, partner, pairs < StaggerMinPairs ? 2 : fromEnd);
+                    if (primary) AddSharedSleeper(chunkCoord, section, partner, pairs < StaggerMinPairs ? 2 : Math.Min(fromEnd, 2));
                 }
 
                 if (section.SleeperInstalled && !sharedSleeper)
@@ -554,91 +549,56 @@ namespace RailWorld
         private const double BladeThrow = 0.12;
 
 
-
-
-
-        // Розраховані колії стрілок, за першою секцією колії. Живе одну перебудову чанка
-        private Dictionary<Section, BranchGeometry> switchSides = new Dictionary<Section, BranchGeometry>();
-        // Чи стрілка зібрана повністю, за її ключем. Живе стільки ж, скільки switchSides
-        private Dictionary<string, bool> switchComplete = new Dictionary<string, bool>();
-
         /// <summary>
-        /// Чи стрілку, до якої гілка first приєднана кінцем switchAtStart, зібрано повністю: обидві рейки
-        /// на всіх секціях обох гілок, поки гілки лежать одна на одній і до кінця хрестовини.
-        /// Недобудована стрілка малюється як звичайні колії.
+        /// Запис про стрілку, на гілці якої секція лежить з боку кінця atStart, і місце секції в ній.
+        /// Запис рахує і зберігає сервер; клієнт його лише читає. false, якщо секція з цього боку не на
+        /// гілці стрілки або чанк зі стрілкою до клієнта ще не дійшов.
         /// </summary>
-        private bool SwitchComplete(Section first, bool switchAtStart)
+        private bool FindSwitch(Section section, bool atStart, out RailSwitch record, out SwitchRef place)
         {
-            List<SectionLink> back = first.GetLinks(switchAtStart);
-            if (back.Count != 1) return false;
-            Section trunk = FindClientSection(back[0]);
-            if (trunk == null) return false;
-
-            string key = SwitchKey(back[0].Chunk, back[0].Index, back[0].AtStart);
-            if (switchComplete.TryGetValue(key, out bool known)) return known;
-            switchComplete[key] = true;
-
-            bool complete = SwitchZone.IsComplete(trunk, back[0].AtStart, FindClientSection);
-            List<SectionLink> links = trunk.GetLinks(back[0].AtStart);
-            for (int k = 0; complete && k < links.Count; k++)
-            {
-                // Хрестовина на крутій стрілці сягає далі, ніж гілки лежать одна на одній
-                Section branch = FindClientSection(links[k]);
-                Section other = FindClientSection(links[1 - k]);
-                if (branch == null || other == null) continue;
-
-                BranchGeometry side = GetBranchGeometry(branch, links[k].AtStart, other);
-                if (side.Throat < 0) continue;
-
-                Section current = branch;
-                bool entered = links[k].AtStart;
-                for (int n = 1; n <= side.HideTo && current != null; n++)
-                {
-                    if (!current.FirstRailInstalled || !current.SecondRailInstalled) complete = false;
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    entered = ahead[0].AtStart;
-                    current = FindClientSection(ahead[0]);
-                }
-            }
-
-            switchComplete[key] = complete;
-            return complete;
+            record = null;
+            place = section.GetSwitchRef(atStart);
+            if (place == null) return false;
+            if (!clientSwitches.TryGetValue(place.Chunk, out IDictionary<int, RailSwitch> switches)) return false;
+            return switches.TryGetValue(place.Key, out record) && record.BranchOf(place) != null;
         }
 
-
-        /// <summary>
-        /// Розраховує внутрішню рейку колії стрілки і місце хрестовини на ній. first це перша секція колії.
-        /// </summary>
-
-        private BranchGeometry GetBranchGeometry(Section first, bool switchAtStart, Section partnerFirst)
+        // Секція другої гілки тієї самої стрілки під тим самим номером, або null, якщо клієнт її не знає
+        private Section Opposite(RailSwitch record, SwitchRef place)
         {
-            if (switchSides.TryGetValue(first, out BranchGeometry known)) return known;
-
-            // Друга гілка має справді виходити з тієї самої стрілки
-            bool partnerSwitchAtStart = true;
-            bool paired = partnerFirst != null && Sibling(first, switchAtStart, out Section sibling, out partnerSwitchAtStart) && sibling == partnerFirst;
-
-            BranchGeometry result = SwitchGeometry.Branch(first, switchAtStart, partnerFirst, paired ? partnerSwitchAtStart : (bool?)null, FindClientSection);
-            switchSides[first] = result;
-            return result;
+            SectionLink link = record.Opposite(place);
+            return link == null ? null : FindClientSection(link);
         }
 
-        // Перша секція колії, на якій лежить section, і котрим кінцем вона до стрілки. number це номер section від стрілки
-        private bool FindFirst(Section section, bool switchAtStart, int number, out Section first, out bool firstSwitchAtStart)
+        /// <summary>
+        /// Чи шпала секції спільна з секцією сусідньої гілки стрілки. primary каже, котра з двох її малює:
+        /// та, що на першій гілці. fromEnd це скільки спільних шпал іще лежить між цією і краєм стрілки,
+        /// pairs скільки їх у стрілці всього.
+        /// </summary>
+        private bool FindSleeperPair(Section section, out Section partner, out bool primary, out int fromEnd, out int pairs)
         {
-            first = section;
-            firstSwitchAtStart = switchAtStart;
-            for (int step = 1; step < number; step++)
+            partner = null;
+            primary = false;
+            fromEnd = 0;
+            pairs = 0;
+
+            // Стрілка може бути з будь-якого боку секції
+            for (int end = 0; end < 2; end++)
             {
-                List<SectionLink> links = first.GetLinks(firstSwitchAtStart);
-                if (links.Count != 1) return false;
-                Section previous = FindClientSection(links[0]);
-                if (previous == null) return false;
-                first = previous;
-                firstSwitchAtStart = !links[0].AtStart;
+                if (!FindSwitch(section, end == 0, out RailSwitch record, out SwitchRef place)) continue;
+
+                SwitchBranch branch = record.BranchOf(place);
+                if (!branch.SharesSleeper(place.Number)) continue;
+
+                partner = Opposite(record, place);
+                if (partner == null) continue;
+
+                primary = place.Branch == 0;
+                pairs = branch.PairSections;
+                fromEnd = pairs - place.Number;
+                return true;
             }
-            return true;
+            return false;
         }
 
         /// <summary>
@@ -651,44 +611,16 @@ namespace RailWorld
             // перевіряємо кожен бік окремо
             for (int end = 0; end < 2; end++)
             {
-                bool switchAtStart = end == 0;
-                // Хрестовина на крутій стрілці сягає далі, ніж спільні шпали, тому пара шукається на будь-якій відстані
-                if (!SwitchZone.FindPairToward(section, switchAtStart, FindClientSection, out Section partner, out _, out int number,
-                    out _, out double heelAt, true) || partner == null) continue;
-                if (left != SwitchGeometry.TowardPartner(section, partner) > 0) continue;
-
-                if (!FindFirst(section, switchAtStart, number, out Section first, out bool firstSwitchAtStart)) continue;
+                if (!FindSwitch(section, end == 0, out RailSwitch record, out SwitchRef place)) continue;
                 // Недобудована стрілка: звичайні рейки
-                if (!SwitchComplete(first, firstSwitchAtStart)) continue;
-                if (!Sibling(first, firstSwitchAtStart, out Section partnerFirst, out _)) continue;
+                if (!record.Complete || !record.BranchOf(place).ReplacesInnerRail(place.Number)) continue;
 
-                BranchGeometry own = GetBranchGeometry(first, firstSwitchAtStart, partnerFirst);
-                if (number <= SwitchGeometry.BladeSections(heelAt, own)) return new RailShape { Hidden = true };
-                if (own.Throat >= 0 && number >= own.HideFrom && number <= own.HideTo) return new RailShape { Hidden = true };
+                // Внутрішня рейка це та, що з боку сусідньої гілки
+                Section partner = Opposite(record, place);
+                if (partner == null) continue;
+                if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return new RailShape { Hidden = true };
             }
             return null;
-        }
-
-        // Друга гілка тієї самої стрілки: first це перша секція гілки, приєднана до стрілки кінцем switchAtStart.
-        // siblingAtStart каже, котрим кінцем друга гілка приєднана до стрілки
-        private bool Sibling(Section first, bool switchAtStart, out Section sibling, out bool siblingAtStart)
-        {
-            sibling = null;
-            siblingAtStart = true;
-
-            List<SectionLink> back = first.GetLinks(switchAtStart);
-            if (back.Count != 1) return false;
-            Section trunk = FindClientSection(back[0]);
-            if (trunk == null) return false;
-
-            foreach (SectionLink link in trunk.GetLinks(back[0].AtStart))
-            {
-                if (link.PointsTo(first)) continue;
-                sibling = FindClientSection(link);
-                siblingAtStart = link.AtStart;
-                return sibling != null;
-            }
-            return false;
         }
 
         /// <summary>
@@ -698,38 +630,46 @@ namespace RailWorld
         private void AddBlade(Vec3i chunkCoord, Section section)
         {
             // Секція має бути першою на гілці стрілки; з котрого боку від неї стрілка, перевіряємо окремо
+            RailSwitch record = null;
+            SwitchRef place = null;
+            SectionLink partnerLink = null;
             Section partner = null;
-            bool primary = false, active = false, switchAtStart = true, found = false;
-            double heelAt = 0;
+            bool switchAtStart = true, found = false;
             for (int end = 0; end < 2 && !found; end++)
             {
                 switchAtStart = end == 0;
-                found = SwitchZone.FindPairToward(section, switchAtStart, FindClientSection, out partner, out primary, out int number,
-                    out active, out heelAt, false) && number == 1 && partner != null;
+                if (!FindSwitch(section, switchAtStart, out record, out place) || place.Number != 1) continue;
+
+                partnerLink = record.Opposite(place);
+                partner = partnerLink == null ? null : FindClientSection(partnerLink);
+                found = partner != null;
             }
             if (!found) return;
             // Недобудована стрілка малюється звичайними рейками, без деталей стрілки
-            if (!SwitchComplete(section, switchAtStart)) return;
+            if (!record.Complete) return;
+
+            Vec3i switchChunk = place.Chunk;
+            if (!clientSections.TryGetValue(switchChunk, out IDictionary<int, Section> switchSections)
+                || !switchSections.TryGetValue(record.TrunkIndex, out Section trunk)) return;
 
             bool left = SwitchGeometry.TowardPartner(section, partner) > 0;
             SectionPart part = left ? SectionPart.FirstRail : SectionPart.SecondRail;
             if (!section.IsInstalled(part)) return;
 
             string material = section.GetMaterial(part) ?? "iron";
-            BranchGeometry own = GetBranchGeometry(section, switchAtStart, partner);
+            // Хрестовину й тягу ставить перша гілка: вони одні на обидві колії
+            bool primary = place.Branch == 0;
+            bool active = trunk.GetSwitchPosition(record.AtStart) == place.Branch;
+            // Перерізи внутрішньої рейки потрібні лише для меша, тому рахуються тут, а не зберігаються
+            BranchGeometry own = SwitchGeometry.Branch(section, switchAtStart, partner, partnerLink.AtStart, FindClientSection);
 
             // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
             // Під час переведення стрілки він між цими положеннями
-            double open = active ? 0 : 1;
-            List<SectionLink> back = section.GetLinks(switchAtStart);
-            if (back.Count == 1)
-            {
-                double moved = SwitchProgress(SwitchKey(back[0].Chunk, back[0].Index, back[0].AtStart));
-                open = active ? 1 - moved : moved;
-            }
+            double moved = SwitchProgress(SwitchKey(switchChunk, record.TrunkIndex, record.AtStart));
+            double open = active ? 1 - moved : moved;
 
             // ── Гостряк ──
-            int bladePoints = Math.Min(SwitchGeometry.BladeSections(heelAt, own) * 2 + 1, own.Frames.Count);
+            int bladePoints = Math.Min(record.BranchOf(place).BladeSections * 2 + 1, own.Frames.Count);
             if (bladePoints >= 2)
             {
                 // Де в кожному перерізі рамна рейка: зовнішня рейка сусідньої колії. Біля стрілки вона лежить
@@ -1359,6 +1299,7 @@ namespace RailWorld
         public void RemoveChunk(Vec3i chunkCoord)
         {
             bool known = clientSections.Remove(chunkCoord);
+            clientSwitches.Remove(chunkCoord);
             clientBoxes.Remove(chunkCoord);
             foreach (string key in switchStates.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) switchStates.Remove(key);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
