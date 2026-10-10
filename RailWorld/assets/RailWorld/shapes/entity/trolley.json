@@ -3317,4 +3317,21 @@
 				}
 			]
 		}
-	]}
+	]
+	,
+	"animations": [
+		{
+			"name": "Spin",
+			"code": "spin",
+			"quantityframes": 121,
+			"onActivityStopped": "Stop",
+			"onAnimationEnd": "Repeat",
+			"keyframes": [
+				{ "frame": 0, "elements": { "AxisFront98": { "rotationX": 0.0, "rotationY": 0.0, "rotationZ": 0.0 }, "AxisFront193": { "rotationX": 0.0, "rotationY": 0.0, "rotationZ": 0.0 } } },
+				{ "frame": 40, "elements": { "AxisFront98": { "rotationX": 120.0, "rotationY": 0.0, "rotationZ": 0.0 }, "AxisFront193": { "rotationX": 120.0, "rotationY": 0.0, "rotationZ": 0.0 } } },
+				{ "frame": 80, "elements": { "AxisFront98": { "rotationX": 240.0, "rotationY": 0.0, "rotationZ": 0.0 }, "AxisFront193": { "rotationX": 240.0, "rotationY": 0.0, "rotationZ": 0.0 } } },
+				{ "frame": 120, "elements": { "AxisFront98": { "rotationX": 360.0, "rotationY": 0.0, "rotationZ": 0.0 }, "AxisFront193": { "rotationX": 360.0, "rotationY": 0.0, "rotationZ": 0.0 } } }
+			]
+		}
+	]
+}

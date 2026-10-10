@@ -1,4 +1,5 @@
 using Vintagestory.API.Server;
+using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using System;
@@ -174,11 +175,318 @@ namespace RailWorld
 
         // Клієнт: передає нахил полотна в рендер. xangle це додатковий поворот навколо осі X моделі після всіх
         // кутів сутності; сама гра ним гойдає сутності на воді
-        private void ShowCant(float dt)
+        /// <summary>
+        /// Клієнт, раз на кадр, після того як гра пересунула сутність: ставить вагонетку на рейки на екрані.
+        /// Положення й кути приходять із сервера кілька разів на секунду, і гра плавно доводить їх до
+        /// присланих, кожне окремо і нічого не знаючи про колію. На великій швидкості вагонетка за цей час
+        /// проїжджає більше блока: намальована вона ще в одному місці кривої, а повернута вже як у наступному,
+        /// і летить над колією боком. Тому кути беремо не з присланих, а з колії в тому місці, де вагонетка
+        /// намальована саме зараз: тоді вона стоїть на рейках за будь-якої швидкості.
+        /// </summary>
+        public void ClientFrame(float dt)
         {
-            float target = WatchedAttributes.GetFloat(CantAttribute);
-            shownCant += (target - shownCant) * Math.Min(1f, dt * 10f);
-            if (Properties.Client.Renderer is EntityShapeRenderer renderer) renderer.xangle = shownCant;
+            if (Api == null || Api.Side != EnumAppSide.Client) return;
+
+            if (WatchedAttributes.GetBool("onRail") && TrackPoseHere(out float yaw, out float tilt, out float cant))
+            {
+                Pos.Yaw = yaw;
+                Pos.Roll = tilt;
+                Pos.Pitch = 0;
+                shownCant = cant;
+            }
+            else
+            {
+                // Не на колії або колії поруч не знайдено: як прислав сервер
+                float target = WatchedAttributes.GetFloat(CantAttribute);
+                shownCant += (target - shownCant) * Math.Min(1f, dt * 10f);
+            }
+
+            ShowMotion(dt, out float sway, out float nod);
+            if (Properties.Client.Renderer is EntityShapeRenderer renderer)
+            {
+                renderer.xangle = shownCant + sway;
+                renderer.zangle = nod;
+            }
+        }
+
+        // Як далеко від намальованої вагонетки шукати колію, блоків
+        private const double TrackSearchRange = 1.2;
+        // Наскільки напрямок колії важить проти відстані до неї, коли колій поруч кілька: на стрілці й
+        // перетині беремо ту, що йде туди ж, куди їде вагонетка
+        private const double TrackHeadingWeight = 0.6;
+
+        private RailWaySystem railSystem;
+
+        // Поворот, ухил і нахил полотна колії в тому місці, де вагонетка намальована. Колія між трьома точками
+        // секції гнеться плавно, тож і кути міняються плавно, а не сходинкою на межі секцій
+        private bool TrackPoseHere(out float yaw, out float tilt, out float cant)
+        {
+            yaw = 0;
+            tilt = 0;
+            cant = 0;
+
+            if (railSystem == null) railSystem = Api.ModLoader.GetModSystem<RailWaySystem>();
+            if (railSystem == null) return false;
+
+            Vec3d p = Pos.XYZ;
+            // Куди вагонетка їде за останніми даними сервера. Вісь X моделі дивиться проти напрямку колії
+            double turn = ServerPos.Yaw + Math.PI / 2;
+            double headingX = -Math.Cos(turn), headingZ = Math.Sin(turn);
+
+            Section best = null;
+            int bestPart = 0;
+            double bestAlong = 0, bestScore = double.MaxValue;
+
+            const int chunkSize = 32;
+            for (int dx = -1; dx <= 1; dx += 2)
+            {
+                for (int dy = -1; dy <= 1; dy += 2)
+                {
+                    for (int dz = -1; dz <= 1; dz += 2)
+                    {
+                        Vec3i chunk = new Vec3i((int)Math.Floor((p.X + dx * 2) / chunkSize), (int)Math.Floor((p.Y + dy * 2) / chunkSize),
+                            (int)Math.Floor((p.Z + dz * 2) / chunkSize));
+                        // Той самий чанк із різних кутів пошуку: дивимося один раз
+                        if ((dx > 0 && chunk.X == (int)Math.Floor((p.X - 2) / chunkSize))
+                            || (dy > 0 && chunk.Y == (int)Math.Floor((p.Y - 2) / chunkSize))
+                            || (dz > 0 && chunk.Z == (int)Math.Floor((p.Z - 2) / chunkSize))) continue;
+
+                        System.Collections.Generic.IEnumerable<Section> sections = railSystem.ClientSectionsIn(chunk);
+                        if (sections == null) continue;
+
+                        foreach (Section section in sections)
+                        {
+                            Vec3d middle = section.GetGlobalPos();
+                            if (Math.Abs(middle.X - p.X) > 2 || Math.Abs(middle.Y - p.Y) > 2 || Math.Abs(middle.Z - p.Z) > 2) continue;
+
+                            Vec3d[] axis = { section.FullStartPosition, middle, section.FullEndPosition };
+                            for (int part = 0; part < 2; part++)
+                            {
+                                Vec3d a = axis[part], b = axis[part + 1];
+                                double bx = b.X - a.X, by = b.Y - a.Y, bz = b.Z - a.Z;
+                                double lengthSq = bx * bx + by * by + bz * bz;
+                                if (lengthSq < 1e-9) continue;
+
+                                double along = GameMath.Clamp(((p.X - a.X) * bx + (p.Y - a.Y) * by + (p.Z - a.Z) * bz) / lengthSq, 0, 1);
+                                double qx = a.X + bx * along - p.X, qy = a.Y + by * along - p.Y, qz = a.Z + bz * along - p.Z;
+                                double distance = Math.Sqrt(qx * qx + qy * qy + qz * qz);
+                                if (distance > TrackSearchRange) continue;
+
+                                double flat = Math.Sqrt(bx * bx + bz * bz);
+                                double aligned = flat < 1e-6 ? 0 : Math.Abs(bx * headingX + bz * headingZ) / flat;
+                                double score = distance + (1 - aligned) * TrackHeadingWeight;
+                                if (score >= bestScore) continue;
+
+                                bestScore = score;
+                                best = section;
+                                bestPart = part;
+                                bestAlong = along;
+                            }
+                        }
+                    }
+                }
+            }
+            if (best == null) return false;
+
+            Vec3f[] tangents = { best.StartTangent, best.CenterTangent, best.EndTangent };
+            Vec3f[] normals = { best.StartNormal, best.CenterNormal, best.EndNormal };
+            Vec3d[] points = { best.FullStartPosition, best.GetGlobalPos(), best.FullEndPosition };
+
+            Vec3d Mixed(Vec3f from, Vec3f to)
+            {
+                return new Vec3d(from.X + (to.X - from.X) * bestAlong, from.Y + (to.Y - from.Y) * bestAlong, from.Z + (to.Z - from.Z) * bestAlong);
+            }
+
+            Vec3d along3 = Mixed(tangents[bestPart], tangents[bestPart + 1]);
+            if (along3.Length() < 1e-6) return false;
+            along3.Normalize();
+            // Дотична має дивитися від початку секції до кінця
+            Vec3d chord = points[bestPart + 1].SubCopy(points[bestPart]);
+            if (along3.Dot(chord) < 0) along3.Mul(-1);
+
+            Vec3d side = Mixed(normals[bestPart], normals[bestPart + 1]);
+            side.Sub(along3.Clone().Mul(side.Dot(along3)));
+            if (side.Length() < 1e-6) return false;
+            side.Normalize();
+            Vec3d up = side.Cross(along3);
+
+            // Перед вагонетки дивиться туди, куди вона їде
+            bool reversed = along3.X * headingX + along3.Z * headingZ < 0;
+            Vec3d forward = reversed ? along3.Clone().Mul(-1) : along3;
+            Vec3d right = reversed ? side.Clone().Mul(-1) : side;
+
+            ModMath.TrackFrameToEntityAngles(forward, right, up, out yaw, out tilt, out cant);
+            return true;
+        }
+
+        // ── Покачування і звук у русі ──
+        // Лише вигляд, на клієнті: на рух вагонетки не впливає. Швидкість і крутизну повороту клієнт бере
+        // з того, як вагонетка пересувається в нього на екрані.
+
+        // Гойдання з боку на бік: найбільший кут, радіани, і період на прямій, секунди. У кривій гойдає
+        // частіше: період ділиться на число до 1 + SwayCurveSpeedup
+        private const float SwayAngle = 0.022f;
+        private const float SwayPeriod = 4.5f;
+        private const float SwayCurveSpeedup = 1.8f;
+        // Поштовх, як на стику рейок: вагонетка коротко кивається і затихає. Кут, радіани; період коливання
+        // і час затихання, секунди; поштовхи йдуть через випадковий проміжок у цих межах, секунди руху
+        private const float BumpAngle = 0.018f;
+        private const float BumpPeriod = 0.16f;
+        private const float BumpFade = 0.14f;
+        private const float BumpEveryMin = 1.2f;
+        private const float BumpEveryMax = 4.5f;
+        // З якого радіуса і крутіше колеса скриплять об рейки, і на якій швидкості щонайменше
+        private const double SquealRadius = RoutePlanner.MinRadius * 1.4;
+        private const float SquealSpeed = 0.4f;
+
+        private Vec3d shownAt;
+        private float shownYaw;
+        private float shownSpeed;
+        private float shownCurve;
+        private float swayPhase;
+        private float bumpAge = 10;
+        private float nextBumpIn = 2;
+        private ILoadedSound squeal;
+
+        private void ShowMotion(float dt, out float sway, out float nod)
+        {
+            sway = 0;
+            nod = 0;
+
+            Vec3d now = Pos.XYZ;
+            if (shownAt == null || dt <= 0)
+            {
+                shownAt = now;
+                shownYaw = Pos.Yaw;
+                return;
+            }
+
+            // Колеса котяться: кут з пройденого шляху, зі знаком за тим, уперед чи назад їде вагонетка
+            double facingTurn = Pos.Yaw + Math.PI / 2;
+            double rolled = (now.X - shownAt.X) * -Math.Cos(facingTurn) + (now.Z - shownAt.Z) * Math.Sin(facingTurn);
+            SpinWheels(rolled);
+
+            // Швидкість і кривизна шляху, згладжені: окремий кадр дає їх із шумом
+            double moved = now.DistanceTo(shownAt);
+            float turned = Math.Abs(GameMath.AngleRadDistance(shownYaw, Pos.Yaw));
+            shownAt = now;
+            shownYaw = Pos.Yaw;
+
+            shownSpeed += ((float)(moved / dt) - shownSpeed) * Math.Min(1f, dt * 5f);
+            float curve = moved > 0.002 ? (float)(turned / moved) : 0;
+            shownCurve += (curve - shownCurve) * Math.Min(1f, dt * 4f);
+
+            // Наскільки вагонетка їде, від 0 до 1, і наскільки крута крива під нею
+            float moving = GameMath.Clamp(shownSpeed / 1.5f, 0, 1);
+            float curved = GameMath.Clamp(shownCurve * (float)ModMath.CantFromRadius, 0, 1);
+
+            if (moving > 0.01f)
+            {
+                swayPhase += dt * GameMath.TWOPI / SwayPeriod * (1 + SwayCurveSpeedup * curved);
+                if (swayPhase > GameMath.TWOPI) swayPhase -= GameMath.TWOPI;
+
+                nextBumpIn -= dt * moving;
+                if (nextBumpIn <= 0)
+                {
+                    bumpAge = 0;
+                    nextBumpIn = BumpEveryMin + (float)Api.World.Rand.NextDouble() * (BumpEveryMax - BumpEveryMin);
+                }
+            }
+            sway = (float)Math.Sin(swayPhase) * SwayAngle * moving;
+
+            bumpAge += dt;
+            if (bumpAge < 1) nod = BumpAngle * (float)(Math.Exp(-bumpAge / BumpFade) * Math.Sin(GameMath.TWOPI * bumpAge / BumpPeriod));
+
+            // Скрип коліс у дуже крутій кривій
+            bool tight = shownCurve > 1 / SquealRadius && shownSpeed > SquealSpeed;
+            if (tight)
+            {
+                if (squeal == null && Api is ICoreClientAPI capi)
+                {
+                    squeal = capi.World.LoadSound(new SoundParams
+                    {
+                        Location = new AssetLocation("game:sounds/effect/metalgrinding"),
+                        ShouldLoop = true,
+                        Position = now.ToVec3f(),
+                        DisposeOnFinish = false,
+                        Volume = 0.5f,
+                        Range = 20
+                    });
+                }
+                if (squeal != null)
+                {
+                    squeal.SetPosition(now.ToVec3f());
+                    if (!squeal.IsPlaying) squeal.Start();
+                }
+            }
+            else if (squeal != null && squeal.IsPlaying)
+            {
+                squeal.Stop();
+            }
+        }
+
+        // Радіус колеса в моделі, блоків, і в який бік воно крутиться, коли вагонетка їде вперед
+        private const double WheelRadius = 0.3;
+        private const double WheelSpinSign = 1;
+
+        // Елементи моделі, що обертаються: дві колісні пари
+        private static readonly string[] WheelSets = { "AxisFront98", "AxisFront193" };
+        // Скільки кадрів в анімації "spin" (shapes/entity/trolley.json)
+        private const float SpinFrames = 120;
+        private double wheelAngle;
+        private float spinFrame;
+        private bool spinStarted;
+
+        // Обертає колісні пари на кут, на який вони мали прокотитися. Анімація моделі "spin" сама нічого
+        // не крутить (її ключові кадри гра на осі не застосовує) і стоїть на місці: вона потрібна лише для того,
+        // щоб у моделі працював аніматор, без якого поза елемента не діє
+        private void SpinWheels(double rolled)
+        {
+            if (AnimManager == null) return;
+            // Гра може скинути анімацію, коли перезбирає модель: тоді вмикаємо знову
+            if (!spinStarted || !AnimManager.IsAnimationActive("spin"))
+            {
+                AnimManager.StartAnimation(new AnimationMetaData
+                {
+                    Code = "spin", Animation = "spin", AnimationSpeed = 0f, EaseInSpeed = 999f, EaseOutSpeed = 999f, Weight = 1f, ClientSide = true
+                }.Init());
+                spinStarted = true;
+            }
+
+            wheelAngle = (wheelAngle + WheelSpinSign * rolled / WheelRadius) % (Math.PI * 2);
+            if (wheelAngle < 0) wheelAngle += Math.PI * 2;
+
+
+            // Аніматор рахує пози, лише поки анімація має вагу. Вага наростає з власним часом анімації,
+            // а він стоїть, бо швидкість нуль; тому повну вагу ставимо самі. Без цього пози не застосовуються
+            RunningAnimation spin = AnimManager.Animator?.GetAnimationState("spin");
+            if (spin != null)
+            {
+                spin.EasingFactor = 1f;
+                // І кадр анімації має мінятися, причому вперед: коли він стоїть або йде назад, пози осей
+                // не застосовуються (перевірено спробами, а не з коду гри). Сам кадр нічого не крутить,
+                // тож просто женемо його вперед на пройдений шлях, у який би бік вагонетка не їхала
+                spinFrame = (spinFrame + (float)(Math.Abs(rolled) / WheelRadius / (Math.PI * 2)) * SpinFrames) % SpinFrames;
+                spin.CurrentFrame = spinFrame;
+            }
+
+            // Сам поворот ставимо просто в позу кожної осі: так гра повертає голови істот, що дивляться на гравця.
+            // Напрямок розвернуто тут: колеса мають котитися в бік руху. Кут тримаємо від 0 до 360, не від'ємним:
+            // з від'ємним кутом і з кадром анімації, що йде назад, колеса не крутилися (з'ясовано спробами)
+            float degrees = (float)((360 - wheelAngle * 180 / Math.PI) % 360);
+            foreach (string axle in WheelSets)
+            {
+                ElementPose axlePose = AnimManager.Animator?.GetPosebyName(axle);
+                if (axlePose != null) axlePose.degOffX = degrees;
+            }
+        }
+
+        public override void OnEntityDespawn(EntityDespawnData despawn)
+        {
+            squeal?.Stop();
+            squeal?.Dispose();
+            squeal = null;
+            base.OnEntityDespawn(despawn);
         }
 
         // Клієнту стан потрібен лише для тяжіння, тому синхронізуємо один прапорець і лише при зміні
@@ -193,11 +501,8 @@ namespace RailWorld
         public override void OnGameTick(float dt)
         {
             base.OnGameTick(dt);
-            if (Api.Side == EnumAppSide.Client)
-            {
-                ShowCant(dt);
-                return;
-            }
+            // Клієнт ставить вагонетку на екрані сам, раз на кадр: див. ClientFrame
+            if (Api.Side == EnumAppSide.Client) return;
             if (!onRail) return;
 
             TickOnRail(dt);
