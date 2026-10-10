@@ -237,14 +237,15 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Де стоїть важіль стрілки на цьому кінці секції: збоку від колії, на рівні підошви рейки.
-        /// Те саме місце беруть і бокс виділення, і рендер.
+        /// Де стоїть важіль стрілки на цьому кінці секції: навпроти вістер гостряків, збоку від колії,
+        /// на рівні підошви рейки. З якого боку, записано в самій секції: із зовнішнього боку прямішої
+        /// з двох колій, щоб важіль не опинився між ними. Те саме місце беруть і бокс виділення, і рендер.
         /// </summary>
         public static Vec3d LeverPosition(Section s, bool atStart)
         {
             Vec3d end = s.GetEndPosition(atStart);
             Vec3f normal = atStart ? s.StartNormal : s.EndNormal;
-            double offset = s.SleeperLength / 2 + SectionBox.LeverGap;
+            double offset = (s.SleeperLength / 2 + SectionBox.LeverGap) * s.GetLeverSide(atStart);
             return new Vec3d(end.X + normal.X * offset, end.Y + normal.Y * offset, end.Z + normal.Z * offset);
         }
 

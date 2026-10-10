@@ -43,9 +43,10 @@ namespace RailWorld
         private static readonly int[] ProblemRgba = { 200, 60, 255, 230 };
 
         // Обмеження маршруту. Найменший радіус повороту в плані і найменший радіус перелому по висоті, в блоках
-        public const double MinRadius = 3;
+        // Вісім ширин колії, як і решта розмірів стрілки: від ширини колії. При колії 0.78 це 6.24 блока
+        public const double MinRadius = TrackGauge.StandardWidth * 4.5;
         // Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення
-        private const double RadiusTolerance = 0.25;
+        private const double RadiusTolerance = TrackGauge.StandardWidth * 0.3;
         // Скільки блоків по висоті має бути між двома витками маршруту, що проходять один над одним
         public const double Clearance = 3;
         // Точки маршруту, ближчі одна до одної за це вздовж колії, на перетин не перевіряються: це сусіди
@@ -537,8 +538,8 @@ namespace RailWorld
 
             // Що саме не так, одним рядком: він іде і в куток екрана, і у відмову будувати
             var reasons = new List<string>();
-            if (minRadius < MinRadius - RadiusTolerance) reasons.Add("поворот крутіший за радіус " + MinRadius);
-            if (minVerticalRadius < MinRadius - RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + MinRadius);
+            if (minRadius < MinRadius - RadiusTolerance) reasons.Add("поворот крутіший за радіус " + MinRadius.ToString("0.0"));
+            if (minVerticalRadius < MinRadius - RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + MinRadius.ToString("0.0"));
             if (crossesItself) reasons.Add("маршрут перетинає сам себе");
             if (broken) reasons.Add("рейки розриваються по висоті");
             if (conflict != null) reasons.Add(conflict);
@@ -568,8 +569,8 @@ namespace RailWorld
             CheckRoute(points, out double minRadius, out double minVerticalRadius, out bool crossesItself, out bool broken);
 
             if (broken) return "рейки розриваються по висоті";
-            if (minRadius < MinRadius - RadiusTolerance) return "поворот крутіший за радіус " + MinRadius;
-            if (minVerticalRadius < MinRadius - RadiusTolerance) return "перелом по висоті крутіший за радіус " + MinRadius;
+            if (minRadius < MinRadius - RadiusTolerance) return "поворот крутіший за радіус " + MinRadius.ToString("0.0");
+            if (minVerticalRadius < MinRadius - RadiusTolerance) return "перелом по висоті крутіший за радіус " + MinRadius.ToString("0.0");
             if (crossesItself) return "маршрут перетинає сам себе";
             return null;
         }

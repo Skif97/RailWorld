@@ -235,6 +235,57 @@ namespace RailWorld.src.RailWay
         {
             if (a.AddLink(aAtStart, new SectionLink(b, bAtStart))) session.MarkDirty(a.ChunkAddres);
             if (b.AddLink(bAtStart, new SectionLink(a, aAtStart))) session.MarkDirty(b.ChunkAddres);
+
+            // Якщо з якогось кінця тепер виходять дві колії, там з'явилася стрілка: вирішуємо, де стати важелю
+            PlaceLever(session, a, aAtStart);
+            PlaceLever(session, b, bAtStart);
+        }
+
+        // Як далеко вздовж гілок дивитися, щоб зрозуміти, котра з них пряміша, у секціях
+        private const int LeverLookAhead = 8;
+
+        /// <summary>
+        /// Вибирає бік для важеля стрілки: із зовнішнього боку прямішої з двох колій, тобто з протилежного
+        /// від того, куди відхиляється друга. Тоді важіль не стоїть між коліями.
+        /// </summary>
+        private static void PlaceLever(RailDataSession session, Section trunk, bool atStart)
+        {
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            if (links.Count < 2) return;
+
+            Vec3d joint = trunk.GetEndPosition(atStart);
+            Vec3f normal = atStart ? trunk.StartNormal : trunk.EndNormal;
+
+            // На скільки кожна гілка відходить убік від стику, якщо міряти вздовж нормалі спільної колії
+            double[] sideways = new double[2];
+            for (int i = 0; i < 2; i++)
+            {
+                Section current = session.GetSection(links[i]);
+                bool entered = links[i].AtStart;
+                if (current == null) return;
+
+                for (int step = 1; step < LeverLookAhead; step++)
+                {
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    Section next = session.GetSection(ahead[0]);
+                    if (next == null) break;
+                    entered = ahead[0].AtStart;
+                    current = next;
+                }
+
+                Vec3d far = current.GetEndPosition(!entered);
+                sideways[i] = (far.X - joint.X) * normal.X + (far.Z - joint.Z) * normal.Z;
+            }
+
+            // Пряміша та, що відійшла менше. Друга відхиляється від неї в цей бік, а важіль стає з протилежного
+            int straighter = Math.Abs(sideways[0]) <= Math.Abs(sideways[1]) ? 0 : 1;
+            double diverging = sideways[1 - straighter] - sideways[straighter];
+            int side = diverging > 0 ? -1 : 1;
+
+
+            trunk.SetLeverSide(atStart, side);
+            session.MarkDirty(trunk.ChunkAddres);
         }
 
         /// <summary>

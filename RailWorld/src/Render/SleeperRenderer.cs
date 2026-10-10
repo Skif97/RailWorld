@@ -13,6 +13,8 @@ namespace RailWorld
     {
         private ICoreClientAPI capi;
         private MeshData itemMesh;
+        // Щокадру у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
+        private MeshData updateMesh = new MeshData(false);
         private MeshRef meshref;
         public int TextureId { get; private set; }
         private CustomMeshDataPartFloat matrixAndLightFloats;
@@ -158,7 +160,8 @@ namespace RailWorld
 
             matrixAndLightFloats.Count = floatCount;
             itemMesh.CustomFloats = matrixAndLightFloats;
-            capi.Render.UpdateMesh(meshref, itemMesh);
+            updateMesh.CustomFloats = matrixAndLightFloats;
+            capi.Render.UpdateMesh(meshref, updateMesh);
             preparedCount = count;
         }
 

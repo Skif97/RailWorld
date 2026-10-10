@@ -17,6 +17,22 @@ namespace RailWorld
         public float Roll;
         public Vec4f Light;
         public float ScaleZ;
+        // Ширина шматка відносно звичайної рейки: гостряк стрілки до вістря звужується
+        public float ScaleX = 1f;
+    }
+
+    /// <summary>
+    /// Чим рейка секції відрізняється від звичайної: гостряк стрілки лежить не на своєму місці, а зсунутий
+    /// до осі колії, і до вістря звужується. Числа задані для трьох точок секції: початку, середини і кінця.
+    /// </summary>
+    internal class RailShape
+    {
+        // На скільки блоків рейка зсунута до осі колії
+        public double[] Inset = new double[3];
+        // Ширина відносно звичайної рейки
+        public float[] Width = new float[] { 1f, 1f, 1f };
+        // Рейку на цій секції не малювати зовсім: її місце займає гостряк стрілки, окрема деталь
+        public bool Hidden;
     }
 
     /// <summary>
@@ -29,6 +45,8 @@ namespace RailWorld
     {
         private ICoreClientAPI capi;
         private MeshData itemMesh;
+        // Щокадру у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
+        private MeshData updateMesh = new MeshData(false);
         private MeshRef meshref;
         public int TextureId { get; private set; }
         private CustomMeshDataPartFloat matrixAndLightFloats;
@@ -41,6 +59,11 @@ namespace RailWorld
 
         private float[] tmpMat = Mat4f.Create();
         private Vec3f tmp = new Vec3f();
+
+        /// <summary>
+        /// Меш рейки як є, без даних інстансів: з нього збираються гостряки стрілок.
+        /// </summary>
+        public MeshData TemplateMesh { get; private set; }
 
         public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack)
         {
@@ -57,6 +80,9 @@ namespace RailWorld
 
             // Копія, щоб instanced CustomFloats не потрапили в кешований меш предмета
             itemMesh = itemMesh.Clone();
+
+            TemplateMesh = itemMesh.Clone();
+
             TextureId = itemMesh.TextureIds != null && itemMesh.TextureIds.Length > 0
                 ? itemMesh.TextureIds[0]
                 : capi.BlockTextureAtlas.Positions[0].atlasTextureId;
@@ -82,16 +108,27 @@ namespace RailWorld
             meshref = capi.Render.UploadMesh(itemMesh);
         }
 
-        public void AddRail(Vec3i chunkCoord, int index, Section section, bool left)
+        public void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape = null)
         {
             string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}";
-            float offset = section.TrackWidth / 2f * (left ? 1f : -1f);
+            float sign = left ? 1f : -1f;
+            float offset = section.TrackWidth / 2f * sign;
             Vec3d start = section.FullStartPosition;
             Vec3d center = section.GetGlobalPos();
             Vec3d end = section.FullEndPosition;
 
-            AddPiece(key + "0", BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offset));
-            AddPiece(key + "1", BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offset));
+            // Зсув убік у кожній із трьох точок секції. У звичайної рейки він скрізь однаковий
+            float[] offsets = { offset, offset, offset };
+            float[] widths = { 1f, 1f };
+            if (shape != null)
+            {
+                for (int k = 0; k < 3; k++) offsets[k] = (float)(offset - shape.Inset[k] * sign);
+                widths[0] = (shape.Width[0] + shape.Width[1]) / 2;
+                widths[1] = (shape.Width[1] + shape.Width[2]) / 2;
+            }
+
+            AddPiece(key + "0", BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
+            AddPiece(key + "1", BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
         }
 
         private void AddPiece(string key, RailInstanceData piece)
@@ -122,20 +159,22 @@ namespace RailWorld
             }
         }
 
-        // Шматок рейки між двома точками осі колії. offset це зсув рейки вбік від осі
-        private RailInstanceData BuildInstance(Vec3d from, Vec3f fromNormal, Vec3f fromTangent, Vec3d to, Vec3f toNormal, Vec3f toTangent, float offset)
+        // Шматок рейки між двома точками осі колії. fromOffset і toOffset це зсув рейки вбік від осі на кінцях
+        // шматка, width його ширина відносно звичайної рейки
+        private RailInstanceData BuildInstance(Vec3d from, Vec3f fromNormal, Vec3f fromTangent, Vec3d to, Vec3f toNormal, Vec3f toTangent,
+            float fromOffset, float toOffset, float width)
         {
             // Кінці шматка зсуваємо кожен по своїй нормалі і тягнемо його по хорді між ними,
             // тоді кінець цього шматка збігається з початком наступного і сходинок не буде
             // Нормаль може бути нахилена (нахил полотна), тоді зовнішня рейка піднімається, а внутрішня опускається
             Vec3d pos = new Vec3d(
-                from.X + fromNormal.X * offset,
-                from.Y + fromNormal.Y * offset,
-                from.Z + fromNormal.Z * offset);
+                from.X + fromNormal.X * fromOffset,
+                from.Y + fromNormal.Y * fromOffset,
+                from.Z + fromNormal.Z * fromOffset);
 
-            double dx = to.X + toNormal.X * offset - pos.X;
-            double dy = to.Y + toNormal.Y * offset - pos.Y;
-            double dz = to.Z + toNormal.Z * offset - pos.Z;
+            double dx = to.X + toNormal.X * toOffset - pos.X;
+            double dy = to.Y + toNormal.Y * toOffset - pos.Y;
+            double dz = to.Z + toNormal.Z * toOffset - pos.Z;
 
             double length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             if (length < 1e-4) return null;
@@ -164,7 +203,8 @@ namespace RailWorld
                 Pitch    = (float)pitch,
                 Roll     = (float)roll,
                 Light    = GetLight(pos),
-                ScaleZ   = (float)(length + startExt + endExt)
+                ScaleZ   = (float)(length + startExt + endExt),
+                ScaleX   = width
             };
         }
 
@@ -248,6 +288,7 @@ namespace RailWorld
                     Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
                     Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
                     Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
+                    scale[0] = d.ScaleX;
                     scale[2] = d.ScaleZ;
                     Mat4f.Scale(tmpMat, tmpMat, scale);
                     // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
@@ -279,7 +320,8 @@ namespace RailWorld
 
             matrixAndLightFloats.Count = floatCount;
             itemMesh.CustomFloats = matrixAndLightFloats;
-            capi.Render.UpdateMesh(meshref, itemMesh);
+            updateMesh.CustomFloats = matrixAndLightFloats;
+            capi.Render.UpdateMesh(meshref, updateMesh);
             preparedCount = count;
         }
 

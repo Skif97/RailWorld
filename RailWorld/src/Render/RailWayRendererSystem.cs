@@ -116,20 +116,56 @@ void main()
         /// <summary>
         /// Замінює рейки чанка. Кожна рейка малюється рендерером свого матеріалу.
         /// </summary>
-        public void RebuildRails(Vec3i chunkCoord, List<Section> sections)
+        /// <param name="shapeOf">Каже, чи рейка секції особлива (гостряк стрілки) і яка саме; null для звичайної.
+        /// Другий аргумент це котра рейка: true перша, з боку нормалі.</param>
+        internal void RebuildRails(Vec3i chunkCoord, List<Section> sections, System.Func<Section, bool, RailShape> shapeOf = null)
         {
-            RemoveRailChunk(chunkCoord);
+            ClearRails(chunkCoord);
 
             for (int i = 0; i < sections.Count; i++)
             {
                 Section s = sections[i];
-                if (s.FirstRailInstalled) AddRail(chunkCoord, i, s, left: true);
-                if (s.SecondRailInstalled) AddRail(chunkCoord, i, s, left: false);
+                if (s.FirstRailInstalled) AddRail(chunkCoord, i, s, true, shapeOf?.Invoke(s, true));
+                if (s.SecondRailInstalled) AddRail(chunkCoord, i, s, false, shapeOf?.Invoke(s, false));
             }
         }
 
-        private void AddRail(Vec3i chunkCoord, int index, Section section, bool left)
+        // Гостряки стрілок: кожен власним мешем
+        private BladeRenderer bladeRenderer;
+
+        /// <summary>
+        /// Ставить деталь стрілки з того самого металу, що й рейка: гостряк, хрестовину, контррейку.
+        /// Меш збирається як поверхня на контурах, див. BladeMesh.BuildLoft. tag відрізняє деталі однієї
+        /// рейки між собою. Викликати між BeginParts і EndParts цього чанка.
+        /// </summary>
+        internal void SetLoft(Vec3i chunkCoord, int index, bool left, string tag, string material, List<LoftPart> parts)
         {
+            if (parts == null || parts.Count == 0) return;
+
+            if (!railRenderers.TryGetValue(material, out var renderer))
+            {
+                ItemStack stack = CreateStack("rail", material);
+                if (stack == null) return;
+                renderer = new RailSectionRenderer(capi, stack);
+                railRenderers[material] = renderer;
+            }
+
+            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
+            string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}{tag}";
+
+            long hash = BladeMesh.Mix(BladeMesh.HashStart, material);
+            foreach (LoftPart part in parts) hash = BladeMesh.Mix(hash, part);
+            if (bladeRenderer.Keep(key, hash)) return;
+
+            MeshData mesh = BladeMesh.BuildLoft(renderer.TemplateMesh, parts, out BladeFrame basis);
+            if (mesh == null) return;
+            bladeRenderer.Set(key, hash, mesh, basis, renderer.TextureId);
+        }
+
+        private void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape)
+        {
+            if (shape != null && shape.Hidden) return;
+
             string material = section.GetMaterial(left ? SectionPart.FirstRail : SectionPart.SecondRail) ?? "iron";
 
             if (!railRenderers.TryGetValue(material, out var renderer))
@@ -139,13 +175,34 @@ void main()
                 renderer = new RailSectionRenderer(capi, stack);
                 railRenderers[material] = renderer;
             }
-            renderer.AddRail(chunkCoord, index, section, left);
+            renderer.AddRail(chunkCoord, index, section, left, shape);
         }
 
         public void RemoveRailChunk(Vec3i chunkCoord)
         {
+            ClearRails(chunkCoord);
+            bladeRenderer?.RemoveChunk(chunkCoord);
+        }
+
+        // Прибирає звичайні рейки чанка. Деталі стрілок лишаються: вони перебудовуються окремо
+        internal void ClearRails(Vec3i chunkCoord)
+        {
             foreach (var renderer in railRenderers.Values)
                 renderer.RemoveChunk(chunkCoord);
+        }
+
+        /// <summary>
+        /// Початок і кінець перебудови деталей стрілок чанка. Між ними кожна деталь ставиться знову; та, що
+        /// не змінилася, лишається з готовим мешем, а та, яку не поставили, зникає.
+        /// </summary>
+        internal void BeginParts(Vec3i chunkCoord)
+        {
+            bladeRenderer?.BeginChunk(chunkCoord);
+        }
+
+        internal void EndParts(Vec3i chunkCoord)
+        {
+            bladeRenderer?.EndChunk(chunkCoord);
         }
 
         private ItemStack CreateStack(string itemCode, string material)
@@ -164,6 +221,7 @@ void main()
                 renderer.UpdateLights();
             foreach (var renderer in railRenderers.Values)
                 renderer.UpdateLights();
+            bladeRenderer?.UpdateLights();
         }
 
         // Збирає шейдер тіней. Викликається при старті і щоразу, коли гра перезбирає шейдери
@@ -187,6 +245,7 @@ void main()
             {
                 foreach (var renderer in sleeperRenderers.Values) renderer.PrepareFrame();
                 foreach (var renderer in railRenderers.Values) renderer.PrepareFrame();
+                bladeRenderer?.PrepareFrame();
                 return;
             }
 
@@ -222,6 +281,8 @@ void main()
                 renderer.Draw();
             }
 
+            bladeRenderer?.Draw(textureId => prog.BindTexture2D("tex", textureId, 0));
+
             prog.Stop();
             capi.Render.GlEnableCullFace();
         }
@@ -243,6 +304,7 @@ void main()
             capi.Render.GlDisableCullFace();
             foreach (var renderer in sleeperRenderers.Values) renderer.Draw();
             foreach (var renderer in railRenderers.Values) renderer.Draw();
+            bladeRenderer?.Draw(null);
             capi.Render.GlEnableCullFace();
 
             shadowProg.Stop();
@@ -263,6 +325,8 @@ void main()
             foreach (var renderer in railRenderers.Values)
                 renderer.Dispose();
             railRenderers.Clear();
+            bladeRenderer?.Dispose();
+            bladeRenderer = null;
         }
     }
 }

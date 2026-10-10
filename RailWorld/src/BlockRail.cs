@@ -70,6 +70,9 @@ namespace RailWorld
                 // Маршрут по точках будується окремим пакетом від клієнта, не кліком
                 if (railMode == RoutePlanner.ModeCode) return false;
 
+                // Повороти зі старих режимів не крутіші за найменший радіус маршруту
+                int turnRadius = Math.Max(railLengRad, (int)Math.Ceiling(RoutePlanner.MinRadius));
+
                 CubicBezierCurve3d controlPoints;
                 Vec3d pos = blockSel.Position.ToVec3d();
                 // ModMath очікує yaw, для якого напрямок = (cos, 0, -sin). З 1.20 Pos.Yaw гравця
@@ -78,9 +81,9 @@ namespace RailWorld
                 double yaw = GameMath.Mod((float)Math.Atan2(-view.Z, view.X), GameMath.TWOPI);
 
                 if (railMode == "Turn90")
-                    controlPoints = ModMath.CotrolPointSercherForArc(pos, yaw, railLengRad, Math.PI / 2, left, 0.8f, railClimDes);
+                    controlPoints = ModMath.CotrolPointSercherForArc(pos, yaw, turnRadius, Math.PI / 2, left, 0.8f, railClimDes);
                 else if (railMode == "Turn45")
-                    controlPoints = ModMath.CotrolPointSercherForArc(pos, yaw, railLengRad, Math.PI / 4, left, 0.8f, railClimDes);
+                    controlPoints = ModMath.CotrolPointSercherForArc(pos, yaw, turnRadius, Math.PI / 4, left, 0.8f, railClimDes);
                 else if (railMode == "Straight")
                     controlPoints = ModMath.CotrolPointSercherForStraight(pos, yaw, railLengRad, 0.8f, railClimDes);
                 else

@@ -73,15 +73,83 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static bool FindPair(Section section, Func<SectionLink, Section> resolve, out Section partner, out bool primary, out int fromEnd, out int number)
         {
+            return FindPair(section, resolve, out partner, out primary, out fromEnd, out number, out _, out _, out _);
+        }
+
+        /// <summary>
+        /// Те саме, і ще два факти для гостряків. active каже, чи стрілка зараз переведена на гілку цієї секції.
+        /// switchAtStart каже, котрим кінцем секція ближча до стрілки: true початком.
+        /// crossing це відстань уздовж колії від стрілки, у блоках, до місця, де внутрішня рейка гілки відійшла
+        /// від рамної рейки сусідньої на BladeHeelSeparation: там корінь гостряка.
+        /// anyDistance: секція вважається парною, навіть якщо шпали двох гілок уже не перетинаються. Потрібно
+        /// хрестовині: на крутій стрілці вона сягає далі, ніж спільні шпали. partner тоді може бути null,
+        /// якщо сусідня гілка коротша.
+        /// </summary>
+        public static bool FindPair(Section section, Func<SectionLink, Section> resolve, out Section partner, out bool primary,
+            out int fromEnd, out int number, out bool active, out bool switchAtStart, out double crossing, bool anyDistance = false)
+        {
             partner = null;
             primary = false;
             fromEnd = 2;
             number = 0;
+            active = false;
+            switchAtStart = true;
+            crossing = 0;
             if (section == null || resolve == null) return false;
 
             // Стрілка може бути з будь-якого боку секції
-            return FindPairThrough(section, true, resolve, ref partner, ref primary, ref fromEnd, ref number)
-                || FindPairThrough(section, false, resolve, ref partner, ref primary, ref fromEnd, ref number);
+            if (FindPairThrough(section, true, resolve, ref partner, ref primary, ref fromEnd, ref number, ref active, ref crossing, anyDistance)) return true;
+            switchAtStart = false;
+            return FindPairThrough(section, false, resolve, ref partner, ref primary, ref fromEnd, ref number, ref active, ref crossing, anyDistance);
+        }
+
+        /// <summary>
+        /// На скільки блоків рейка гостряка має відійти від рамної рейки, щоб гостряк скінчився: ширина головки
+        /// рейки плюс жолоб для гребеня колеса. Так визначається довжина гостряка і на справжній залізниці:
+        /// що пологіше розходяться колії, то далі це місце і то довший гостряк.
+        /// </summary>
+        public const double BladeHeelSeparation = 0.125;
+
+        /// <summary>
+        /// Де осі двох гілок розійшлися на apartNeeded блоків, у блоках від стрілки. Внутрішня рейка гілки
+        /// відходить від рамної рейки сусідньої рівно на стільки ж, на скільки розійшлися осі.
+        /// Гілки проходяться парами секцій від стрілки.
+        /// </summary>
+        private static double CrossingDistance(Section first, bool firstEntered, Section second, bool secondEntered,
+            Func<SectionLink, Section> resolve, double apartNeeded)
+        {
+            double previousApart = 0, previousAlong = 0;
+            Section a = first, b = second;
+            bool aEntered = firstEntered, bEntered = secondEntered;
+
+            for (int n = 1; n <= MaxPairWalk && a != null && b != null; n++)
+            {
+                // Середина секції з номером n лежить за (n - 0.5) секції від стрілки, а секція це пів блока
+                double along = (n - 0.5) * 0.5;
+                Vec3d p = a.GetGlobalPos(), q = b.GetGlobalPos();
+                double apart = Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Z - q.Z) * (p.Z - q.Z));
+                double width = apartNeeded;
+
+                if (apart >= width)
+                {
+                    double step = apart - previousApart;
+                    double t = step > 1e-9 ? (width - previousApart) / step : 0;
+                    return previousAlong + (along - previousAlong) * GameMath.Clamp(t, 0, 1);
+                }
+
+                previousApart = apart;
+                previousAlong = along;
+
+                List<SectionLink> aheadA = a.GetLinks(!aEntered), aheadB = b.GetLinks(!bEntered);
+                if (aheadA.Count != 1 || aheadB.Count != 1) break;
+                aEntered = aheadA[0].AtStart;
+                bEntered = aheadB[0].AtStart;
+                a = resolve(aheadA[0]);
+                b = resolve(aheadB[0]);
+            }
+
+            // Гілки скінчилися, так і не розійшовшись: гостряк на всю пройдену довжину
+            return previousAlong;
         }
 
         // Секція гілки з таким номером від стрілки; first це перша секція гілки, entered яким кінцем вона до стрілки
@@ -107,7 +175,7 @@ namespace RailWorld.src.RailWay
             return apart < (a.SleeperLength + b.SleeperLength) / 2;
         }
 
-        private static bool FindPairThrough(Section section, bool exitAtStart, Func<SectionLink, Section> resolve, ref Section partner, ref bool primary, ref int fromEnd, ref int pairNumber)
+        private static bool FindPairThrough(Section section, bool exitAtStart, Func<SectionLink, Section> resolve, ref Section partner, ref bool primary, ref int fromEnd, ref int pairNumber, ref bool active, ref double crossing, bool anyDistance = false)
         {
             Section current = section;
             bool exit = exitAtStart;
@@ -136,7 +204,7 @@ namespace RailWorld.src.RailWay
                     // Секція з тим самим номером на сусідній гілці. У парі вони, лише поки їхні шпали перетинаються
                     Section theirFirst = resolve(theirs);
                     Section other = Nth(theirFirst, theirs.AtStart, number, resolve);
-                    if (!SleepersOverlap(section, other)) return false;
+                    if (!anyDistance && !SleepersOverlap(section, other)) return false;
 
                     // Скільки пар далі, до краю стрілки
                     fromEnd = 0;
@@ -151,6 +219,8 @@ namespace RailWorld.src.RailWay
                     partner = other;
                     primary = branches[0] == mine;
                     pairNumber = number;
+                    active = next.GetActiveLink(links[0].AtStart) == mine;
+                    crossing = CrossingDistance(current, mine.AtStart, theirFirst, theirs.AtStart, resolve, BladeHeelSeparation);
                     return true;
                 }
 

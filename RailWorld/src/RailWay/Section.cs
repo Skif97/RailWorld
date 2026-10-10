@@ -435,6 +435,28 @@ namespace RailWorld.src.RailWay
         [ProtoMember(38)]
         private long _endSwitchMs;
 
+        // З якого боку колії стоїть важіль стрілки на цьому кінці: 1 з боку нормалі, -1 з протилежного,
+        // 0 якщо ще не визначено. Визначається один раз, коли з кінця секції починає виходити друга колія
+        [ProtoMember(39)]
+        private int _startLeverSide;
+        [ProtoMember(40)]
+        private int _endLeverSide;
+
+        /// <summary>
+        /// З якого боку колії стоїть важіль стрілки на цьому кінці: 1 з боку нормалі секції, -1 з протилежного.
+        /// </summary>
+        public int GetLeverSide(bool atStart)
+        {
+            int side = atStart ? _startLeverSide : _endLeverSide;
+            return side < 0 ? -1 : 1;
+        }
+
+        public void SetLeverSide(bool atStart, int side)
+        {
+            if (atStart) _startLeverSide = side < 0 ? -1 : 1;
+            else _endLeverSide = side < 0 ? -1 : 1;
+        }
+
         /// <summary>
         /// Скільки триває саме переведення стрілки. Вагонетка, що заїхала на стрілку в цей час, сходить із колії.
         /// </summary>

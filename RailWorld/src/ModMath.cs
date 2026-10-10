@@ -13,6 +13,8 @@ using System.Numerics;
 using System.Drawing.Drawing2D;
 using Vintagestory.API.Config;
 
+using RailWorld.src.RailWay;
+
 namespace RailWorld
 {
     public class ModMath
@@ -284,8 +286,11 @@ namespace RailWorld
 
         // Нахил полотна в поворотах (підвищення зовнішньої рейки)
         public const double MaxCantRad = 6 * Math.PI / 180;  // найбільший кут нахилу
-        public const double FullCantRadius = 30;             // при такому і меншому радіусі нахил максимальний
-        public const double CantRampLength = 6;              // на скільки блоків від краю кривої нахил наростає з нуля
+        // Обидві величини в ширинах колії, як і мінімальний радіус маршруту: при колії 0.78 це 31.2 і 6.24 блока.
+        // При такому і меншому радіусі нахил максимальний
+        public const double FullCantRadius = TrackGauge.StandardWidth * 40.0;
+        // На скільки блоків від краю кривої нахил наростає з нуля і на якому відрізку він усереднюється
+        public const double CantRampLength = TrackGauge.StandardWidth * 8.0;
 
         /// <summary>
         /// Нахиляє нормалі точок кривої в бік повороту. Кут залежить від кривизни, усередненої по відрізку
