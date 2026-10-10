@@ -105,7 +105,8 @@
 	</ItemGroup>
 
 
-	<Target Name="CopyToBin1" AfterTargets="Build">
+	<!-- SkipCopyToGame: для запуску тестів, коли гра відкрита і тримає файли мода -->
+	<Target Name="CopyToBin1" AfterTargets="Build" Condition="'$(SkipCopyToGame)' != 'true'">
 
 		<!-- copy compiled output files -->
 		<Copy SourceFiles="@(OutFiles)" DestinationFiles="@(OutFiles->'$(BinaryDir)/%(RecursiveDir)%(Filename)%(Extension)')" />
