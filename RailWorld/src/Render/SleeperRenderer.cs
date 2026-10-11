@@ -1,28 +1,50 @@
 using RailWorld.src;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
-using Vintagestory.API.Util;
 
 namespace RailWorld
 {
+    /// <summary>
+    /// Малює шпали одного матеріалу (і важелі стрілок: це той самий рендер з іншою моделлю).
+    /// Шпали зібрані пачками по чанках своїх секцій, так само як гра малює чанки: матриця кожної шпали
+    /// задана відносно кута її чанка і лежить у відеокарті незмінною, а щокадру шейдерові передається
+    /// лише одне зміщення на пачку, кут чанка відносно камери. Перебудова чанка зачіпає тільки його пачку.
+    /// </summary>
     internal class SleeperRenderer
     {
+        // На інстанс: світло (4 числа) і матриця (16 чисел)
+        private const int FloatsPerInstance = 20;
+        // Найменший буфер пачки, в інстансах: щоб чанк із парою шпал не перезавантажував меш на кожну нову
+        private const int MinCapacity = 64;
+
         private ICoreClientAPI capi;
         private MeshData itemMesh;
-        // Щокадру у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
+        // При оновленні у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
         private MeshData updateMesh = new MeshData(false);
-        private MeshRef meshref;
         public int TextureId { get; private set; }
-        private CustomMeshDataPartFloat matrixAndLightFloats;
-        private Dictionary<Vec3d, SleeperInstance> positions = new Dictionary<Vec3d, SleeperInstance>();
 
-        protected float[] tmpMat = Mat4f.Create();
-        protected double[] quat = Quaterniond.Create();
-        protected Vec3f tmp = new Vec3f();
+        private class Batch
+        {
+            public Vec3i Chunk;
+            public Dictionary<Vec3d, SleeperInstance> Parts = new Dictionary<Vec3d, SleeperInstance>();
+            // Ті самі шпали в тому порядку, в якому вони лежать у буфері
+            public List<SleeperInstance> Drawn = new List<SleeperInstance>();
+            public CustomMeshDataPartFloat Floats;
+            public MeshRef Mesh;
+            public bool Dirty = true;
+        }
+
+        private Dictionary<Vec3i, Batch> batches = new Dictionary<Vec3i, Batch>();
+        // Пачки по порядку, для обходу світла по колу
+        private List<Batch> order = new List<Batch>();
+        private int lightCursor;
+
+        private float[] tmpMat = Mat4f.Create();
+        private float[] scale = new float[] { 1f, 1f, 1f };
+        private Vec3f origin = new Vec3f();
 
         public SleeperRenderer(ICoreClientAPI capi, ItemStack itemStack)
         {
@@ -30,216 +52,212 @@ namespace RailWorld
 
             if (itemStack?.Item == null) return;
 
-            // Отримуємо меш через IItemCustomMesh або стандартний шлях
             if (itemStack.Item is IItemCustomMesh customMesh)
             {
                 itemMesh = customMesh.GetMeshData(capi, itemStack);
             }
             else
             {
-                // Fallback: tesselate стандартно
-                itemMesh = new MeshData(4, 3);
                 capi.Tesselator.TesselateItem(itemStack.Item, out itemMesh);
             }
 
             if (itemMesh == null) return;
 
-            // Копія, щоб instanced CustomFloats не потрапили в кешований меш предмета
+            // Копія, щоб дані інстансів не потрапили в кешований меш предмета
             itemMesh = itemMesh.Clone();
             TextureId = itemMesh.TextureIds != null && itemMesh.TextureIds.Length > 0
                 ? itemMesh.TextureIds[0]
                 : capi.BlockTextureAtlas.Positions[0].atlasTextureId;
-
-            // Налаштовуємо instanced custom floats: 4 (light rgba) + 16 (matrix) = 20 floats на інстанс
-            int maxInstances = 10000;
-            int floatsPerInstance = 20; // 4 rgba + 16 matrix
-            int bufferSize = maxInstances * floatsPerInstance;
-
-            matrixAndLightFloats = new CustomMeshDataPartFloat(bufferSize)
-            {
-                Instanced = true,
-                InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
-                InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
-                InterleaveStride = 80,
-                StaticDraw = false
-            };
-            matrixAndLightFloats.Values = new float[bufferSize];
-            matrixAndLightFloats.SetAllocationSize(bufferSize);
-            itemMesh.CustomFloats = matrixAndLightFloats;
-            meshref = capi.Render.UploadMesh(itemMesh);
         }
 
-        // Матриця шпали складається з повороту з розтягом, які не міняються, і положення відносно камери,
-        // яке міняється щокадру. Перше рахується один раз, коли набір шпал чи їхнє світло змінилися,
-        // і лежить у буфері; щокадру переписуються лише три числа положення на шпалу.
-        // layoutDirty каже, що нерухому частину треба порахувати заново
-        private bool layoutDirty = true;
-        // Положення кожної шпали у світі, разом зі зсувом, який дає сама матриця: по три числа на шпалу,
-        // у тому самому порядку, що й у буфері
-        private double[] basePositions = new double[0];
-        private float[] scale = new float[] { 1f, 1f, 1f };
-
+        /// <summary>
+        /// Ставить шпалу. Шпала на тому самому місці в тому самому чанку замінюється: так важіль стрілки
+        /// міняє нахил, поки стрілка переводиться.
+        /// </summary>
         public void AddRailWayPart(Vec3d position, SleeperInstance data)
         {
-            data.light = GetLight(position);
-            positions[position] = data;
-            layoutDirty = true;
+            if (itemMesh == null) return;
+
+            if (!batches.TryGetValue(data.chunk, out Batch batch))
+            {
+                batch = new Batch { Chunk = data.chunk };
+                batches[data.chunk] = batch;
+                order.Add(batch);
+            }
+
+            data.position = position;
+            data.lightKey = LightKey(position);
+            data.light = Light(position);
+            batch.Parts[position] = data;
+            batch.Dirty = true;
         }
 
-        private Vec4f GetLight(Vec3d pos)
+        // Прибирає шпали секцій, що зберігаються в цьому чанку. Саме за чанком секції, а не за місцем шпали:
+        // шпала на самій межі може стояти вже в сусідньому чанку, але належить пачці чанка своєї секції
+        public void RemoveChunk(Vec3i chunkCoord)
+        {
+            if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
+
+            batch.Mesh?.Dispose();
+            batches.Remove(chunkCoord);
+            order.Remove(batch);
+        }
+
+        // Світло блока, де лежить шпала: rgb це світло від джерел, a сонячне
+        private Vec4f Light(Vec3d pos)
         {
             return capi.World.BlockAccessor.GetLightRGBs((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
         }
 
-        public void UpdateLights()
+        // Те саме світло одним числом: щоб перевірити, чи воно змінилося, не створюючи об'єкта
+        private int LightKey(Vec3d pos)
         {
-            foreach (var kvp in positions)
-                kvp.Value.light = GetLight(kvp.Key);
-            layoutDirty = true;
-        }
-
-        public void RemoveRailWayPart(Vec3d position)
-        {
-            positions.Remove(position);
-            layoutDirty = true;
-        }
-
-        // Прибирає шпали секцій, що зберігаються в цьому чанку. Саме за чанком секції, а не за місцем шпали:
-        // шпала на самій межі може стояти вже в сусідньому чанку, і якби прибирати за координатами,
-        // оновлення сусіда стирало б її, а повернути було б нікому
-        public void RemoveChunk(Vec3i chunkCoord)
-        {
-            var toRemove = positions.Where(p => p.Value.chunk.Equals(chunkCoord)).Select(p => p.Key).ToList();
-            foreach (var key in toRemove)
-                positions.Remove(key);
-            if (toRemove.Count > 0) layoutDirty = true;
-        }
-
-        // Скільки інстансів лежить у буфері після останнього PrepareFrame
-        private int preparedCount;
-
-        // Буфер матриць у відеокарті має розмір, заданий при завантаженні меша, і сам не росте.
-        // Якщо інстансів стало більше, ніж у нього вміщається, оновлення мовчки відкидається відеокартою,
-        // у буфері лишаються старі матриці, пораховані відносно старого положення камери, і вся колія
-        // починає їздити за камерою. Тому меш завантажується заново з більшим буфером, із запасом удвічі
-        private void Grow(int instancesNeeded)
-        {
-            int size = Math.Max(instancesNeeded * 2, 1024) * 20;
-            matrixAndLightFloats = new CustomMeshDataPartFloat(size)
-            {
-                Instanced = true,
-                InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
-                InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
-                InterleaveStride = 80,
-                StaticDraw = false
-            };
-            matrixAndLightFloats.Values = new float[size];
-            matrixAndLightFloats.SetAllocationSize(size);
-            itemMesh.CustomFloats = matrixAndLightFloats;
-
-            meshref?.Dispose();
-            meshref = capi.Render.UploadMesh(itemMesh);
-            layoutDirty = true;
+            return capi.World.BlockAccessor.GetLightRGBsAsInt((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
         }
 
         /// <summary>
-        /// Раз на кадр: рахує матриці всіх шпал відносно камери і заливає їх у відеокарту.
+        /// Перевіряє, чи змінилося світло шпал, не більш як у budget шпал за раз, по колу: гра не повідомляє
+        /// моди про зміну освітлення, тому його доводиться опитувати. Шпалі, чиє світло змінилося, у буфері
+        /// переписуються лише чотири числа світла. Повертає, скільки шпал перевірено.
+        /// </summary>
+        public int UpdateLights(int budget)
+        {
+            int checkedCount = 0;
+            for (int n = 0; n < order.Count && checkedCount < budget; n++)
+            {
+                if (lightCursor >= order.Count) lightCursor = 0;
+                Batch batch = order[lightCursor++];
+                checkedCount += batch.Drawn.Count;
+                // Пачку однаково буде зібрано заново
+                if (batch.Dirty || batch.Mesh == null) continue;
+
+                bool changed = false;
+                float[] values = batch.Floats.Values;
+                for (int i = 0; i < batch.Drawn.Count; i++)
+                {
+                    SleeperInstance part = batch.Drawn[i];
+                    int key = LightKey(part.position);
+                    if (key == part.lightKey) continue;
+
+                    part.lightKey = key;
+                    part.light = Light(part.position);
+                    int j = i * FloatsPerInstance;
+                    values[j] = part.light.R;
+                    values[j + 1] = part.light.G;
+                    values[j + 2] = part.light.B;
+                    values[j + 3] = part.light.A;
+                    changed = true;
+                }
+
+                if (!changed) continue;
+                updateMesh.CustomFloats = batch.Floats;
+                capi.Render.UpdateMesh(batch.Mesh, updateMesh);
+            }
+            return checkedCount;
+        }
+
+        /// <summary>
+        /// Раз на кадр: збирає заново пачки, в яких щось змінилося. Якщо нічого не змінилося, не робить нічого.
         /// </summary>
         public void PrepareFrame()
         {
-            preparedCount = 0;
-            if (meshref == null || positions.Count == 0) return;
-
-            int count = positions.Count;
-            int floatCount = count * 20;
-
-            if (matrixAndLightFloats.Values == null || matrixAndLightFloats.Values.Length < floatCount) Grow(count);
-            if (meshref == null) return;
-
-            UpdateCustomFloatBuffer();
-
-            matrixAndLightFloats.Count = floatCount;
-            itemMesh.CustomFloats = matrixAndLightFloats;
-            updateMesh.CustomFloats = matrixAndLightFloats;
-            capi.Render.UpdateMesh(meshref, updateMesh);
-            preparedCount = count;
-        }
-
-        /// <summary>
-        /// Малює підготовлені шпали поточним шейдером. Викликається і для основного проходу, і для тіней.
-        /// </summary>
-        public void Draw()
-        {
-            if (meshref == null || preparedCount == 0) return;
-            capi.Render.RenderMeshInstanced(meshref, preparedCount);
-        }
-
-        private void UpdateCustomFloatBuffer()
-        {
-            if (layoutDirty)
+            foreach (Batch batch in order)
             {
-                RebuildLayout();
-                layoutDirty = false;
-            }
-
-            // Щокадру міняється лише положення відносно камери: три числа в кожній матриці
-            Vec3d camPos = capi.World.Player.Entity.CameraPos;
-            float[] values = matrixAndLightFloats.Values;
-            int count = positions.Count;
-
-            for (int i = 0; i < count; i++)
-            {
-                int j = i * 20 + 16;
-                int b = i * 3;
-                values[j] = (float)(basePositions[b] - camPos.X);
-                values[j + 1] = (float)(basePositions[b + 1] - camPos.Y);
-                values[j + 2] = (float)(basePositions[b + 2] - camPos.Z);
+                if (batch.Dirty) Rebuild(batch);
             }
         }
 
-        // Рахує нерухому частину матриць і світло всіх шпал і кладе їх у буфер
-        private void RebuildLayout()
+        // Рахує матриці шпал пачки відносно кута її чанка і кладе їх у відеокарту
+        private void Rebuild(Batch batch)
         {
-            int count = positions.Count;
-            if (basePositions.Length < count * 3) basePositions = new double[count * 3 * 2];
-            float[] values = matrixAndLightFloats.Values;
+            batch.Dirty = false;
+            batch.Drawn.Clear();
+            int count = batch.Parts.Count;
+            if (count == 0) return;
 
-            int i = 0;
-            foreach (var kvp in positions)
+            // Буфер у відеокарті має розмір, заданий при завантаженні меша, і сам не росте: якщо шпал стало
+            // більше, меш завантажується заново з більшим буфером, із запасом удвічі
+            bool upload = batch.Mesh == null || batch.Floats.Values.Length < count * FloatsPerInstance;
+            if (upload)
             {
-                Vec3d pos = kvp.Key;
-                SleeperInstance data = kvp.Value;
+                int size = Math.Max(count * 2, MinCapacity) * FloatsPerInstance;
+                batch.Floats = new CustomMeshDataPartFloat(size)
+                {
+                    Instanced = true,
+                    InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
+                    InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
+                    InterleaveStride = 80,
+                    StaticDraw = false
+                };
+                batch.Floats.Values = new float[size];
+                batch.Floats.SetAllocationSize(size);
+            }
 
+            float[] values = batch.Floats.Values;
+            double originX = batch.Chunk.X * 32.0, originY = batch.Chunk.Y * 32.0, originZ = batch.Chunk.Z * 32.0;
+
+            foreach (SleeperInstance part in batch.Parts.Values)
+            {
                 Mat4f.Identity(tmpMat);
-                // rotation: X = ухил, Y = поворот, Z = крен (нахил полотна)
-                Mat4f.RotateY(tmpMat, tmpMat, data.rotation.Y);
-                Mat4f.RotateX(tmpMat, tmpMat, -data.rotation.X);
-                Mat4f.RotateZ(tmpMat, tmpMat, -data.rotation.Z);
-                scale[0] = data.length;
+                // rotation: X це ухил, Y поворот, Z крен (нахил полотна)
+                Mat4f.RotateY(tmpMat, tmpMat, part.rotation.Y);
+                Mat4f.RotateX(tmpMat, tmpMat, -part.rotation.X);
+                Mat4f.RotateZ(tmpMat, tmpMat, -part.rotation.Z);
+                scale[0] = part.length;
                 Mat4f.Scale(tmpMat, tmpMat, scale);
                 // Меш шпали займає блок 0..1, обертаємо навколо його центру
                 Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, -0.5f);
 
-                int j = i * 20;
-                // Світло блока, де лежить шпала: rgb = світло від джерел, a = сонячне
-                values[j]     = data.light.R;
-                values[j + 1] = data.light.G;
-                values[j + 2] = data.light.B;
-                values[j + 3] = data.light.A;
-                for (int k = 0; k < 16; k++)
-                    values[j + 4 + k] = tmpMat[k];
+                // Положення шпали відносно кута чанка, разом зі зсувом, який дала сама матриця
+                tmpMat[12] += (float)(part.position.X - originX);
+                tmpMat[13] += (float)(part.position.Y - originY);
+                tmpMat[14] += (float)(part.position.Z - originZ);
 
-                // Зсув, який дала сама матриця (перенесення меша на вісь), додається до положення шпали
-                basePositions[i * 3] = pos.X + tmpMat[12];
-                basePositions[i * 3 + 1] = pos.Y + tmpMat[13];
-                basePositions[i * 3 + 2] = pos.Z + tmpMat[14];
-                i++;
+                int j = batch.Drawn.Count * FloatsPerInstance;
+                values[j] = part.light.R;
+                values[j + 1] = part.light.G;
+                values[j + 2] = part.light.B;
+                values[j + 3] = part.light.A;
+                for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
+
+                batch.Drawn.Add(part);
+            }
+
+            batch.Floats.Count = count * FloatsPerInstance;
+            if (upload)
+            {
+                batch.Mesh?.Dispose();
+                itemMesh.CustomFloats = batch.Floats;
+                batch.Mesh = capi.Render.UploadMesh(itemMesh);
+            }
+            else
+            {
+                updateMesh.CustomFloats = batch.Floats;
+                capi.Render.UpdateMesh(batch.Mesh, updateMesh);
+            }
+        }
+
+        /// <summary>
+        /// Малює шпали поточним шейдером, пачку за пачкою. Перед кожною передає шейдерові origin: кут чанка
+        /// пачки відносно камери. Викликається і для основного проходу, і для тіней.
+        /// </summary>
+        public void Draw(IShaderProgram prog, Vec3d cameraPos)
+        {
+            foreach (Batch batch in order)
+            {
+                if (batch.Mesh == null || batch.Drawn.Count == 0) continue;
+
+                origin.Set((float)(batch.Chunk.X * 32.0 - cameraPos.X), (float)(batch.Chunk.Y * 32.0 - cameraPos.Y), (float)(batch.Chunk.Z * 32.0 - cameraPos.Z));
+                prog.Uniform("origin", origin);
+                capi.Render.RenderMeshInstanced(batch.Mesh, batch.Drawn.Count);
             }
         }
 
         public void Dispose()
         {
-            meshref?.Dispose();
+            foreach (Batch batch in order) batch.Mesh?.Dispose();
+            batches.Clear();
+            order.Clear();
         }
     }
 }

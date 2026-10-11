@@ -14,7 +14,13 @@ namespace RailWorld
     public class RailWayRendererSystem : IRenderer, IDisposable
     {
         private ICoreClientAPI capi;
+        // Стандартний шейдер інстансів гри: ним малюються рейки й деталі стрілок, чиї матриці задані відносно камери
         private IShaderProgram prog;
+        // Свій шейдер інстансів: копія ігрового з параметром origin. Ним малюються пачки по чанках, чиї матриці
+        // задані відносно кута чанка. Ігровий для цього не годиться: він рахує туман, тіні й згасання на межі
+        // дальності прямо з матриці інстанса і чекає, що вона вже відносно камери
+        private IShaderProgram chunkProg;
+        private Vec3f noOrigin = new Vec3f();
 
         // Словник: ключ матеріалу → рендерер шпал
         private Dictionary<string, SleeperRenderer> sleeperRenderers = new Dictionary<string, SleeperRenderer>();
@@ -35,10 +41,11 @@ layout(location = 0) in vec3 vertexPosition;
 layout(location = 5) in mat4 transform;
 
 uniform mat4 mvpMatrix;
+uniform vec3 origin;
 
 void main()
 {
-	gl_Position = mvpMatrix * transform * vec4(vertexPosition, 1.0);
+	gl_Position = mvpMatrix * (transform * vec4(vertexPosition, 1.0) + vec4(origin, 0.0));
 }
 ";
 
@@ -65,10 +72,11 @@ void main()
             capi.Event.RegisterRenderer(this, EnumRenderStage.ShadowNear, "railsection-shadownear");
             capi.Event.RegisterRenderer(this, EnumRenderStage.Opaque, "railsection");
 
-            capi.Event.ReloadShader += LoadShadowShader;
-            LoadShadowShader();
-            // Світло блоків змінюється (факели, перекрите небо), тому перечитуємо його двічі на секунду
-            lightListenerId = capi.Event.RegisterGameTickListener(UpdateLights, 500);
+            capi.Event.ReloadShader += LoadShaders;
+            LoadShaders();
+            // Світло блоків змінюється (факели, перекрите небо), а гра про це моди не повідомляє, тому його
+            // доводиться опитувати: потроху кожен такт, а не все одразу
+            lightListenerId = capi.Event.RegisterGameTickListener(UpdateLights, LightTickMs);
         }
 
         /// <summary>
@@ -215,16 +223,43 @@ void main()
             return stack;
         }
 
+        // Як часто перевіряється світло і скільки деталей кожного рендера за один раз
+        private const int LightTickMs = 100;
+        private const int LightBudget = 2000;
+        // Рендери, які ще перечитують усе світло разом, роблять це раз на стільки тактів: двічі на секунду
+        private const int FullLightTicks = 5;
+        private int lightTick;
+
         private void UpdateLights(float dt)
         {
             foreach (var renderer in sleeperRenderers.Values)
-                renderer.UpdateLights();
+                renderer.UpdateLights(LightBudget);
+
+            if (++lightTick < FullLightTicks) return;
+            lightTick = 0;
             foreach (var renderer in railRenderers.Values)
                 renderer.UpdateLights();
             bladeRenderer?.UpdateLights();
         }
 
-        // Збирає шейдер тіней. Викликається при старті і щоразу, коли гра перезбирає шейдери
+        // Збирає свої шейдери. Викликається при старті і щоразу, коли гра перезбирає шейдери
+        private bool LoadShaders()
+        {
+            bool shadows = LoadShadowShader();
+
+            // З файлів assets/railworld/shaders/railinstanced.vsh і .fsh
+            IShaderProgram loaded = capi.Shader.NewShaderProgram();
+            loaded.AssetDomain = "railworld";
+            loaded.VertexShader = capi.Shader.NewShader(EnumShaderType.VertexShader);
+            loaded.FragmentShader = capi.Shader.NewShader(EnumShaderType.FragmentShader);
+            capi.Shader.RegisterFileShaderProgram("railinstanced", loaded);
+            bool ok = loaded.Compile();
+            chunkProg = ok ? loaded : null;
+            if (!ok) capi.Logger.Error("[RailWorld] шейдер railinstanced не зібрався: шпали не малюватимуться");
+            return ok && shadows;
+        }
+
+        // Збирає шейдер тіней
         private bool LoadShadowShader()
         {
             IShaderProgram loaded = capi.Shader.NewShaderProgram();
@@ -248,10 +283,11 @@ void main()
                 bladeRenderer?.PrepareFrame();
                 return;
             }
+            Vec3d cameraPos = capi.World.Player.Entity.CameraPos;
 
             if (stage == EnumRenderStage.ShadowFar || stage == EnumRenderStage.ShadowNear)
             {
-                RenderShadows();
+                RenderShadows(cameraPos);
                 return;
             }
 
@@ -261,19 +297,21 @@ void main()
             capi.Render.GlDisableCullFace();
             capi.Render.GlToggleBlend(false, EnumBlendMode.Standard);
 
-            prog.Use();
-            prog.Uniform("rgbaFogIn", capi.Render.FogColor);
-            prog.Uniform("rgbaAmbientIn", capi.Render.AmbientColor);
-            prog.Uniform("fogMinIn", capi.Render.FogMin);
-            prog.Uniform("fogDensityIn", capi.Render.FogDensity);
-            prog.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
-            prog.UniformMatrix("modelViewMatrix", capi.Render.CameraMatrixOriginf);
-
-            foreach (var renderer in sleeperRenderers.Values)
+            // Пачки по чанках: своїм шейдером
+            if (chunkProg != null && !chunkProg.Disposed)
             {
-                prog.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.Draw();
+                chunkProg.Use();
+                SetFrameUniforms(chunkProg);
+                foreach (var renderer in sleeperRenderers.Values)
+                {
+                    chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
+                    renderer.Draw(chunkProg, cameraPos);
+                }
+                chunkProg.Stop();
             }
+
+            prog.Use();
+            SetFrameUniforms(prog);
 
             foreach (var renderer in railRenderers.Values)
             {
@@ -287,8 +325,19 @@ void main()
             capi.Render.GlEnableCullFace();
         }
 
+        // Те, що шейдер інстансів має знати про кадр: туман, загальне світло, проекція і вид
+        private void SetFrameUniforms(IShaderProgram shader)
+        {
+            shader.Uniform("rgbaFogIn", capi.Render.FogColor);
+            shader.Uniform("rgbaAmbientIn", capi.Render.AmbientColor);
+            shader.Uniform("fogMinIn", capi.Render.FogMin);
+            shader.Uniform("fogDensityIn", capi.Render.FogDensity);
+            shader.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
+            shader.UniformMatrix("modelViewMatrix", capi.Render.CameraMatrixOriginf);
+        }
+
         // Малює рейки й шпали в карту тіней. На час малювання підміняє шейдер тіней гри своїм і повертає його назад
-        private void RenderShadows()
+        private void RenderShadows(Vec3d cameraPos)
         {
             if (shadowProg == null || shadowProg.Disposed) return;
             if (sleeperRenderers.Count == 0 && railRenderers.Count == 0) return;
@@ -302,7 +351,9 @@ void main()
             shadowProg.UniformMatrix("mvpMatrix", capi.Render.CurrentShadowProjectionMatrix);
 
             capi.Render.GlDisableCullFace();
-            foreach (var renderer in sleeperRenderers.Values) renderer.Draw();
+            foreach (var renderer in sleeperRenderers.Values) renderer.Draw(shadowProg, cameraPos);
+            // Далі деталі, чиї матриці вже відносно камери
+            shadowProg.Uniform("origin", noOrigin);
             foreach (var renderer in railRenderers.Values) renderer.Draw();
             bladeRenderer?.Draw(null);
             capi.Render.GlEnableCullFace();
@@ -317,7 +368,7 @@ void main()
             capi.Event.UnregisterRenderer(this, EnumRenderStage.ShadowFar);
             capi.Event.UnregisterRenderer(this, EnumRenderStage.ShadowNear);
             capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
-            capi.Event.ReloadShader -= LoadShadowShader;
+            capi.Event.ReloadShader -= LoadShaders;
             capi.Event.UnregisterGameTickListener(lightListenerId);
             foreach (var renderer in sleeperRenderers.Values)
                 renderer.Dispose();
