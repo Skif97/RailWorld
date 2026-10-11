@@ -302,15 +302,20 @@ namespace RailWorld
     }
 
     /// <summary>
-    /// Малює гостряки стрілок. Кожен гостряк це власний меш, один інстанс: шейдери ті самі, що й у рейок,
-    /// тож освітлення, туман і тіні працюють так само. Стрілок небагато, тому окремий виклик малювання
-    /// на гостряк нічого не коштує.
+    /// Малює деталі стрілок: гостряки, хрестовини, контррейки. Кожна деталь це власний меш, один інстанс,
+    /// тим самим шейдером і за тим самим принципом, що й рейки та шпали: матриця деталі задана відносно кута
+    /// чанка її секції і лежить у відеокарті незмінною, а щокадру шейдерові передається лише кут чанка
+    /// відносно камери.
+    /// Меш зібрано в осях першого перерізу деталі, і матриця його повертає. В один меш на чанк деталі
+    /// не зливаються навмисно: нормаль у вершині гра зберігає трьома бітами на вісь, і в осях деталі грані
+    /// рейки лягають на ці осі точно, а в осях світу нормалі повернутої колії округлилися б на кілька
+    /// градусів, і деталь стрілки відтінком відрізнялася б від рейки поруч.
     /// </summary>
     internal class BladeRenderer : IDisposable
     {
         private class Blade
         {
-            // Меш лежить лише у відеопам'яті. Щокадру туди дописується тільки світло й матриця інстанса:
+            // Меш лежить лише у відеопам'яті. Коли міняється світло, туди дописуються тільки дані інстанса:
             // для цього є окремий порожній меш, у якому крім них нічого немає
             public MeshData Update;
             // Відбиток даних, з яких зібрано меш, і чи підтверджено деталь під час поточної перебудови чанка
@@ -319,14 +324,16 @@ namespace RailWorld
             public MeshRef MeshRef;
             public CustomMeshDataPartFloat Floats;
             public int TextureId;
-            // Де стоїть початок меша у світі і як повернуті його осі
+            // Чанк секції, якій належить деталь, і де стоїть початок її меша у світі
+            public Vec3i Chunk;
             public Vec3d Origin;
-            public float[] Rotation;
-            public Vec4f Light;
+            // Світло одним числом: за ним видно, чи воно змінилося
+            public int LightKey;
         }
 
         private ICoreClientAPI capi;
         private Dictionary<string, Blade> blades = new Dictionary<string, Blade>();
+        private Vec3f origin = new Vec3f();
 
         public BladeRenderer(ICoreClientAPI capi)
         {
@@ -334,10 +341,10 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Ставить гостряк. key починається з чанка секції, якій він належить: за ним гостряк прибирається.
+        /// Ставить деталь. key починається з чанка секції, якій вона належить: за ним деталь прибирається.
         /// mesh у координатах першого перерізу first, як його збирає BladeMesh.
         /// </summary>
-        public void Set(string key, long hash, MeshData mesh, RailFrame first, int textureId)
+        public void Set(Vec3i chunkCoord, string key, long hash, MeshData mesh, RailFrame first, int textureId)
         {
             Remove(key);
             if (mesh == null) return;
@@ -351,10 +358,9 @@ namespace RailWorld
                 InterleaveStride = 80,
                 StaticDraw = false
             };
-            floats.Values = new float[20];
+            float[] values = floats.Values = new float[20];
             floats.SetAllocationSize(20);
             floats.Count = 20;
-            mesh.CustomFloats = floats;
 
             Blade blade = new Blade
             {
@@ -362,18 +368,38 @@ namespace RailWorld
                 Hash = hash,
                 Floats = floats,
                 TextureId = textureId,
-                Origin = first.Center.Clone(),
-                // Стовпці матриці це осі першого перерізу: бік, верх, напрямок
-                Rotation = new float[]
-                {
-                    (float)first.Side.X, (float)first.Side.Y, (float)first.Side.Z,
-                    (float)first.Up.X, (float)first.Up.Y, (float)first.Up.Z,
-                    (float)first.Along.X, (float)first.Along.Y, (float)first.Along.Z
-                }
+                Chunk = chunkCoord.Clone(),
+                Origin = first.Center.Clone()
             };
-            blade.Light = GetLight(blade.Origin);
+
+            // Стовпці матриці це осі першого перерізу: бік, верх, напрямок. Останній стовпець це початок меша
+            // відносно кута чанка
+            values[4] = (float)first.Side.X; values[5] = (float)first.Side.Y; values[6] = (float)first.Side.Z; values[7] = 0;
+            values[8] = (float)first.Up.X; values[9] = (float)first.Up.Y; values[10] = (float)first.Up.Z; values[11] = 0;
+            values[12] = (float)first.Along.X; values[13] = (float)first.Along.Y; values[14] = (float)first.Along.Z; values[15] = 0;
+            values[16] = (float)(blade.Origin.X - chunkCoord.X * 32.0);
+            values[17] = (float)(blade.Origin.Y - chunkCoord.Y * 32.0);
+            values[18] = (float)(blade.Origin.Z - chunkCoord.Z * 32.0);
+            values[19] = 1;
+            WriteLight(blade);
+
+            mesh.CustomFloats = floats;
             blade.MeshRef = capi.Render.UploadMesh(mesh);
             blades[key] = blade;
+        }
+
+        // Читає світло блока, де стоїть деталь, і кладе його в дані інстанса: rgb це світло від джерел, a сонячне
+        private void WriteLight(Blade blade)
+        {
+            int x = (int)Math.Floor(blade.Origin.X), y = (int)Math.Floor(blade.Origin.Y + 0.25), z = (int)Math.Floor(blade.Origin.Z);
+            blade.LightKey = capi.World.BlockAccessor.GetLightRGBsAsInt(x, y, z);
+            Vec4f light = capi.World.BlockAccessor.GetLightRGBs(x, y, z);
+
+            float[] values = blade.Floats.Values;
+            values[0] = light.R;
+            values[1] = light.G;
+            values[2] = light.B;
+            values[3] = light.A;
         }
 
         /// <summary>
@@ -427,51 +453,34 @@ namespace RailWorld
             foreach (string key in blades.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) Remove(key);
         }
 
-        private Vec4f GetLight(Vec3d pos)
-        {
-            return capi.World.BlockAccessor.GetLightRGBs((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
-        }
-
+        /// <summary>
+        /// Перевіряє, чи змінилося світло деталей: гра не повідомляє моди про зміну освітлення. Деталі,
+        /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса.
+        /// </summary>
         public void UpdateLights()
         {
-            foreach (Blade blade in blades.Values) blade.Light = GetLight(blade.Origin);
-        }
-
-        /// <summary>
-        /// Раз на кадр: положення кожного гостряка відносно камери.
-        /// </summary>
-        public void PrepareFrame()
-        {
-            if (blades.Count == 0) return;
-            Vec3d camPos = capi.World.Player.Entity.CameraPos;
-
             foreach (Blade blade in blades.Values)
             {
-                float[] values = blade.Floats.Values;
-                values[0] = blade.Light.R; values[1] = blade.Light.G; values[2] = blade.Light.B; values[3] = blade.Light.A;
+                int key = capi.World.BlockAccessor.GetLightRGBsAsInt((int)Math.Floor(blade.Origin.X), (int)Math.Floor(blade.Origin.Y + 0.25), (int)Math.Floor(blade.Origin.Z));
+                if (key == blade.LightKey || blade.MeshRef == null) continue;
 
-                float[] r = blade.Rotation;
-                values[4] = r[0]; values[5] = r[1]; values[6] = r[2]; values[7] = 0;
-                values[8] = r[3]; values[9] = r[4]; values[10] = r[5]; values[11] = 0;
-                values[12] = r[6]; values[13] = r[7]; values[14] = r[8]; values[15] = 0;
-                values[16] = (float)(blade.Origin.X - camPos.X);
-                values[17] = (float)(blade.Origin.Y - camPos.Y);
-                values[18] = (float)(blade.Origin.Z - camPos.Z);
-                values[19] = 1;
-
-                blade.Floats.Count = 20;
+                WriteLight(blade);
                 capi.Render.UpdateMesh(blade.MeshRef, blade.Update);
             }
         }
 
         /// <summary>
-        /// Малює гостряки поточним шейдером. bindTexture ставить текстуру гостряка; у проході тіней вона не потрібна.
+        /// Малює деталі поточним шейдером. Перед кожною передає шейдерові origin: кут її чанка відносно камери.
+        /// bindTexture ставить текстуру деталі; у проході тіней вона не потрібна.
         /// </summary>
-        public void Draw(Action<int> bindTexture)
+        public void Draw(IShaderProgram prog, Vec3d cameraPos, Action<int> bindTexture)
         {
             foreach (Blade blade in blades.Values)
             {
                 if (blade.MeshRef == null) continue;
+
+                origin.Set((float)(blade.Chunk.X * 32.0 - cameraPos.X), (float)(blade.Chunk.Y * 32.0 - cameraPos.Y), (float)(blade.Chunk.Z * 32.0 - cameraPos.Z));
+                prog.Uniform("origin", origin);
                 bindTexture?.Invoke(blade.TextureId);
                 capi.Render.RenderMeshInstanced(blade.MeshRef, 1);
             }

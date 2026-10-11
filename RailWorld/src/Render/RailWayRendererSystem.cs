@@ -14,13 +14,11 @@ namespace RailWorld
     public class RailWayRendererSystem : IRenderer, IDisposable
     {
         private ICoreClientAPI capi;
-        // Стандартний шейдер інстансів гри: ним малюються деталі стрілок, чиї матриці задані відносно камери
-        private IShaderProgram prog;
-        // Свій шейдер інстансів: копія ігрового з параметром origin. Ним малюються пачки по чанках, чиї матриці
-        // задані відносно кута чанка. Ігровий для цього не годиться: він рахує туман, тіні й згасання на межі
-        // дальності прямо з матриці інстанса і чекає, що вона вже відносно камери
+        // Свій шейдер інстансів: копія ігрового з параметром origin. Уся колія малюється ним: матриці деталей
+        // задані відносно кута їхнього чанка, а origin це той кут відносно камери. Ігровий шейдер інстансів
+        // для цього не годиться: він рахує туман, тіні й згасання на межі дальності прямо з матриці інстанса
+        // і чекає, що вона вже відносно камери
         private IShaderProgram chunkProg;
-        private Vec3f noOrigin = new Vec3f();
 
         // Словник: ключ матеріалу → рендерер шпал
         private Dictionary<string, SleeperRenderer> sleeperRenderers = new Dictionary<string, SleeperRenderer>();
@@ -65,7 +63,6 @@ void main()
         public RailWayRendererSystem(ICoreClientAPI capi)
         {
             this.capi = capi;
-            this.prog = capi.Shader.GetProgramByName("instanced");
             // Before: готуємо буфери раз на кадр. Далі ті самі буфери малюються в картах тіней і в основному проході
             capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railsection-prepare");
             capi.Event.RegisterRenderer(this, EnumRenderStage.ShadowFar, "railsection-shadowfar");
@@ -167,7 +164,7 @@ void main()
 
             MeshData mesh = BladeMesh.BuildLoft(renderer.TemplateMesh, parts, out RailFrame basis);
             if (mesh == null) return;
-            bladeRenderer.Set(key, hash, mesh, basis, renderer.TextureId);
+            bladeRenderer.Set(chunkCoord, key, hash, mesh, basis, renderer.TextureId);
         }
 
         private void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape)
@@ -226,7 +223,7 @@ void main()
         // Як часто перевіряється світло і скільки деталей кожного рендера за один раз
         private const int LightTickMs = 100;
         private const int LightBudget = 2000;
-        // Деталі стрілок перечитують усе світло разом, раз на стільки тактів: двічі на секунду. Їх небагато
+        // Деталі стрілок перевіряються всі разом, раз на стільки тактів: двічі на секунду. Їх небагато
         private const int FullLightTicks = 5;
         private int lightTick;
 
@@ -280,7 +277,6 @@ void main()
             {
                 foreach (var renderer in sleeperRenderers.Values) renderer.PrepareFrame();
                 foreach (var renderer in railRenderers.Values) renderer.PrepareFrame();
-                bladeRenderer?.PrepareFrame();
                 return;
             }
             Vec3d cameraPos = capi.World.Player.Entity.CameraPos;
@@ -291,36 +287,26 @@ void main()
                 return;
             }
 
-            if (prog.Disposed)
-                prog = capi.Shader.GetProgramByName("instanced");
+            if (chunkProg == null || chunkProg.Disposed) return;
 
             capi.Render.GlDisableCullFace();
             capi.Render.GlToggleBlend(false, EnumBlendMode.Standard);
 
-            // Пачки по чанках: своїм шейдером
-            if (chunkProg != null && !chunkProg.Disposed)
+            chunkProg.Use();
+            SetFrameUniforms(chunkProg);
+            foreach (var renderer in sleeperRenderers.Values)
             {
-                chunkProg.Use();
-                SetFrameUniforms(chunkProg);
-                foreach (var renderer in sleeperRenderers.Values)
-                {
-                    chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
-                    renderer.Draw(chunkProg, cameraPos);
-                }
-                foreach (var renderer in railRenderers.Values)
-                {
-                    chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
-                    renderer.Draw(chunkProg, cameraPos);
-                }
-                chunkProg.Stop();
+                chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
+                renderer.Draw(chunkProg, cameraPos);
             }
+            foreach (var renderer in railRenderers.Values)
+            {
+                chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
+                renderer.Draw(chunkProg, cameraPos);
+            }
+            bladeRenderer?.Draw(chunkProg, cameraPos, textureId => chunkProg.BindTexture2D("tex", textureId, 0));
+            chunkProg.Stop();
 
-            prog.Use();
-            SetFrameUniforms(prog);
-
-            bladeRenderer?.Draw(textureId => prog.BindTexture2D("tex", textureId, 0));
-
-            prog.Stop();
             capi.Render.GlEnableCullFace();
         }
 
@@ -352,9 +338,7 @@ void main()
             capi.Render.GlDisableCullFace();
             foreach (var renderer in sleeperRenderers.Values) renderer.Draw(shadowProg, cameraPos);
             foreach (var renderer in railRenderers.Values) renderer.Draw(shadowProg, cameraPos);
-            // Далі деталі стрілок: їхні матриці вже відносно камери
-            shadowProg.Uniform("origin", noOrigin);
-            bladeRenderer?.Draw(null);
+            bladeRenderer?.Draw(shadowProg, cameraPos, null);
             capi.Render.GlEnableCullFace();
 
             shadowProg.Stop();
