@@ -480,7 +480,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         internal static double RampRoom(double lift)
         {
-            return Math.Sqrt(6 * lift * RoutePlanner.MinRadius);
+            return Math.Sqrt(6 * lift * RouteRules.MinRadius);
         }
 
         /// <summary>

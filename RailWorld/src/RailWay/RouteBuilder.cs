@@ -190,7 +190,7 @@ namespace RailWorld.src.RailWay
                 // Точка на прямій або розворот назад: дуги тут немає
                 if (node.Turn < 0.01 || node.Turn > Math.PI - 0.05) continue;
 
-                need[i] = RoutePlanner.MinRadius * CornerRadiusFactor * Math.Tan(node.Turn / 2);
+                need[i] = RouteRules.MinRadius * CornerRadiusFactor * Math.Tan(node.Turn / 2);
                 node.Cut = Math.Min(need[i], Math.Min(Limit(i - 1, leg[i - 1]), Limit(i + 1, leg[i])));
             }
 
@@ -372,7 +372,7 @@ namespace RailWorld.src.RailWay
 
             foreach (double factor in LeadRadiusFactors)
             {
-                double radius = RoutePlanner.MinRadius * factor;
+                double radius = RouteRules.MinRadius * factor;
                 double ox = p.X + nx * radius, oz = p.Z + nz * radius;
                 double vx = target.X - ox, vz = target.Z - oz;
                 double far = Math.Sqrt(vx * vx + vz * vz);

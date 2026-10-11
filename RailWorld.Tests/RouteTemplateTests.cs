@@ -34,7 +34,7 @@ namespace RailWorld.Tests
             Assert.Equal(100, points[0].position.X, 6);
             Assert.Equal(105, points[points.Count - 1].position.X, 6);
             Assert.Equal(100.5, points[points.Count - 1].position.Z, 6);
-            Assert.Null(RoutePlanner.FindProblem(points));
+            Assert.Null(RouteRules.FindProblem(points));
 
             // Один блок це найкоротша пряма
             Assert.Equal(1, PlanLength(Cut(RouteTemplate.SingleBlock, 0, 30, 3, true)), 6);
@@ -45,7 +45,7 @@ namespace RailWorld.Tests
         {
             List<PointOnBezierCurve> points = Cut(RouteTemplate.Straight, 0, 30, 4, true);
             Assert.Equal(4, points[points.Count - 1].position.Y - points[0].position.Y, 6);
-            Assert.Null(RoutePlanner.FindProblem(points));
+            Assert.Null(RouteRules.FindProblem(points));
         }
 
         [Theory]
@@ -92,7 +92,7 @@ namespace RailWorld.Tests
             // Поворот з підйомом починається і закінчується рівно, а ухил плавно росте до середини і так само
             // спадає: без зламу на першому блоці і без горбка за ним
             List<PointOnBezierCurve> points = Cut(mode, 0, radius, climb, true);
-            Assert.Null(RoutePlanner.FindProblem(points));
+            Assert.Null(RouteRules.FindProblem(points));
             Assert.Equal(climb, points[points.Count - 1].position.Y - points[0].position.Y, 6);
 
             var slopes = new List<double>();
@@ -131,7 +131,7 @@ namespace RailWorld.Tests
                             List<PointOnBezierCurve> points = Cut(mode, direction * Math.PI / 4 + 0.2, size, 0, left);
                             string about = mode + ", напрямок " + direction + ", " + (left ? "ліворуч" : "праворуч") + ", розмір " + size;
                             Assert.True(points.Count >= 3, about + ": маршрут не склався");
-                            Assert.True(RoutePlanner.FindProblem(points) == null, about + ": " + RoutePlanner.FindProblem(points));
+                            Assert.True(RouteRules.FindProblem(points) == null, about + ": " + RouteRules.FindProblem(points));
                         }
                     }
                 }

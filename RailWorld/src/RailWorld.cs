@@ -262,7 +262,7 @@ namespace RailWorld
 
             // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
             // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден
-            string problem = conflict ?? RoutePlanner.FindProblem(points);
+            string problem = conflict ?? RouteRules.FindProblem(points);
             if (problem != null) return problem;
             if (points.Count < 3) return "маршрут надто короткий";
 

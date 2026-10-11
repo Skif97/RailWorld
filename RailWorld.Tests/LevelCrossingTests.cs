@@ -208,7 +208,7 @@ namespace RailWorld.Tests
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(new List<RoutePoint> { At(0, 0, 0), At(40, 0, 0) }, Resolve, out string conflict, SectionsIn);
             Assert.Null(conflict);
             // І сам маршрут вийшов без зламів: звичайний плавний перехід новим правилом не підсвічується
-            Assert.Null(RoutePlanner.FindProblem(points));
+            Assert.Null(RouteRules.FindProblem(points));
         }
 
         [Fact]
@@ -217,7 +217,7 @@ namespace RailWorld.Tests
             // Рівний маршрут, у який уручну вставлено сходинку: за півтора блока вгору на 0.3 і далі рівно.
             // Дотичні лишилися горизонтальними, як після вирівнювання по чужій колії
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(new List<RoutePoint> { At(0, 0, 0), At(20, 0, 0) });
-            Assert.Null(RoutePlanner.FindProblem(points));
+            Assert.Null(RouteRules.FindProblem(points));
 
             for (int i = 0; i < points.Count; i++)
             {
@@ -227,7 +227,7 @@ namespace RailWorld.Tests
                 points[i] = point;
             }
 
-            string problem = RoutePlanner.FindProblem(points);
+            string problem = RouteRules.FindProblem(points);
             Assert.NotNull(problem);
             Assert.Contains("по висоті", problem);
         }
@@ -246,7 +246,7 @@ namespace RailWorld.Tests
                 points[i] = point;
             }
 
-            string problem = RoutePlanner.FindProblem(points);
+            string problem = RouteRules.FindProblem(points);
             Assert.NotNull(problem);
             Assert.Contains("поворот", problem);
         }
@@ -261,7 +261,7 @@ namespace RailWorld.Tests
         public void TurnOnTheSmallestRadiusIsStillAllowed(double radiusFactor, double degrees)
         {
             // Дуга рівно на найменшому радіусі: суворіша перевірка не має відхиляти те, що правилом дозволено
-            double radius = RoutePlanner.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
+            double radius = RouteRules.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
             var route = new List<RoutePoint>
             {
                 new RoutePoint { Position = new Vec3d(-5, 0, 0), Tangent = new Vec3d(1, 0, 0) },
@@ -273,7 +273,7 @@ namespace RailWorld.Tests
                 }
             };
 
-            Assert.Null(RoutePlanner.FindProblem(RouteCurve.BuildPoints(route)));
+            Assert.Null(RouteRules.FindProblem(RouteCurve.BuildPoints(route)));
         }
 
         // Рівний маршрут на схід із заданим нахилом полотна в кожній точці: tilt це синус кута нахилу
@@ -295,12 +295,12 @@ namespace RailWorld.Tests
         {
             // Вісь колії рівна, але посередині полотно різко перекошується. По осі зламу немає,
             // а рейки розходяться: одна стрибає вгору, друга вниз
-            string problem = RoutePlanner.FindProblem(Tilted(x => x < 10 ? 0 : 0.3));
+            string problem = RouteRules.FindProblem(Tilted(x => x < 10 ? 0 : 0.3));
             Assert.NotNull(problem);
             Assert.Contains("по висоті", problem);
 
             // Той самий перекіс, набраний поступово на десяти блоках, рейок не ламає
-            Assert.Null(RoutePlanner.FindProblem(Tilted(x => 0.3 * GameMath.Clamp((x - 5) / 10, 0, 1))));
+            Assert.Null(RouteRules.FindProblem(Tilted(x => 0.3 * GameMath.Clamp((x - 5) / 10, 0, 1))));
         }
 
         [Fact]
