@@ -57,6 +57,10 @@ namespace RailWorld
         // почав на секції — ламає лише секції, почав на блоці — лише блоки, доки не відпустить
         private bool leftHeld;
         private bool leftPressOnSection;
+        // Те саме для правої: клік по важелю може пересунути його з-під прицілу, і якби кнопка, яку гравець
+        // іще тримає, дісталася блокові під ним, туди став би блок з руки
+        private bool rightHeld;
+        private bool rightPressOnSection;
 
         public SectionInteractionClient(ICoreClientAPI capi, RailWaySystem system, Harmony harmony)
         {
@@ -104,7 +108,7 @@ namespace RailWorld
         // Натиск почався на секції: блок, що опинився під прицілом, цим натиском не чіпаємо
         public static bool BlockSelectedPrefix()
         {
-            return instance == null || !(instance.leftHeld && instance.leftPressOnSection);
+            return instance == null || !((instance.leftHeld && instance.leftPressOnSection) || (instance.rightHeld && instance.rightPressOnSection));
         }
 
         private void UpdateSelection()
@@ -115,6 +119,10 @@ namespace RailWorld
             bool left = capi.Input.InWorldMouseButton.Left;
             if (left && !leftHeld) leftPressOnSection = Current != null;
             leftHeld = left;
+
+            bool right = capi.Input.InWorldMouseButton.Right;
+            if (right && !rightHeld) rightPressOnSection = Current != null;
+            rightHeld = right;
 
             if (usingSel != null && !usingSel.SamePart(Current)) CancelUse(EnumItemUseCancelReason.MovedAway);
             if (isBreaking && !breakSel.SamePart(Current)) StopBreaking();

@@ -283,6 +283,97 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void LeverGoesToTheFreeSideAndTheSwitchIsRefusedWhenThereIsNone()
+        {
+            LaySwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            // Спершу важіль стає із зовнішнього боку прямої гілки, не між коліями
+            int preferred = SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn);
+            Assert.NotEqual(0, preferred);
+            Vec3d there = SectionPicker.LeverPosition(last, false, preferred);
+            Vec3d opposite = SectionPicker.LeverPosition(last, false, -preferred);
+            // Дуга відходить у бік +Z, тож зовнішній бік прямої це -Z
+            Assert.True(there.Z < 0);
+
+            // На тому місці вже лежить інша колія: важіль переходить на другий бік
+            Lay(Point(there.X - 4, there.Z - 0.3, 1, 0), Point(there.X + 4, there.Z - 0.3, 1, 0));
+            Assert.Equal(-preferred, SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn));
+
+            // Перенести важіль на зайнятий бік не можна, на вільний можна
+            Assert.False(SectionLinker.LeverSideFree(last, false, preferred, Resolve, SectionsIn));
+            Assert.True(SectionLinker.LeverSideFree(last, false, -preferred, Resolve, SectionsIn));
+
+            // І з другого боку теж колія: важелю стати ніде
+            Lay(High(opposite.X - 4, 0, opposite.Z + 0.3, 1, 0), High(opposite.X + 4, 0, opposite.Z + 0.3, 1, 0));
+            Assert.Equal(0, SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn));
+        }
+
+        [Fact]
+        public void LeverSideChosenByThePlayerIsRemembered()
+        {
+            LaySwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            last.SetLeverSide(false, 1);
+            Assert.False(last.IsLeverManual(false));
+
+            last.SetLeverSide(false, -1, manual: true);
+            Assert.True(last.IsLeverManual(false));
+            Assert.Equal(-1, last.GetLeverSide(false));
+
+            // Стрілки не стало: наступна на цьому місці починає з чистого
+            last.ResetSwitch(false);
+            Assert.False(last.IsLeverManual(false));
+        }
+
+        [Fact]
+        public void TrackLaidOnAnotherInTheSamePlaneIsRefused()
+        {
+            // Коротка ділянка вздовж покладеної колії, за пів блока вбік, на тій самій висоті. Осі не
+            // перетинаються, стрілки тут немає: нова колія просто лягає шпалами на шпали
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> beside = Plan(Point(10, 0.5, 1, 0), Point(15, 0.5, 1, 0));
+
+            string problem = SectionLinker.FindSwitchProblem(beside, SectionsIn, Resolve, out int at);
+            Assert.NotNull(problem);
+            Assert.Contains("без стрілки чи перетину", problem);
+            Assert.Equal(0, at);
+        }
+
+        [Fact]
+        public void CrossingAndSwitchAreTheLegitimateWaysToLieOnATrack()
+        {
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+
+            // Перетин упоперек і навскіс
+            Assert.Null(SectionLinker.FindSwitchProblem(Plan(Point(30, -6, 0, 1), Point(30, 6, 0, 1)), SectionsIn, Resolve, out _));
+            double dx = Math.Cos(Math.PI / 6), dz = Math.Sin(Math.PI / 6);
+            Assert.Null(SectionLinker.FindSwitchProblem(Plan(Point(30 - 10 * dx, -10 * dz, dx, dz), Point(30 + 10 * dx, 10 * dz, dx, dz)), SectionsIn, Resolve, out _));
+
+            // Відгалуження: його перші секції лежать на основній колії, і це стрілка
+            double angle = Math.PI / 3;
+            List<Section> branch = Plan(Point(20, 0, 1, 0),
+                Point(20 + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+            Assert.Null(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
+        }
+
+        [Fact]
+        public void SwitchOverAStrayPieceOfTrackIsRefused()
+        {
+            // Поруч з колією лежить окремий шматочок: ні з чим не з'єднаний і нічого не перетинає
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            Lay(Point(23, 1.3, 1, 0), Point(26, 1.3, 1, 0));
+
+            // Відгалуження в його бік: тіло стрілки лягло б просто на нього
+            double angle = Math.PI / 3;
+            List<Section> branch = Plan(Point(20, 0, 1, 0),
+                Point(20 + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+
+            Assert.NotNull(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
+        }
+
+        [Fact]
         public void OpenEndIsFoundWithinAFewSections()
         {
             straight = Straight();

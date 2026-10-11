@@ -689,9 +689,12 @@ namespace RailWorld.src.RailWay
             return Math.Sqrt(mx * mx + mz * mz);
         }
 
-        // Висота площини секції над точкою і нахил цієї площини для маршруту, що перетинає її в напрямку
-        // (travelX, travelZ): наскільки вона піднімається ліворуч від руху. На відміну від TrackPlane,
-        // маршрут тут іде не вздовж колії, а навскоси, тож нахил полотна в нього виходить свій
+        // Висота площини секції над точкою і нахил цієї площини для маршруту, що йде по ній у напрямку
+        // (travelX, travelZ): наскільки вона піднімається ліворуч від руху. Площина та сама, якою секція
+        // займає блоки: через середину хорди, з ухилом хорди і нахилом полотна. Маршрут іде не конче вздовж
+        // колії: на перетині він іде навскоси, на стрілці поступово відвертає, тож нахил полотна в нього свій.
+        // На схилі це видно навіть без нахилу полотна в самої колії: що більше маршрут відвернув,
+        // то більше її ухил стає для нього нахилом упоперек
         internal static bool CrossPlane(Section section, Vec3d p, double travelX, double travelZ, out double planeY, out double cant)
         {
             planeY = p.Y;
@@ -1021,11 +1024,12 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Кладе точку на площину секції основної колії: висота з площини, нахил полотна як у секції
+        // Кладе точку на площину секції основної колії: висота з площини, нахил полотна такий, щоб шпала
+        // маршруту лежала в цій площині
         private static bool PutOnPlane(List<PointOnBezierCurve> points, int i, Section section, double[] weight, double[] trackCant, ref string conflict)
         {
             Vec3d p = points[i].position;
-            if (!TrackPlane(section, p, points[i].tangent, out double planeY, out double cant)) return false;
+            if (!CrossPlane(section, p, points[i].tangent.X, points[i].tangent.Z, out double planeY, out double cant)) return false;
 
             // Ділянки поверх двох різних колій можуть накластися. Обидві жорсткі: якщо вони хочуть
             // різної висоти в одній точці, виконати обидві не можна
@@ -1069,37 +1073,6 @@ namespace RailWorld.src.RailWay
             double px = p.X - from.X, pz = p.Z - from.Z;
             sideways = Math.Abs(px * cz - pz * cx) / length;
             return (px * cx + pz * cz) / length;
-        }
-
-        // Висота площини секції над точкою і нахил полотна секції в знаку маршруту, що йде в напрямку travel.
-        // Площина та сама, якою секція займає блоки: через середину хорди, з ухилом хорди і нахилом полотна
-        private static bool TrackPlane(Section section, Vec3d p, Vec3f travel, out double planeY, out double cant)
-        {
-            planeY = p.Y;
-            cant = 0;
-
-            Vec3d start = section.FullStartPosition;
-            Vec3d end = section.FullEndPosition;
-            Vec3d chord = new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z);
-            if (chord.Length() < 1e-9) return false;
-            chord.Normalize();
-
-            Vec3f normal = section.CenterNormal;
-            Vec3d side = new Vec3d(normal.X, normal.Y, normal.Z);
-            side.Sub(chord.Clone().Mul(side.Dot(chord)));
-            if (side.Length() < 1e-9) return false;
-            side.Normalize();
-
-            Vec3d up = side.Cross(chord);
-            if (Math.Abs(up.Y) < 0.2) return false;
-
-            double mx = (start.X + end.X) / 2, my = (start.Y + end.Y) / 2, mz = (start.Z + end.Z) / 2;
-            planeY = my - (up.X * (p.X - mx) + up.Z * (p.Z - mz)) / up.Y;
-
-            // Нормаль маршруту дивиться ліворуч від напрямку руху, а нормаль секції може дивитися і в інший бік
-            double sameSide = normal.X * -travel.Z + normal.Z * travel.X >= 0 ? 1 : -1;
-            cant = Math.Asin(GameMath.Clamp(sameSide * normal.Y, -1, 1));
-            return true;
         }
 
         // Після зміни висот ухил дотичних має відповідати новим висотам. Напрямок у плані лишається

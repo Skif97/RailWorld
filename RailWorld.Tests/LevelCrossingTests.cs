@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using RailWorld.src.RailWay;
 using Vintagestory.API.MathTools;
@@ -302,6 +302,45 @@ namespace RailWorld.Tests
                 Assert.True(Math.Abs(point.position.Y) < 1e-6, "маршрут уже не в площині колії за " + fromCrossing.ToString("0.00") + " блока від перетину");
             }
             Assert.True(checkedPoints > 10);
+        }
+
+        // Точка на схилі, що піднімається на схід: 0.4 блока на блок, це близько 22 градусів
+        private static RoutePoint Uphill(double x)
+        {
+            return new RoutePoint { Position = new Vec3d(x, x * 0.4, 0), Tangent = new Vec3d(1, 0.4, 0).Normalize() };
+        }
+
+        [Fact]
+        public void SwitchOnASlopeKeepsItsSleepersInThePlaneOfTheTrack()
+        {
+            // Колія йде вгору схилом. Зі стику посередині відходить маршрут: повертає на 60 градусів
+            // і лишається на висоті стику, тобто відносно колії йде вниз
+            List<Section> below = Lay(Uphill(0), Uphill(20));
+            List<Section> above = Lay(Uphill(20), Uphill(50));
+            Join(below[below.Count - 1], above[0]);
+
+            double angle = Math.PI / 3, radius = 12.5;
+            RoutePoint from = Uphill(20);
+            from.Track = above[0];
+            from.TrackJointAtStart = true;
+            from.Cant = 0;
+            var route = new List<RoutePoint>
+            {
+                from,
+                new RoutePoint
+                {
+                    Position = new Vec3d(20 + radius * Math.Sin(angle), 8, radius * (1 - Math.Cos(angle))),
+                    Tangent = new Vec3d(Math.Cos(angle), 0, Math.Sin(angle))
+                },
+                new RoutePoint
+                {
+                    Position = new Vec3d(20 + radius * Math.Sin(angle) + 30 * Math.Cos(angle), 8, radius * (1 - Math.Cos(angle)) + 30 * Math.Sin(angle)),
+                    Tangent = new Vec3d(Math.Cos(angle), 0, Math.Sin(angle))
+                }
+            };
+
+            RouteCurve.BuildPoints(route, Resolve, out string conflict, SectionsIn);
+            Assert.Null(conflict);
         }
 
         [Fact]

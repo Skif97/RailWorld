@@ -326,8 +326,6 @@ namespace RailWorld.src.RailWay
                     }
                 }
             }
-            if (!joins.Exists(join => join.MakesSwitch)) return null;
-
             // Колія після побудови: нові секції і копії покладених, до яких вони чіпляються, поверх справжніх
             var overlay = new Dictionary<string, Section>();
             string Key(Vec3i chunk, int index) => chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + index;
@@ -392,11 +390,97 @@ namespace RailWorld.src.RailWay
                 // і тоді не відмовляємо
                 if (built != null && built.Resolved && built.Branches[0].FrogFrom == 0) return "стрілка без хрестовини: гілки розходяться надто полого або гілка закоротка";
 
+                // Важелю має бути де стати: якщо з обох боків від стрілки вже лежать інші колії, будувати її не можна
+                if (ChooseLeverSide(join.Copy, join.Other.AtStart, Find, sectionsIn) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
+
                 // Стрілку не перетинає інша колія: це правило діє в обидва боки. Маршрут не може перетнути
                 // стрілку, що вже лежить, і так само не може поставити стрілку там, де колію вже перетинає інша
                 if (built != null && CrossedNearBody(join.Copy, join.Other.AtStart, built, Find, sectionsIn)) return "стрілка надто близько до перетину з іншою колією";
+
+                // І не лягає на колію, що до неї не належить: під тілом стрілки може просто лежати чужий шматок
+                // колії, який нічого не перетинає. Тіло це обидві гілки, і вже покладена теж
+                if (built != null)
+                {
+                    var own = new HashSet<string> { SectionKey(join.Copy) };
+                    foreach (SwitchBranch branch in built.Branches)
+                    {
+                        foreach (SectionLink member in branch.Members) own.Add(Key(member.Chunk, member.Index));
+                    }
+                    foreach (Section section in body)
+                    {
+                        if (LiesInPlaneOf(section, sectionsIn, other => !own.Contains(SectionKey(other))) != null) return "стрілка лягає на іншу колію";
+                    }
+                }
             }
+
+            // Нова колія лежить на покладеній у тій самій площині лише там, де це стрілка або перетин.
+            // Просто лягти поруч, шпалами на шпали, не можна: це вже не колія, а дві колії одна в одній.
+            // Місця перетинів осей нової ділянки з покладеними коліями: біля них накладання законне
+            var crossings = new List<KeyValuePair<int, double>>();
+            for (int i = 0; i < planned.Count; i++)
+            {
+                Vec3d middle = planned[i].GetGlobalPos();
+                foreach (Section other in Around(middle, sectionsIn))
+                {
+                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+                    if (RouteCurve.Crosses(planned[i].FullStartPosition, planned[i].FullEndPosition, other, out _, out double angle))
+                        crossings.Add(new KeyValuePair<int, double>(i, angle));
+                }
+            }
+
+            // Чи секція лежить у стрілці колії, якою вона стане після побудови. Край тіла стрілки і край
+            // перекриття шпал рахуються трохи по-різному, тому дивимося і на сусідні секції
+            bool InSwitch(int index)
+            {
+                for (int i = index - 1; i <= index + 1; i++)
+                {
+                    if (i < 0 || i >= planned.Count) continue;
+                    if (SwitchZone.JointInBody(planned[i], true, Find) || SwitchZone.JointInBody(planned[i], false, Find)) return true;
+                }
+                return false;
+            }
+
+            for (int i = 0; i < planned.Count; i++)
+            {
+                Section other = LiesInPlaneOf(planned[i], sectionsIn, candidate => true);
+                if (other == null) continue;
+
+                Section laid = Find(new SectionLink(other, true));
+                if (InSwitch(i) && (SwitchZone.JointInBody(laid, true, Find) || SwitchZone.JointInBody(laid, false, Find))) continue;
+
+                bool atCrossing = false;
+                foreach (KeyValuePair<int, double> crossing in crossings)
+                {
+                    double room = RouteCurve.CrossingHalf(planned[i].SleeperLength, other.SleeperLength, crossing.Value) + 1;
+                    if (Math.Abs(i - crossing.Key) * 0.5 <= room) atCrossing = true;
+                }
+                if (atCrossing) continue;
+
+                at = i;
+                return "колія лягає на іншу без стрілки чи перетину";
+            }
+
             at = -1;
+            return null;
+        }
+
+        // Покладена секція, на шпали якої лягає шпала цієї секції в тій самій площині, або null.
+        // counts каже, які секції брати до уваги
+        private static Section LiesInPlaneOf(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<Section, bool> counts)
+        {
+            Vec3d p = section.GetGlobalPos();
+            Vec3f normal = section.CenterNormal;
+
+            foreach (Section other in Around(p, sectionsIn))
+            {
+                if (other == section || !counts(other)) continue;
+                if (other.IndexInChunk == section.IndexInChunk && other.ChunkAddres.Equals(section.ChunkAddres)) continue;
+                if (!SleeperReaches(p, normal, section.SleeperLength / 2, other, out double offset)) continue;
+
+                Vec3d q = new Vec3d(p.X + normal.X * offset, p.Y + normal.Y * offset, p.Z + normal.Z * offset);
+                if (!RouteCurve.CrossPlane(other, q, 0, 0, out double planeY, out _)) continue;
+                if (Math.Abs(q.Y - planeY) <= SamePlane) return other;
+            }
             return null;
         }
 
@@ -509,17 +593,21 @@ namespace RailWorld.src.RailWay
                         bool atStart = end == 0;
                         if (!other.HasSwitch(atStart)) continue;
 
-                        Vec3d lever = SectionPicker.LeverPosition(other, atStart);
-                        if (Math.Abs(lever.Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
-
-                        // Важіль під колією, якщо він ближче до її осі, ніж край шпали
-                        double along = RouteCurve.Along(section, true, lever, out double length, out double sideways);
-                        if (along < 0 || along > length) continue;
-                        if (sideways < section.SleeperLength / 2 + SectionBox.LeverHalfWidth) return i;
+                        if (CoversLever(section, SectionPicker.LeverPosition(other, atStart))) return i;
                     }
                 }
             }
             return -1;
+        }
+
+        // Чи важіль у цьому місці опинився б під колією: під шпалами секції, на близькій до неї висоті
+        private static bool CoversLever(Section section, Vec3d lever)
+        {
+            if (Math.Abs(lever.Y - section.GetGlobalPos().Y) >= RouteCurve.CrossingClearance) return false;
+
+            // Важіль під колією, якщо він ближче до її осі, ніж край шпали
+            double along = RouteCurve.Along(section, true, lever, out double length, out double sideways);
+            return along >= 0 && along <= length && sideways < section.SleeperLength / 2 + SectionBox.LeverHalfWidth;
         }
 
         // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
@@ -709,33 +797,59 @@ namespace RailWorld.src.RailWay
         private const int LeverLookAhead = 8;
 
         /// <summary>
-        /// Вибирає бік для важеля стрілки: із зовнішнього боку прямішої з двох колій, тобто з протилежного
-        /// від того, куди відхиляється друга. Тоді важіль не стоїть між коліями.
+        /// Ставить важіль стрілки з того боку, який вибрав ChooseLeverSide. Якщо вільного боку немає,
+        /// важіль лишається де був: побудувати таку стрілку не дає FindSwitchProblem.
         /// </summary>
         internal static void PlaceLever(RailDataSession session, Section trunk, bool atStart)
         {
+            // Гравець переставив важіль сам: його вибір лишається
+            if (trunk.IsLeverManual(atStart)) return;
+
+            int side = ChooseLeverSide(trunk, atStart, session.GetSection, chunk => session.Get(chunk)?.RailWaySections.Values);
+            if (side == 0) return;
+
+            if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;
+            trunk.SetLeverSide(atStart, side);
+            session.MarkDirty(trunk.ChunkAddres);
+        }
+
+        /// <summary>
+        /// Вибирає бік для важеля стрілки: 1 з боку нормалі спільної секції, -1 з протилежного.
+        /// Найкраще йому із зовнішнього боку прямішої з двох колій, тобто з протилежного від того, куди
+        /// відхиляється друга: тоді він не стоїть між коліями. Але якщо там уже лежить інша колія і важіль
+        /// опинився б під її шпалами, береться другий бік. Повертає 0, якщо зайняті обидва.
+        /// </summary>
+        public static int ChooseLeverSide(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve,
+            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
             List<SectionLink> links = trunk.GetLinks(atStart);
-            if (links.Count < 2) return;
+            if (links.Count < 2) return 0;
 
             Vec3d joint = trunk.GetEndPosition(atStart);
             Vec3f normal = atStart ? trunk.StartNormal : trunk.EndNormal;
+
+            // Секції самої стрілки: вони лежать поруч із важелем, але це не чужа колія
+            var own = new HashSet<string>();
+            own.Add(SectionKey(trunk));
 
             // На скільки кожна гілка відходить убік від стику, якщо міряти вздовж нормалі спільної колії
             double[] sideways = new double[2];
             for (int i = 0; i < 2; i++)
             {
-                Section current = session.GetSection(links[i]);
+                Section current = resolve(links[i]);
                 bool entered = links[i].AtStart;
-                if (current == null) return;
+                if (current == null) return 0;
+                own.Add(SectionKey(current));
 
                 for (int step = 1; step < LeverLookAhead; step++)
                 {
                     List<SectionLink> ahead = current.GetLinks(!entered);
                     if (ahead.Count != 1) break;
-                    Section next = session.GetSection(ahead[0]);
+                    Section next = resolve(ahead[0]);
                     if (next == null) break;
                     entered = ahead[0].AtStart;
                     current = next;
+                    own.Add(SectionKey(current));
                 }
 
                 Vec3d far = current.GetEndPosition(!entered);
@@ -745,12 +859,53 @@ namespace RailWorld.src.RailWay
             // Пряміша та, що відійшла менше. Друга відхиляється від неї в цей бік, а важіль стає з протилежного
             int straighter = Math.Abs(sideways[0]) <= Math.Abs(sideways[1]) ? 0 : 1;
             double diverging = sideways[1 - straighter] - sideways[straighter];
-            int side = diverging > 0 ? -1 : 1;
+            int preferred = diverging > 0 ? -1 : 1;
 
+            foreach (int side in new[] { preferred, -preferred })
+            {
+                if (LeverSideFree(trunk, atStart, side, own, sectionsIn)) return side;
+            }
+            return 0;
+        }
 
-            if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;
-            trunk.SetLeverSide(atStart, side);
-            session.MarkDirty(trunk.ChunkAddres);
+        /// <summary>
+        /// Чи може важіль стрілки стати з цього боку: чи не опиниться він під шпалами іншої колії.
+        /// </summary>
+        public static bool LeverSideFree(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve,
+            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            // Секції самої стрілки лежать поруч із важелем, але це не чужа колія
+            var own = new HashSet<string>();
+            own.Add(SectionKey(trunk));
+            foreach (SectionLink link in trunk.GetLinks(atStart))
+            {
+                Section current = resolve(link);
+                bool entered = link.AtStart;
+                for (int step = 0; step < LeverLookAhead && current != null; step++)
+                {
+                    own.Add(SectionKey(current));
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    entered = ahead[0].AtStart;
+                    current = resolve(ahead[0]);
+                }
+            }
+            return LeverSideFree(trunk, atStart, side, own, sectionsIn);
+        }
+
+        private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<string> own, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            Vec3d lever = SectionPicker.LeverPosition(trunk, atStart, side);
+            foreach (Section other in Around(lever, sectionsIn, RouteCurve.CrossingClearance))
+            {
+                if (!own.Contains(SectionKey(other)) && CoversLever(other, lever)) return false;
+            }
+            return true;
+        }
+
+        private static string SectionKey(Section section)
+        {
+            return section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
         }
 
         /// <summary>

@@ -442,6 +442,12 @@ namespace RailWorld.src.RailWay
         [ProtoMember(40)]
         private int _endLeverSide;
 
+        // Бік важеля на цьому кінці вибрав гравець: сервер його більше не перевибирає
+        [ProtoMember(43)]
+        private bool _startLeverManual;
+        [ProtoMember(44)]
+        private bool _endLeverManual;
+
         // До якої стрілки секція належить як частина гілки. Кінець тут це той, яким секція ближча до стрілки:
         // секція може лежати на гілках двох стрілок одразу, по одній з кожного боку. null, якщо не належить
         [ProtoMember(41)]
@@ -481,17 +487,19 @@ namespace RailWorld.src.RailWay
             bool changed;
             if (atStart)
             {
-                changed = _activeStartLink != 0 || _startSwitchMs != 0 || _startLeverSide != 0;
+                changed = _activeStartLink != 0 || _startSwitchMs != 0 || _startLeverSide != 0 || _startLeverManual;
                 _activeStartLink = 0;
                 _startSwitchMs = 0;
                 _startLeverSide = 0;
+                _startLeverManual = false;
             }
             else
             {
-                changed = _activeEndLink != 0 || _endSwitchMs != 0 || _endLeverSide != 0;
+                changed = _activeEndLink != 0 || _endSwitchMs != 0 || _endLeverSide != 0 || _endLeverManual;
                 _activeEndLink = 0;
                 _endSwitchMs = 0;
                 _endLeverSide = 0;
+                _endLeverManual = false;
             }
             return changed;
         }
@@ -511,10 +519,28 @@ namespace RailWorld.src.RailWay
             return (atStart ? _startLeverSide : _endLeverSide) != 0;
         }
 
-        public void SetLeverSide(bool atStart, int side)
+        /// <summary>Чи бік важеля на цьому кінці вибрав гравець, а не сервер.</summary>
+        public bool IsLeverManual(bool atStart)
         {
-            if (atStart) _startLeverSide = side < 0 ? -1 : 1;
-            else _endLeverSide = side < 0 ? -1 : 1;
+            return atStart ? _startLeverManual : _endLeverManual;
+        }
+
+        /// <summary>
+        /// Ставить важіль з цього боку. manual каже, що так вирішив гравець: тоді сервер, перераховуючи
+        /// стрілку, бік більше не міняє.
+        /// </summary>
+        public void SetLeverSide(bool atStart, int side, bool manual = false)
+        {
+            if (atStart)
+            {
+                _startLeverSide = side < 0 ? -1 : 1;
+                _startLeverManual = manual;
+            }
+            else
+            {
+                _endLeverSide = side < 0 ? -1 : 1;
+                _endLeverManual = manual;
+            }
         }
 
         /// <summary>

@@ -98,7 +98,12 @@ namespace RailWorld.src.RailWay
         {
             if (sel.Part == SectionPart.Switch)
             {
-                if (world.Side == EnumAppSide.Server) ToggleSwitch(world, sel);
+                // Звичайний клік переводить стрілку, клік із Shift переносить важіль на інший бік колії
+                if (world.Side == EnumAppSide.Server)
+                {
+                    if (byPlayer?.Entity?.Controls.ShiftKey == true) MoveLever(world, byPlayer, sel);
+                    else ToggleSwitch(world, sel);
+                }
                 return true;
             }
 
@@ -119,16 +124,7 @@ namespace RailWorld.src.RailWay
         {
             DataInChunk data = DataInChunk.Get(world, sel.Chunk);
             if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
-
-            bool atStart;
-            if (section.HasSwitch(true) && section.HasSwitch(false))
-            {
-                Vec3d hit = sel.HitPosition ?? section.GetGlobalPos();
-                atStart = hit.SquareDistanceTo(SectionPicker.LeverPosition(section, true)) < hit.SquareDistanceTo(SectionPicker.LeverPosition(section, false));
-            }
-            else if (section.HasSwitch(true)) atStart = true;
-            else if (section.HasSwitch(false)) atStart = false;
-            else return;
+            if (!FindSwitchEnd(section, sel, out bool atStart)) return;
 
             // Недобудовану чи розібрану стрілку перевести не можна
             var session = new RailDataSession(world);
@@ -140,6 +136,48 @@ namespace RailWorld.src.RailWay
             DataInChunk.Save(world, sel.Chunk, data);
             // Змінилося одне число: клієнтам їде лише воно, а не весь чанк
             world.Api.ModLoader.GetModSystem<RailWaySystem>().SendSwitchToggled(section, atStart, data.Revision);
+
+            Vec3d lever = SectionPicker.LeverPosition(section, atStart);
+            world.PlaySoundAt(new AssetLocation("game:sounds/toggleswitch"), lever.X, lever.Y, lever.Z, null, true, 16);
+        }
+
+        // На котрому кінці секції стрілка, по важелю якої клацнув гравець. Якщо стрілки на обох кінцях,
+        // береться та, до важеля якої він ближче цілився
+        private static bool FindSwitchEnd(Section section, SectionSelection sel, out bool atStart)
+        {
+            atStart = false;
+            if (section.HasSwitch(true) && section.HasSwitch(false))
+            {
+                Vec3d hit = sel.HitPosition ?? section.GetGlobalPos();
+                atStart = hit.SquareDistanceTo(SectionPicker.LeverPosition(section, true)) < hit.SquareDistanceTo(SectionPicker.LeverPosition(section, false));
+                return true;
+            }
+            atStart = section.HasSwitch(true);
+            return atStart || section.HasSwitch(false);
+        }
+
+        /// <summary>
+        /// Переносить важіль стрілки на інший бік колії. Викликається на сервері. Не переносить, якщо там
+        /// важіль опинився б під шпалами іншої колії. Бік, вибраний так, сервер надалі не міняє.
+        /// </summary>
+        protected virtual void MoveLever(IWorldAccessor world, IPlayer byPlayer, SectionSelection sel)
+        {
+            var session = new RailDataSession(world);
+            DataInChunk data = session.Get(sel.Chunk);
+            if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
+            if (!FindSwitchEnd(section, sel, out bool atStart)) return;
+
+            int side = -section.GetLeverSide(atStart);
+            if (!SectionLinker.LeverSideFree(section, atStart, side, session.GetSection, chunk => session.Get(chunk)?.RailWaySections.Values))
+            {
+                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railleverside", "З того боку важелю заважає інша колія");
+                return;
+            }
+
+            section.SetLeverSide(atStart, side, manual: true);
+            // Важіль виділяється і малюється на новому місці: клієнтам потрібні дані чанка цілком
+            session.MarkDirty(sel.Chunk);
+            session.SaveAll();
 
             Vec3d lever = SectionPicker.LeverPosition(section, atStart);
             world.PlaySoundAt(new AssetLocation("game:sounds/toggleswitch"), lever.X, lever.Y, lever.Z, null, true, 16);

@@ -245,9 +245,15 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static Vec3d LeverPosition(Section s, bool atStart)
         {
+            return LeverPosition(s, atStart, s.GetLeverSide(atStart));
+        }
+
+        /// <summary>Де стояв би важіль стрілки з боку side: 1 з боку нормалі секції, -1 з протилежного.</summary>
+        public static Vec3d LeverPosition(Section s, bool atStart, int side)
+        {
             Vec3d end = s.GetEndPosition(atStart);
             Vec3f normal = atStart ? s.StartNormal : s.EndNormal;
-            double offset = (s.SleeperLength / 2 + SectionBox.LeverGap) * s.GetLeverSide(atStart);
+            double offset = (s.SleeperLength / 2 + SectionBox.LeverGap) * side;
 
             // Важіль стоїть не на самому стику, з якого колія розходиться, а на секцію далі: навпроти стику
             // першої і другої секцій стрілки. Там між гостряками лежить тяга, і там же проміжок між шпалами.
