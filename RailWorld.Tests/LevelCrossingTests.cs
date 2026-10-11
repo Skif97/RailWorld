@@ -232,6 +232,50 @@ namespace RailWorld.Tests
             Assert.Contains("по висоті", problem);
         }
 
+        [Fact]
+        public void SidestepBetweenTwoStraightStretchesIsATooSharpTurn()
+        {
+            // Прямий маршрут, у який уручну вставлено зигзаг: за півтора блока вбік на 0.3 і далі прямо.
+            // Напрямок до і після той самий, тож на відрізку у два блоки поворот у сумі нульовий
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(new List<RoutePoint> { At(0, 0, 0), At(20, 0, 0) });
+            for (int i = 0; i < points.Count; i++)
+            {
+                PointOnBezierCurve point = points[i];
+                double s = GameMath.Clamp((point.position.X - 8) / 1.5, 0, 1);
+                point.position = new Vec3d(point.position.X, 0, 0.3 * s * s * (3 - 2 * s));
+                points[i] = point;
+            }
+
+            string problem = RoutePlanner.FindProblem(points);
+            Assert.NotNull(problem);
+            Assert.Contains("поворот", problem);
+        }
+
+        [Theory]
+        [InlineData(1.0, 90)]
+        // Півколо однією кривою місцями на 7% крутіше за свій радіус, тому маршрут скруглює кути
+        // з запасом 1.05 (RouteBuilder.CornerRadiusFactor): із ним проходить і півколо
+        [InlineData(1.05, 180)]
+        [InlineData(1.0, 30)]
+        [InlineData(2.0, 90)]
+        public void TurnOnTheSmallestRadiusIsStillAllowed(double radiusFactor, double degrees)
+        {
+            // Дуга рівно на найменшому радіусі: суворіша перевірка не має відхиляти те, що правилом дозволено
+            double radius = RoutePlanner.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
+            var route = new List<RoutePoint>
+            {
+                new RoutePoint { Position = new Vec3d(-5, 0, 0), Tangent = new Vec3d(1, 0, 0) },
+                new RoutePoint { Position = new Vec3d(0, 0, 0), Tangent = new Vec3d(1, 0, 0) },
+                new RoutePoint
+                {
+                    Position = new Vec3d(radius * Math.Sin(angle), 0, radius * (1 - Math.Cos(angle))),
+                    Tangent = new Vec3d(Math.Cos(angle), 0, Math.Sin(angle))
+                }
+            };
+
+            Assert.Null(RoutePlanner.FindProblem(RouteCurve.BuildPoints(route)));
+        }
+
         // Рівний маршрут на схід із заданим нахилом полотна в кожній точці: tilt це синус кута нахилу
         private static List<PointOnBezierCurve> Tilted(Func<double, double> tilt)
         {

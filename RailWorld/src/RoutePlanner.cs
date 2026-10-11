@@ -550,10 +550,26 @@ namespace RailWorld
                 if (radius < MinRadius - RadiusTolerance || verticalRadius < MinRadius - RadiusTolerance) problems[i] = true;
             }
 
-            // Злам по висоті між сусідніми секціями. Попередня перевірка порівнює нахил на кінцях відрізка
-            // у два блоки і не бачить сходинки, що вміщається всередину нього: колія пірнає і вирівнюється,
-            // а нахил на обох кінцях той самий. Колія ж малюється секціями по дві точки нарізки, і злам це
-            // кут між двома сусідніми: його і міряємо
+            // Злам між сусідніми секціями. Попередня перевірка порівнює напрямок на кінцях відрізка
+            // у два блоки і не бачить вигину, що вміщається всередину нього: колія пірнає і вирівнюється
+            // або звертає вбік і одразу назад, а напрямок на обох кінцях той самий. Колія ж малюється
+            // секціями по дві точки нарізки, і злам це кут між двома сусідніми: його і міряємо.
+            // У плані досить осі: рейки там повторюють її на сталій відстані
+            for (int i = 2; i + 2 < count; i++)
+            {
+                Vec3d before = points[i - 2].position, here = points[i].position, after = points[i + 2].position;
+                double ax = here.X - before.X, az = here.Z - before.Z;
+                double bx = after.X - here.X, bz = after.Z - here.Z;
+                double turn = Math.Abs(Math.Atan2(ax * bz - az * bx, ax * bx + az * bz));
+                if (turn < 1e-6) continue;
+
+                // Від середини однієї секції до середини наступної
+                double radius = (run[i + 2] - run[i - 2]) / 2 / turn;
+                if (radius < minRadius) minRadius = radius;
+                if (radius < MinRadius - RadiusTolerance) problems[i] = true;
+            }
+
+            // Те саме по висоті.
             // Міряється по осі колії і по кожній рейці окремо. Там, де різко міняється нахил полотна, вісь
             // лишається на місці, а рейки розходяться: одна йде вгору, друга вниз, і ламаються обидві
             double halfGauge = TrackGauge.StandardWidth / 2;
