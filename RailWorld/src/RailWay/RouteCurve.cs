@@ -247,21 +247,186 @@ namespace RailWorld.src.RailWay
             // Місце перетину осей і номер точки нарізки перед ним
             public Vec3d Where;
             public int Index;
-            // Пів довжини вузла вздовж маршруту і вздовж колії, яку він перетинає
-            public double Half;
-            public double HalfOnTrack;
+            // Вузол перетину: ділянка, на якій габарити маршруту і перетнутої колії перекриваються.
+            // На скільки блоків уздовж маршруту він тягнеться назад і вперед від місця, де перетнулися осі
+            public double Before, After;
+            // Шматки маршруту у вузлі: від точки нарізки FirstPiece до точки LastPiece + 1
+            public int FirstPiece, LastPiece;
+            // Перетнута колія в обидва боки від перетнутої секції: [0] у бік її початку, [1] у бік кінця
+            public List<Section>[] Chain = new List<Section>[2];
+            // Скільки перших секцій кожного боку лежать у вузлі
+            public int[] Members = new int[2];
+            // Якщо колія з цього боку дійшла до стику, де розходиться стрілкою: гілки за цим стиком
+            public List<SectionLink>[] Fork = new List<SectionLink>[2];
         }
 
         /// <summary>
-        /// Пів довжини вузла перетину вздовж однієї з двох колій: поки колії перекриваються. Колія це смуга
-        /// завширшки зі свій габарит (Footprint), а не лише її рейки: рейки двох колій розходяться раніше,
-        /// ніж шпали, і якби вузол кінчався по рейках, шпала однієї колії лишалася б під рейкою другої.
-        /// own це ширина габариту колії, вздовж якої міряємо, other тієї, що її перетинає.
-        /// Що гостріший кут, то довший вузол.
+        /// Далі за стільки блоків від місця, де перетнулися осі двох колій, їхній вузол не тягнеться. На прямих
+        /// під найгострішим дозволеним кутом це 7.4 блока; на кривій, що повертає в бік другої колії, більше.
+        /// Потрібне тим, хто шукає перетини поблизу: як далеко дивитися.
         /// </summary>
-        internal static double CrossingHalf(double own, double other, double angle)
+        public const double MaxNodeReach = 12;
+
+        // Запобіжники для вимірювання вузла: скільки секцій колії в кожен бік і шматків маршруту він може займати
+        private const int MaxNodeSections = 64;
+        private const int MaxNodePieces = 256;
+        // На скільки шматків маршруту за край вузла дивитися, чи не лежить він на гілці стрілки за стиком
+        private const int ForkPieces = 8;
+
+        /// <summary>
+        /// Міряє вузол перетину: іде від місця, де перетнулися осі, вздовж маршруту і вздовж перетнутої колії,
+        /// доки їхні габарити перекриваються (Footprint). Колія це смуга завширшки зі свій габарит, а не лише
+        /// рейки: рейки двох колій розходяться раніше, ніж шпали. Що гостріший кут, то довший вузол, а на кривій
+        /// він різний у два боки: там, де колії сходяться, довший, де розходяться, коротший.
+        /// </summary>
+        private static void MeasureNode(Crossing crossing, List<PointOnBezierCurve> points, double[] run, Func<SectionLink, Section> resolve)
         {
-            return other / 2 / Math.Sin(angle) + own / 2 / Math.Tan(angle);
+            for (int end = 0; end < 2; end++)
+            {
+                var chain = new List<Section>();
+                Section current = crossing.Section;
+                bool exitAtStart = end == 0;
+                while (chain.Count < MaxNodeSections)
+                {
+                    List<SectionLink> links = current.GetLinks(exitAtStart);
+                    if (links.Count >= 2)
+                    {
+                        crossing.Fork[end] = links;
+                        break;
+                    }
+                    if (links.Count != 1 || resolve == null) break;
+                    Section next = resolve(links[0]);
+                    if (next == null) break;
+
+                    chain.Add(next);
+                    exitAtStart = !links[0].AtStart;
+                    current = next;
+                }
+                crossing.Chain[end] = chain;
+            }
+
+            var all = new List<Section> { crossing.Section };
+            all.AddRange(crossing.Chain[0]);
+            all.AddRange(crossing.Chain[1]);
+
+            int count = points.Count, k = crossing.Index;
+            int last = k;
+            while (last + 2 < count && last - k < MaxNodePieces && PieceOnTrack(points, last + 1, all)) last++;
+            int first = k;
+            while (first - 1 >= 0 && k - first < MaxNodePieces && PieceOnTrack(points, first - 1, all)) first--;
+
+            crossing.FirstPiece = first;
+            crossing.LastPiece = last;
+            crossing.After = run[last + 1] - crossing.At;
+            crossing.Before = crossing.At - run[first];
+
+            for (int end = 0; end < 2; end++)
+            {
+                List<Section> chain = crossing.Chain[end];
+                int members = 0;
+                while (members < chain.Count && SectionOnRoute(chain[members], points, first, last)) members++;
+                crossing.Members[end] = members;
+            }
+        }
+
+        // Чи шматок маршруту між точками piece і piece + 1 лежить габаритом на котрійсь із секцій
+        private static bool PieceOnTrack(List<PointOnBezierCurve> points, int piece, List<Section> sections)
+        {
+            Vec3d from = points[piece].position, to = points[piece + 1].position;
+            foreach (Section section in sections)
+            {
+                if (Footprint.Overlap(from, to, Footprint.StandardWidth, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _)) return true;
+            }
+            return false;
+        }
+
+        // Чи секція лежить габаритом на котромусь зі шматків маршруту від firstPiece до lastPiece
+        private static bool SectionOnRoute(Section section, List<PointOnBezierCurve> points, int firstPiece, int lastPiece)
+        {
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            double width = Footprint.Width(section);
+            for (int piece = Math.Max(firstPiece, 0); piece <= lastPiece && piece + 1 < points.Count; piece++)
+            {
+                if (Footprint.Overlap(points[piece].position, points[piece + 1].position, Footprint.StandardWidth, start, end, width, out _, out _)) return true;
+            }
+            return false;
+        }
+
+        // Точки маршруту, від яких залежить, що вузол зачіпає на перетнутій колії: сам вузол і трохи за його краї
+        private static double[] NodeSignature(Crossing crossing, List<PointOnBezierCurve> points)
+        {
+            int from = Math.Max(crossing.FirstPiece - ForkPieces, 0);
+            int to = Math.Min(crossing.LastPiece + 1 + ForkPieces, points.Count - 1);
+            double[] signature = new double[(to - from + 1) * 3];
+            int at = 0;
+            for (int i = from; i <= to; i++)
+            {
+                Vec3d p = points[i].position;
+                signature[at++] = p.X;
+                signature[at++] = p.Y;
+                signature[at++] = p.Z;
+            }
+            return signature;
+        }
+
+        private static bool SameNumbers(double[] a, double[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
+        }
+
+        // Чи вузол накладається на тіло стрілки перетнутої колії. Тіло починається на стику, з якого колія
+        // розходиться, тож вузол, що доходить до самого стику, але не лягає на гілки за ним, його не зачіпає
+        private static bool NodeReachesSwitch(Crossing crossing, List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve)
+        {
+            for (int end = 0; end < 2; end++)
+            {
+                List<Section> chain = crossing.Chain[end];
+                for (int n = 0; n < crossing.Members[end]; n++)
+                {
+                    if (SwitchZone.InBody(chain[n], resolve)) return true;
+                }
+
+                if (crossing.Fork[end] == null || crossing.Members[end] < chain.Count || resolve == null) continue;
+                foreach (SectionLink link in crossing.Fork[end])
+                {
+                    Section branch = resolve(link);
+                    if (branch != null && SectionOnRoute(branch, points, crossing.FirstPiece - ForkPieces, crossing.LastPiece + ForkPieces)) return true;
+                }
+            }
+            return false;
+        }
+
+        // Чи у вузлі на перетнутій колії вже лежить третя колія: інший перетин або колія впритул. Вузол це місце
+        // рівно двох колій, і секції перетнутої колії в ньому не мають лежати габаритом ні на чому іншому
+        private static bool NodeOnAnotherTrack(Crossing crossing, TrackIndex track)
+        {
+            var own = new HashSet<Section> { crossing.Section };
+            own.UnionWith(crossing.Chain[0]);
+            own.UnionWith(crossing.Chain[1]);
+
+            var members = new List<Section> { crossing.Section };
+            for (int end = 0; end < 2; end++)
+            {
+                for (int n = 0; n < crossing.Members[end]; n++) members.Add(crossing.Chain[end][n]);
+            }
+
+            foreach (Section member in members)
+            {
+                Vec3d middle = member.GetGlobalPos();
+                foreach (Section other in track.Around(middle, TrackSurvey.Reach, CrossingClearance))
+                {
+                    // Сама перетнута колія, і гілка стрілки одразу за її стиком: про стрілку окреме правило
+                    if (own.Contains(other) || Footprint.Joined(member, other)) continue;
+                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= CrossingClearance) continue;
+                    if (Footprint.Overlap(member, other)) return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
@@ -359,10 +524,20 @@ namespace RailWorld.src.RailWay
                         continue;
                     }
 
-                    // Вузол перетину тягнеться вздовж колії в обидва боки від місця, де перетнулися осі: на косому
-                    // перетині на кілька блоків. На тіло стрілки він не накладається ніде, а не лише в цій секції
-                    if (hit.ReachesSwitchBody == null)
-                        hit.ReachesSwitchBody = SwitchBodyWithin(section, where, CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle), resolve);
+                    // Вузол перетину тягнеться вздовж обох колій від місця, де перетнулися осі: на косому перетині
+                    // на кілька блоків. Що він зачіпає на перетнутій колії, пам'ятається, доки маршрут у ньому той самий
+                    var crossing = new Crossing { Hit = hit, At = at, Section = section, Angle = angle, Where = where, Index = k };
+                    MeasureNode(crossing, points, run, resolve);
+                    double[] signature = NodeSignature(crossing, points);
+                    if (!SameNumbers(hit.NodeSignature, signature))
+                    {
+                        hit.NodeSignature = signature;
+                        hit.ReachesSwitchBody = null;
+                        hit.NearAnotherCrossing = null;
+                    }
+
+                    // На тіло стрілки вузол не накладається ніде, а не лише в перетнутій секції
+                    if (hit.ReachesSwitchBody == null) hit.ReachesSwitchBody = NodeReachesSwitch(crossing, points, resolve);
                     if (hit.ReachesSwitchBody.Value)
                     {
                         conflict = conflict ?? "перетин надто близько до стрілки";
@@ -370,9 +545,7 @@ namespace RailWorld.src.RailWay
                         continue;
                     }
 
-                    crossings.Add(new Crossing { Hit = hit, At = at, Section = section, Angle = angle, Where = where, Index = k,
-                        Half = CrossingHalf(Footprint.StandardWidth, Footprint.Width(section), angle),
-                        HalfOnTrack = CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle) });
+                    crossings.Add(crossing);
                 }
             }
             if (crossings.Count == 0) return false;
@@ -384,7 +557,7 @@ namespace RailWorld.src.RailWay
             for (int i = 0; i + 1 < crossings.Count; i++)
             {
                 Crossing near = crossings[i], far = crossings[i + 1];
-                if (far.At - near.At >= near.Half + far.Half) continue;
+                if (far.At - far.Before >= near.At + near.After) continue;
 
                 conflict = conflict ?? "два перетини надто близько один до одного";
                 Mark(near.Index);
@@ -393,7 +566,7 @@ namespace RailWorld.src.RailWay
             // Потім перетин, поруч з яким на тій самій колії вже є перетин з іншою, якої маршрут не зачіпає
             foreach (Crossing crossing in crossings)
             {
-                if (crossing.Hit.NearAnotherCrossing == null) crossing.Hit.NearAnotherCrossing = NearLaidCrossing(crossing, track, resolve);
+                if (crossing.Hit.NearAnotherCrossing == null) crossing.Hit.NearAnotherCrossing = NodeOnAnotherTrack(crossing, track);
                 if (!crossing.Hit.NearAnotherCrossing.Value) continue;
 
                 conflict = conflict ?? "перетин надто близько до іншого перетину";
@@ -408,13 +581,13 @@ namespace RailWorld.src.RailWay
             var zones = new List<int[]>();
             foreach (Crossing crossing in crossings)
             {
-                // Поки колії перекриваються, і ще трохи: далі від точки перетину осей, якщо кут гостріший
-                double half = crossing.Half + CrossingMargin;
+                // Поки колії перекриваються, і ще трохи
+                double zoneFrom = crossing.At - crossing.Before - CrossingMargin, zoneTo = crossing.At + crossing.After + CrossingMargin;
 
                 int from = -1, to = -1;
                 for (int i = 0; i < count; i++)
                 {
-                    if (Math.Abs(run[i] - crossing.At) > half) continue;
+                    if (run[i] < zoneFrom || run[i] > zoneTo) continue;
 
                     Vec3d p = points[i].position;
                     Vec3f travel = points[i].tangent;
@@ -534,77 +707,6 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Чи вздовж колії, не далі ніж за reach блоків від точки where на секції section, починається тіло стрілки
-        private static bool SwitchBodyWithin(Section section, Vec3d where, double reach, Func<SectionLink, Section> resolve)
-        {
-            for (int end = 0; end < 2; end++)
-            {
-                Section current = section;
-                bool exitAtStart = end == 0;
-                // Скільки пройдено вздовж колії до початку поточної секції, якщо йти від where
-                double passed = -PlanLength(where, current.GetEndPosition(!exitAtStart));
-
-                for (int hop = 0; hop < 64 && current != null && passed <= reach; hop++)
-                {
-                    if (SwitchZone.InBody(current, resolve)) return true;
-                    passed += PlanLength(current.GetEndPosition(!exitAtStart), current.GetEndPosition(exitAtStart));
-
-                    List<SectionLink> links = current.GetLinks(exitAtStart);
-                    // Колія розходиться: це стик стрілки, і її тіло починається просто за ним
-                    if (links.Count >= 2) return passed <= reach;
-                    if (links.Count != 1 || resolve == null) break;
-                    exitAtStart = !links[0].AtStart;
-                    current = resolve(links[0]);
-                }
-            }
-            return false;
-        }
-
-        // Чи на колії, яку маршрут перетинає, поруч уже є перетин з іншою колією: так близько, що два вузли
-        // наклалися б. Іде по колії від місця перетину в обидва боки і шукає, що її перетинає
-        private static bool NearLaidCrossing(Crossing crossing, TrackIndex track, Func<SectionLink, Section> resolve)
-        {
-            // Найдовший вузол, який може лежати на цій колії: під найгострішим дозволеним кутом
-            double length = Footprint.Width(crossing.Section);
-            double reach = crossing.HalfOnTrack + CrossingHalf(length, length, MinCrossingAngleDeg * Math.PI / 180);
-
-            for (int end = 0; end < 2; end++)
-            {
-                Section current = crossing.Section;
-                bool exitAtStart = end == 0;
-                // Скільки пройдено вздовж колії до початку поточної секції, якщо йти від місця перетину
-                Vec3d exit = current.GetEndPosition(exitAtStart);
-                double passed = -PlanLength(crossing.Where, current.GetEndPosition(!exitAtStart));
-
-                for (int hop = 0; hop < 64 && current != null; hop++)
-                {
-                    Vec3d from = current.GetEndPosition(!exitAtStart);
-                    exit = current.GetEndPosition(exitAtStart);
-
-                    foreach (Section other in track.Around(current.GetGlobalPos(), TrackSurvey.CrossReach, CrossingClearance + 1))
-                    {
-                        if (other == current || !Crosses(from, exit, other, out double t, out double angle)) continue;
-
-                        double away = passed + PlanLength(from, exit) * t;
-                        // Сам маршрут перетинає колію в нулі; до нього вузол не рахується, лише від нього
-                        if (away <= 1e-6) continue;
-                        if (Math.Abs(other.GetGlobalPos().Y - current.GetGlobalPos().Y) >= CrossingClearance) continue;
-                        if (away < crossing.HalfOnTrack + CrossingHalf(Footprint.Width(current), Footprint.Width(other), angle)) return true;
-                    }
-
-                    passed += PlanLength(from, exit);
-                    if (passed > reach) break;
-
-                    List<SectionLink> links = current.GetLinks(exitAtStart);
-                    if (links.Count != 1 || resolve == null) break;
-                    Section next = resolve(links[0]);
-                    exitAtStart = !links[0].AtStart;
-                    current = next;
-                }
-            }
-            return false;
-        }
-
         // Чи відрізок від from до to перетинає в плані вісь секції, і де: t це частка відрізка, angle кут між ними.
         // Спільний кінець двох секцій однієї колії і спільний початок двох гілок стрілки це не перетин
         internal static bool Crosses(Vec3d from, Vec3d to, Section other, out double t, out double angle)
@@ -631,11 +733,6 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
-        private static double PlanLength(Vec3d a, Vec3d b)
-        {
-            return Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
-        }
-
         // Секція тієї самої колії, що й section, найближча в плані до точки: площина колії міняється вздовж неї
         private static Section NearestInChain(Section section, Vec3d p, Func<SectionLink, Section> resolve)
         {
@@ -647,7 +744,7 @@ namespace RailWorld.src.RailWay
             {
                 Section current = section;
                 bool exitAtStart = end == 0;
-                for (int hop = 0; hop < 12; hop++)
+                for (int hop = 0; hop < MaxNodeSections; hop++)
                 {
                     List<SectionLink> links = current.GetLinks(exitAtStart);
                     if (links.Count != 1) break;

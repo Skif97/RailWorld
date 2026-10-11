@@ -430,11 +430,27 @@ namespace RailWorld.src.RailWay
 
             // Нова колія лежить на покладеній у тій самій площині лише там, де це стрілка або перетин.
             // Просто лягти поруч, шпалами на шпали, не можна: це вже не колія, а дві колії одна в одній.
-            // Місця перетинів осей нової ділянки з покладеними коліями: біля них накладання законне
-            var crossings = new List<KeyValuePair<int, double>>();
-            for (int i = 0; i < planned.Count; i++)
+            // Вузол перетину це ділянка накладання, в межах якої осі двох колій перетинаються
+            bool[] inNode = new bool[planned.Count];
+            for (int from = 0; from < planned.Count;)
             {
-                foreach (double angle in facts[i].Crossed) crossings.Add(new KeyValuePair<int, double>(i, angle));
+                if (facts[from].InPlane.Count == 0)
+                {
+                    from++;
+                    continue;
+                }
+
+                int to = from;
+                bool crossed = facts[from].Crossed.Count > 0;
+                while (to + 1 < planned.Count && facts[to + 1].InPlane.Count > 0
+                    && planned[to].FullEndPosition.DistanceTo(planned[to + 1].FullStartPosition) <= PositionTolerance)
+                {
+                    to++;
+                    crossed |= facts[to].Crossed.Count > 0;
+                }
+
+                for (int i = from; crossed && i <= to; i++) inNode[i] = true;
+                from = to + 1;
             }
 
             // Чи секція лежить у стрілці колії, якою вона стане після побудови
@@ -448,14 +464,8 @@ namespace RailWorld.src.RailWay
                 if (facts[i].InPlane.Count == 0) continue;
                 Section other = facts[i].InPlane[0];
 
-                // Спершу перетин: це видно одразу, а щоб дізнатися про стрілку, треба пройти вздовж колії
-                bool atCrossing = false;
-                foreach (KeyValuePair<int, double> crossing in crossings)
-                {
-                    double room = RouteCurve.CrossingHalf(Footprint.Width(planned[i]), Footprint.Width(other), crossing.Value) + 1;
-                    if (Math.Abs(i - crossing.Key) * 0.5 <= room) atCrossing = true;
-                }
-                if (atCrossing) continue;
+                // Спершу перетин: це вже відомо, а щоб дізнатися про стрілку, треба пройти вздовж колії
+                if (inNode[i]) continue;
 
                 Section laid = Find(new SectionLink(other, true));
                 if (InSwitch(planned[i]) && InSwitch(laid)) continue;
@@ -586,12 +596,13 @@ namespace RailWorld.src.RailWay
 
         // Чи вузол перетину з чужою колією накладається на тіло стрілки. Вузол тягнеться вздовж колії в обидва
         // боки від місця, де перетнулися осі, тож шукати перетини треба не лише в самому тілі, а й далі від
-        // нього: на спільній колії перед стиком і на гілках за тілом
+        // нього: на спільній колії перед стиком і на гілках за тілом. Дістає вузол до тіла чи ні, видно
+        // з габаритів: чи лежить колія, що перетинає, на котрійсь секції тіла
         private static bool CrossedNearBody(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve,
             TrackIndex track)
         {
             // Далі за найдовший можливий вузол шукати нема чого
-            double reach = RouteCurve.CrossingHalf(Footprint.Width(trunk), Footprint.Width(trunk), RouteCurve.MinCrossingAngleDeg * Math.PI / 180);
+            double reach = RouteCurve.MaxNodeReach;
             var steps = new List<BodyStep>();
             var own = new HashSet<string>();
             string Key(Section section) => section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
@@ -623,21 +634,36 @@ namespace RailWorld.src.RailWay
                 if (section != null) Walk(section, first.AtStart, branch.ZoneSections);
             }
 
+            bool crossed = false;
             foreach (BodyStep step in steps)
             {
                 Vec3d from = step.Section.GetEndPosition(step.Entered), to = step.Section.GetEndPosition(!step.Entered);
                 Vec3d middle = step.Section.GetGlobalPos();
-                double length = from.DistanceTo(to);
 
                 foreach (Section other in track.Around(middle, TrackSurvey.CrossReach, RouteCurve.CrossingClearance))
                 {
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
                     if (own.Contains(Key(other))) continue;
                     if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
-                    if (!RouteCurve.Crosses(from, to, other, out double t, out double angle)) continue;
+                    if (!RouteCurve.Crosses(from, to, other, out _, out _)) continue;
 
                     if (step.InBody) return true;
-                    if (step.At + length * t < RouteCurve.CrossingHalf(Footprint.Width(step.Section), Footprint.Width(other), angle)) return true;
+                    crossed = true;
+                }
+            }
+            if (!crossed) return false;
+
+            // Перетин поруч є. Його вузол дістає до тіла стрілки, якщо чужа колія лежить габаритом на секції тіла
+            foreach (BodyStep step in steps)
+            {
+                if (!step.InBody) continue;
+                Vec3d middle = step.Section.GetGlobalPos();
+
+                foreach (Section other in track.Around(middle, TrackSurvey.Reach, RouteCurve.CrossingClearance))
+                {
+                    if (own.Contains(Key(other))) continue;
+                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+                    if (Footprint.Overlap(step.Section, other)) return true;
                 }
             }
             return false;

@@ -350,6 +350,77 @@ namespace RailWorld.Tests
             Assert.True(checkedPoints > 10);
         }
 
+        // Маршрут, що перетинає покладену колію в точці (x, z) у напрямку angle і з обох боків піднятий на 2 блоки: це ближче за просвіт, тож перетин в одному рівні.
+        // Повертає, на скільки блоків до і після перетину він лежить у площині колії, і перевіряє головне:
+        // усюди, де його габарит ще перекривається з габаритом колії, він у її площині
+        private void CrossAt(List<Section> laid, double x, double z, double angle, out double before, out double after)
+        {
+            var direction = new Vec3d(Math.Cos(angle), 0, Math.Sin(angle));
+            var route = new List<RoutePoint>
+            {
+                new RoutePoint { Position = new Vec3d(x - 24 * direction.X, 2, z - 24 * direction.Z), Tangent = direction },
+                new RoutePoint { Position = new Vec3d(x + 24 * direction.X, 2, z + 24 * direction.Z), Tangent = direction }
+            };
+
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, Resolve, out string conflict, SectionsIn);
+            Assert.Null(conflict);
+
+            before = after = 0;
+            for (int i = 0; i + 1 < points.Count; i++)
+            {
+                Vec3d p = points[i].position, q = points[i + 1].position;
+                bool onTrack = laid.Exists(section => Footprint.Overlap(p, q, Footprint.StandardWidth,
+                    section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _));
+                if (onTrack)
+                {
+                    Assert.True(Math.Abs(p.Y) < 0.02 && Math.Abs(q.Y) < 0.02,
+                        "маршрут уже не в площині колії, а їхні габарити ще перекриваються: висота " + p.Y.ToString("0.000"));
+                }
+
+                if (Math.Abs(p.Y) > 0.02) continue;
+                double along = (p.X - x) * direction.X + (p.Z - z) * direction.Z;
+                before = Math.Max(before, -along);
+                after = Math.Max(after, along);
+            }
+        }
+
+        [Fact]
+        public void NodeOnAStraightTrackIsTheSameLengthBothWays()
+        {
+            // Пряма колія на схід, маршрут перетинає її під 35 градусів
+            List<Section> laid = Lay(Point(-30, 0, 1, 0), Point(30, 0, 1, 0));
+            CrossAt(laid, 0, 0, 35 * Math.PI / 180, out double before, out double after);
+
+            // Дві смуги по 1.95 блока під кутом 35 градусів перекриваються на 3.09 блока в кожен бік.
+            // Маршрут лежить у площині ще пів блока запасу, і плавний перехід по висоті починається полого
+            Assert.InRange(before, 3.0, 5.0);
+            Assert.InRange(after, 3.0, 5.0);
+            Assert.True(Math.Abs(before - after) < 0.4, "вузол на прямій колії вийшов різним у два боки: " + before.ToString("0.00") + " і " + after.ToString("0.00"));
+        }
+
+        [Fact]
+        public void NodeOnACurvedTrackIsLongerWhereTheTracksConverge()
+        {
+            // Колія дугою радіуса 14. Маршрут перетинає її під тими самими 35 градусами, але дуга повертає:
+            // з одного боку від перетину колії сходяться і лежать одна на одній довше, з другого розходяться
+            // раніше. Довжина вузла, порахована за кутом у точці перетину, була б однакова в обидва боки
+            double radius = 14;
+            RoutePoint OnArc(double degrees)
+            {
+                double a = degrees * Math.PI / 180;
+                return Point(radius * Math.Sin(a), radius * (1 - Math.Cos(a)), Math.Cos(a), Math.Sin(a));
+            }
+            List<Section> laid = Lay(OnArc(50), OnArc(100));
+
+            RoutePoint crossing = OnArc(75);
+            CrossAt(laid, crossing.Position.X, crossing.Position.Z, (75 - 35) * Math.PI / 180, out double before, out double after);
+
+            Assert.True(Math.Abs(before - after) > 0.8, "вузол на кривій вийшов однаковим у два боки: " + before.ToString("0.00") + " і " + after.ToString("0.00"));
+            // Довший бік довший за вузол на прямій, коротший не коротший за прямий перетин двох смуг
+            Assert.True(Math.Max(before, after) > 3.6);
+            Assert.True(Math.Min(before, after) > 1.4);
+        }
+
         // Точка на схилі, що піднімається на схід: 0.4 блока на блок, це близько 22 градусів
         private static RoutePoint Uphill(double x)
         {
