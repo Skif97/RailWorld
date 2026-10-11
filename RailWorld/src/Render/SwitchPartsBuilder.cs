@@ -178,7 +178,7 @@ namespace RailWorld
         // Вкладиш між шийками ходової рейки й контррейки: довжина вздовж колії і висота верху над підошвою, блоків.
         // Верх нижчий за головку рейки, щоб гребінь колеса проходив над ним
         private const double SpacerLength = 0.1;
-        private const double SpacerTop = 1.5 / 16;
+        private const double SpacerTop = RailProfile.SpacerTop;
 
         /// <summary>
         /// Ставить контррейку: коротку рейку навпроти хрестовини, біля зовнішньої рейки колії, з боку її осі.

@@ -22,6 +22,11 @@ namespace RailWorld.src.RailWay
         public const double HeadBottom = 1.8 / 16;
         /// <summary>Верх головки над низом підошви.</summary>
         public const double Top = 2.5 / 16;
+        /// <summary>
+        /// Верх вкладиша між шийками ходової рейки й контррейки стрілки над низом підошви. Нижчий за головку
+        /// рейки, щоб гребінь колеса проходив над ним.
+        /// </summary>
+        public const double SpacerTop = 1.5 / 16;
     }
 
     /// <summary>

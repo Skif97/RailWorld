@@ -19,6 +19,9 @@ namespace RailWorld
         private ClientTrack track;
         private SwitchAnimator animator;
         private SwitchPartsBuilder builder;
+        private CrossingPartsBuilder crossingBuilder;
+        // Рейки перетинів, пораховані за поточну перебудову чанка: їх питає і розкладка рейок, і збирач деталей
+        private Dictionary<string, CrossingRails> crossingRails = new Dictionary<string, CrossingRails>();
         private bool disposed;
 
         public TrackChunkRenderer(ICoreClientAPI capi, RailWayRendererSystem renderer, ClientTrack track, SwitchAnimator animator)
@@ -28,6 +31,7 @@ namespace RailWorld
             this.track = track;
             this.animator = animator;
             builder = new SwitchPartsBuilder(renderer, track, animator);
+            crossingBuilder = new CrossingPartsBuilder(renderer);
         }
 
         /// <summary>Після цього відкладені перебудови вже нічого не малюють: рендера більше немає.</summary>
@@ -48,6 +52,7 @@ namespace RailWorld
             var bladeSections = new List<Section>();
             // Розкладки брусів стрілок, які знадобилися цій перебудові: стрілка може лежати і в сусідньому чанку
             var layouts = new Dictionary<string, TimberLayout>();
+            crossingRails.Clear();
 
             foreach (var kvp in sections)
             {
@@ -115,6 +120,10 @@ namespace RailWorld
                 renderer.RebuildRails(chunkCoord, railSections, BladeShape);
 
             foreach (Section section in bladeSections) builder.Build(chunkCoord, section);
+            if (data != null)
+            {
+                foreach (RailCrossing record in data.Crossings.Values) crossingBuilder.Build(chunkCoord, record, RailsOf(chunkCoord, record));
+            }
             renderer.EndParts(chunkCoord);
         }
 
@@ -237,40 +246,63 @@ namespace RailWorld
             string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_x" + record.Key;
             if (known.TryGetValue(key, out TimberLayout layout)) return layout;
             known[key] = layout = new TimberLayout();
-            if (!record.Complete || record.Tracks.Count != 2) return layout;
-
-            var tracks = new List<Section>[2];
-            var centers = new int[2];
-            for (int k = 0; k < 2; k++)
-            {
-                CrossingTrack crossed = record.Tracks[k];
-                Section center = crossed.Center >= 1 && crossed.Center <= crossed.Members.Count ? track.FindSection(crossed.Members[crossed.Center - 1]) : null;
-                if (center == null) return layout;
-
-                // Від перетнутої секції в обидва боки, до першої секції без шпали: далі розкладка не йде
-                var before = new List<Section>();
-                for (int n = crossed.Center - 2; n >= 0; n--)
-                {
-                    Section section = track.FindSection(crossed.Members[n]);
-                    if (section == null || !section.SleeperInstalled) break;
-                    before.Add(section);
-                }
-                before.Reverse();
-
-                tracks[k] = before;
-                centers[k] = before.Count;
-                tracks[k].Add(center);
-                for (int n = crossed.Center; n < crossed.Members.Count; n++)
-                {
-                    Section section = track.FindSection(crossed.Members[n]);
-                    if (section == null || !section.SleeperInstalled) break;
-                    tracks[k].Add(section);
-                }
-            }
+            if (!CrossingTracks(record, out List<Section>[] tracks, out _, out int[] centers)) return layout;
 
             layout = NodeTimbers.LayCrossing(tracks[0], centers[0], tracks[1], centers[1]);
             known[key] = layout;
             return layout;
+        }
+
+        // Рейки перетину із записом record, що лежить у чанку chunk. null у незібраного перетину і якщо його
+        // прочитати не вдається: тоді кожна секція малює власні рейки
+        private CrossingRails RailsOf(Vec3i chunk, RailCrossing record)
+        {
+            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            if (crossingRails.TryGetValue(key, out CrossingRails rails)) return rails;
+
+            rails = CrossingTracks(record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
+                ? CrossingGeometry.Build(tracks, entered, centers) : null;
+            crossingRails[key] = rails;
+            return rails;
+        }
+
+        // Секції двох колій зібраного перетину по порядку крізь вузол: від перетнутої секції в обидва боки,
+        // до першої секції без шпали чи рейок. entered каже, котрим кінцем у секцію заїжджають у цьому
+        // порядку, centers номери перетнутих секцій. false, якщо перетин не зібрано або прочитати його не вдається
+        private bool CrossingTracks(RailCrossing record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
+        {
+            tracks = new List<Section>[2];
+            entered = new List<bool>[2];
+            centers = new int[2];
+            if (!record.Complete || record.Tracks.Count != 2) return false;
+
+            for (int k = 0; k < 2; k++)
+            {
+                CrossingTrack crossed = record.Tracks[k];
+                if (crossed.Center < 1 || crossed.Center > crossed.Members.Count) return false;
+                if (track.FindSection(crossed.Members[crossed.Center - 1]) == null) return false;
+
+                int from = crossed.Center - 1, to = crossed.Center - 1;
+                while (from - 1 >= 0 && Fitted(crossed.Members[from - 1])) from--;
+                while (to + 1 < crossed.Members.Count && Fitted(crossed.Members[to + 1])) to++;
+
+                tracks[k] = new List<Section>();
+                entered[k] = new List<bool>();
+                for (int n = from; n <= to; n++)
+                {
+                    tracks[k].Add(track.FindSection(crossed.Members[n]));
+                    entered[k].Add(crossed.Members[n].AtStart);
+                }
+                centers[k] = crossed.Center - 1 - from;
+            }
+            return true;
+        }
+
+        // Чи секція за посиланням відома клієнту і має шпалу й обидві рейки
+        private bool Fitted(SectionLink link)
+        {
+            Section section = track.FindSection(link);
+            return section != null && section.SleeperInstalled && section.RailsInstalled;
         }
 
         // Кладе брус стрілки: з того самого дерева, що й шпала секції, на місці якої він лежить
@@ -299,8 +331,9 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Каже рендеру рейок не малювати ту рейку, місце якої займає деталь стрілки: внутрішню рейку колії
-        /// на секціях гостряка і на секціях хрестовини. Для решти рейок повертає null.
+        /// Каже рендеру рейок не малювати ту рейку, місце якої займає деталь стрілки чи перетину: внутрішню
+        /// рейку колії на секціях гостряка і хрестовини, рейку з жолобами у вузлі перетину. Для решти рейок
+        /// повертає null.
         /// </summary>
         private RailShape BladeShape(Section section, bool left)
         {
@@ -316,6 +349,13 @@ namespace RailWorld
                 Section partner = track.Opposite(record, place);
                 if (partner == null) continue;
                 if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return new RailShape { Hidden = true };
+            }
+
+            // Рейку секції у вузлі перетину заміняє рейка перетину, з жолобами для реборд
+            if (track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at))
+            {
+                CrossingRails rails = RailsOf(at.Chunk, crossing);
+                if (rails != null && rails.Hides(section, left ? SectionPart.FirstRail : SectionPart.SecondRail)) return new RailShape { Hidden = true };
             }
             return null;
         }
