@@ -87,6 +87,9 @@ namespace RailWorld
         private SwitchAnimator switchAnimator;
         private TrackChunkRenderer chunkRenderer;
 
+        /// <summary>Журнал побудов колії, тільки на сервері: з нього команда /railundo відкочує останні побудови.</summary>
+        public BuildJournal Journal { get; private set; }
+
         // Що виділив кожен гравець і коли почав взаємодію, тільки на сервері
         private Dictionary<string, SectionActionPacket> serverSelections = new Dictionary<string, SectionActionPacket>();
         private Dictionary<string, long> serverUsingSince = new Dictionary<string, long>();
@@ -159,6 +162,14 @@ namespace RailWorld
             // Кеш статичний і міг лишитися від попереднього світу
             DataInChunk.ClearServerCache();
             SwitchRegistry.Reset();
+            Journal = new BuildJournal();
+
+            api.ChatCommands.Create("railundo")
+                .WithDescription("Undoes your last track builds, newest first. Creative mode only")
+                .RequiresPrivilege(Privilege.chat)
+                .RequiresPlayer()
+                .WithArgs(api.ChatCommands.Parsers.OptionalInt("count", 1))
+                .HandleWith(OnRailUndoCommand);
 
             // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
@@ -433,6 +444,27 @@ namespace RailWorld
                     Handler.OnSectionBroken(world, sel, fromPlayer);
                     break;
             }
+        }
+
+        // Відкочує останні побудови гравця. Повернуті блоки нічого не коштують, тому лише в креативі:
+        // у виживанні так можна було б розмножувати блоки, зламані при побудові
+        private TextCommandResult OnRailUndoCommand(TextCommandCallingArgs args)
+        {
+            IPlayer player = args.Caller.Player;
+            if (player.WorldData.CurrentGameMode != EnumGameMode.Creative) return TextCommandResult.Error("Відкат побудови працює лише в креативі");
+
+            int wanted = GameMath.Clamp((int)args[0], 1, BuildJournal.MaxRecords);
+            int undone = 0, sections = 0, blocks = 0;
+            while (undone < wanted && Journal.UndoLast(sapi.World, player, out int removed, out int restored))
+            {
+                undone++;
+                sections += removed;
+                blocks += restored;
+            }
+            if (undone == 0) return TextCommandResult.Error("Немає побудов, які можна відкотити");
+
+            return TextCommandResult.Success(string.Format("Відкочено побудов: {0}. Секцій прибрано: {1}, блоків повернуто: {2}. Ще можна відкотити: {3}",
+                undone, sections, blocks, Journal.Count(player.PlayerUID)));
         }
 
         // Щойно завантажена колонка чанків: дописує її стрілки, яких ще немає в записах, і дораховує стрілки

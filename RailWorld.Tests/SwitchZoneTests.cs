@@ -39,7 +39,8 @@ namespace RailWorld.Tests
             LaySwitch();
 
             // За дві секції від стрілки, там ще гостряк
-            Assert.Equal(0, SectionLinker.FindSwitchInZone(BranchAfter(1), SectionsIn, Resolve));
+            Assert.NotNull(SectionLinker.FindSwitchProblem(BranchAfter(1), SectionsIn, Resolve, out int at));
+            Assert.Equal(0, at);
         }
 
         [Fact]
@@ -49,7 +50,7 @@ namespace RailWorld.Tests
             RailSwitch built = SwitchBuilder.Build(trunk[trunk.Count - 1], false, Resolve);
             int beyond = built.Branches[0].ZoneSections + SwitchZone.ClearSections + 3;
 
-            Assert.Equal(-1, SectionLinker.FindSwitchInZone(BranchAfter(beyond), SectionsIn, Resolve));
+            Assert.Null(SectionLinker.FindSwitchProblem(BranchAfter(beyond), SectionsIn, Resolve, out _));
         }
 
         [Fact]
@@ -61,7 +62,7 @@ namespace RailWorld.Tests
             Vec3d end = last.FullEndPosition;
 
             List<Section> more = Plan(Point(end.X, end.Z, 1, 0), Point(end.X + 6, end.Z, 1, 0));
-            Assert.Equal(-1, SectionLinker.FindSwitchInZone(more, SectionsIn, Resolve));
+            Assert.Null(SectionLinker.FindSwitchProblem(more, SectionsIn, Resolve, out _));
         }
 
         [Fact]
@@ -72,7 +73,7 @@ namespace RailWorld.Tests
             Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
             List<Section> loop = Plan(Point(10, 0, 1, 0), Point(13, 0.5, 1, 0), Point(16, 0, 1, 0));
 
-            Assert.True(SectionLinker.FindSwitchInZone(loop, SectionsIn, Resolve) >= 0);
+            Assert.NotNull(SectionLinker.FindSwitchProblem(loop, SectionsIn, Resolve, out _));
         }
 
         [Fact]
@@ -82,7 +83,7 @@ namespace RailWorld.Tests
             Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
             List<Section> siding = Plan(Point(10, 0, 1, 0), Point(20, 3, 1, 0), Point(40, 3, 1, 0), Point(50, 0, 1, 0));
 
-            Assert.Equal(-1, SectionLinker.FindSwitchInZone(siding, SectionsIn, Resolve));
+            Assert.Null(SectionLinker.FindSwitchProblem(siding, SectionsIn, Resolve, out _));
         }
 
         [Fact]
@@ -91,7 +92,7 @@ namespace RailWorld.Tests
             List<Section> main = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
             List<Section> siding = Plan(Point(10, 0, 1, 0), Point(20, 3, 1, 0), Point(40, 3, 1, 0), Point(50, 0, 1, 0));
 
-            SectionLinker.FindSwitchInZone(siding, SectionsIn, Resolve);
+            SectionLinker.FindSwitchProblem(siding, SectionsIn, Resolve, out _);
 
             // Примірка йшла на копіях: у покладених секцій сусідів стільки ж, скільки було
             foreach (Section section in main)
@@ -99,6 +100,96 @@ namespace RailWorld.Tests
                 Assert.True(section.GetLinks(true).Count <= 1);
                 Assert.True(section.GetLinks(false).Count <= 1);
             }
+        }
+
+        // Точка маршруту на заданій висоті
+        private static RoutePoint High(double x, double y, double z, double tangentX, double tangentZ)
+        {
+            return new RoutePoint { Position = new Vec3d(x, y, z), Tangent = new Vec3d(tangentX, 0, tangentZ).Normalize() };
+        }
+
+        [Fact]
+        public void TrackLaidAlongAnotherWithinItsGaugeIsRefused()
+        {
+            // Нова колія за пів блока вбік від покладеної, тридцять блоків поспіль
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> along = Plan(Point(10, 0.5, 1, 0), Point(40, 0.5, 1, 0));
+
+            Assert.True(SectionLinker.FindLongOverlap(along, SectionsIn, Resolve, out int from, out int to));
+            // Накладання це вся ділянка, від першої секції до останньої
+            Assert.Equal(0, from);
+            Assert.Equal(along.Count - 1, to);
+        }
+
+        [Fact]
+        public void ShortOverlapsOfASwitchAndACrossingAreAllowed()
+        {
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+
+            // Відгалуження дугою: лежить на колії, поки не відійде на довжину шпали
+            Vec3d joint = new Vec3d(10, 0, 0);
+            double angle = Math.PI / 3;
+            List<Section> branch = Plan(Point(joint.X, joint.Z, 1, 0),
+                Point(joint.X + ArcRadius * Math.Sin(angle), joint.Z + ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+            Assert.False(SectionLinker.FindLongOverlap(branch, SectionsIn, Resolve, out _, out _));
+
+            // Перетин під тридцять градусів
+            double dx = Math.Cos(Math.PI / 6), dz = Math.Sin(Math.PI / 6);
+            List<Section> crossing = Plan(Point(30 - 10 * dx, -10 * dz, dx, dz), Point(30 + 10 * dx, 10 * dz, dx, dz));
+            Assert.False(SectionLinker.FindLongOverlap(crossing, SectionsIn, Resolve, out _, out _));
+        }
+
+        [Fact]
+        public void LongOverlapCannotBeAssembledFromShortPieces()
+        {
+            // Уздовж покладеної колії вже лежить шматок у 30 секцій: сам він у межу вкладався
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            Lay(Point(10, 0.5, 1, 0), Point(25, 0.5, 1, 0));
+
+            // Продовжити його ще на 15 секцій не можна: разом це 45
+            List<Section> more = Plan(Point(25, 0.5, 1, 0), Point(32.5, 0.5, 1, 0));
+            Assert.True(SectionLinker.FindLongOverlap(more, SectionsIn, Resolve, out int from, out int to));
+            Assert.Equal(0, from);
+            Assert.Equal(more.Count - 1, to);
+
+            // А на 5 секцій можна: разом 35
+            List<Section> little = Plan(Point(25, 0.5, 1, 0), Point(27.5, 0.5, 1, 0));
+            Assert.False(SectionLinker.FindLongOverlap(little, SectionsIn, Resolve, out _, out _));
+
+            // І з другого боку шматка так само
+            List<Section> before = Plan(Point(2.5, 0.5, 1, 0), Point(10, 0.5, 1, 0));
+            Assert.True(SectionLinker.FindLongOverlap(before, SectionsIn, Resolve, out _, out _));
+        }
+
+        [Fact]
+        public void BridgeRightOverATrackIsNotAnOverlap()
+        {
+            // Та сама лінія, але на п'ять блоків вище
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> bridge = Plan(High(10, 5, 0, 1, 0), High(40, 5, 0, 1, 0));
+
+            Assert.False(SectionLinker.FindLongOverlap(bridge, SectionsIn, Resolve, out _, out _));
+        }
+
+        [Fact]
+        public void SwitchWithoutAFrogIsRefused()
+        {
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+
+            // Гілка відходить дугою, але обривається за два блоки: рейки двох колій ще не перетнулися,
+            // і хрестовині стати ніде
+            double angle = 2.0 / ArcRadius;
+            List<Section> stub = Plan(Point(20, 0, 1, 0),
+                Point(20 + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+            string problem = SectionLinker.FindSwitchProblem(stub, SectionsIn, Resolve, out _);
+            Assert.NotNull(problem);
+            Assert.Contains("хрестовини", problem);
+
+            // Та сама дуга, доведена до кінця: хрестовина є
+            double full = Math.PI / 3;
+            List<Section> branch = Plan(Point(20, 0, 1, 0),
+                Point(20 + ArcRadius * Math.Sin(full), ArcRadius * (1 - Math.Cos(full)), Math.Cos(full), Math.Sin(full)));
+            Assert.Null(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
         }
 
         [Fact]

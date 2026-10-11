@@ -293,10 +293,14 @@ namespace RailWorld.src.RailWay
         /// Тому правило перевіряється на колії, якою вона стане після побудови: нова ділянка приміряється
         /// поверх покладеної, а покладені секції, до яких вона чіпляється, беруться копіями, справжні дані
         /// не змінюються. planned це нові секції по порядку, щойно створені й ще нікуди не записані; метод
-        /// з'єднує їх між собою. Повертає номер секції в planned, біля якої це сталося б, або -1.
+        /// з'єднує їх між собою.
+        /// Заразом перевіряється сама нова стрілка: якщо для неї не знаходиться хрестовина, бо гілки
+        /// розходяться надто полого або гілка закоротка, щоб рейки встигли перетнутися, будувати її не можна.
+        /// Повертає причину відмови або null; at це номер секції в planned, біля якої стрілка.
         /// </summary>
-        public static int FindSwitchInZone(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<SectionLink, Section> resolve)
+        public static string FindSwitchProblem(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<SectionLink, Section> resolve, out int at)
         {
+            at = -1;
             var joins = new List<Join>();
             for (int i = 0; i < planned.Count; i++)
             {
@@ -322,7 +326,7 @@ namespace RailWorld.src.RailWay
                     }
                 }
             }
-            if (!joins.Exists(join => join.MakesSwitch)) return -1;
+            if (!joins.Exists(join => join.MakesSwitch)) return null;
 
             // Колія після побудови: нові секції і копії покладених, до яких вони чіпляються, поверх справжніх
             var overlay = new Dictionary<string, Section>();
@@ -364,9 +368,119 @@ namespace RailWorld.src.RailWay
                 bool blocked = SwitchZone.IsBlocked(join.Copy, join.Other.AtStart, Find) || SwitchZone.IsBlocked(mine, join.AtStart, Find);
                 Connect(mine, join.AtStart, join.Copy, join.Other.AtStart);
 
-                if (blocked) return join.Index;
+                at = join.Index;
+                if (blocked) return "надто близько до іншої стрілки";
+
+                // Та сама стрілка, якою її порахує сервер після побудови. Якщо частина гілки в незавантаженому
+                // чанку, сказати про хрестовину нічого не можна, і тоді не відмовляємо
+                RailSwitch built = SwitchBuilder.Build(join.Copy, join.Other.AtStart, Find);
+                if (built != null && built.Resolved && built.Branches[0].FrogFrom == 0) return "стрілка без хрестовини: гілки розходяться надто полого або гілка закоротка";
             }
-            return -1;
+            at = -1;
+            return null;
+        }
+
+        /// <summary>
+        /// Скільки секцій поспіль нова колія може лежати на вже покладеній: 40 секцій це 20 блоків.
+        /// На стільки ж секцій від стрілки шукається хрестовина.
+        /// </summary>
+        public const int MaxOverlapSections = 40;
+
+        /// <summary>
+        /// Чи нова ділянка лежить на вже покладеній колії довше, ніж дозволено. Лежить на ній та секція,
+        /// чия шпала перекривається зі шпалою покладеної: так само рахується зона стрілки. Коротке накладання
+        /// буває на стрілці й на перетині; довге означає, що дві колії йдуть одна поверх одної і не розходяться.
+        /// Колія вище чи нижче на RouteCurve.CrossingClearance і більше не рахується: це міст або тунель.
+        /// Рахується колія, яка вийде, а не лише шматок, який кладуть зараз: якщо накладання своїм краєм
+        /// стикується з покладеною колією, що теж лежить на іншій, воно продовжується вздовж неї. Інакше
+        /// довге накладання можна було б зібрати з кількох коротких.
+        /// planned це нові секції по порядку. from і to це перша й остання нова секція найдовшого накладання.
+        /// </summary>
+        public static bool FindLongOverlap(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn,
+            System.Func<SectionLink, Section> resolve, out int from, out int to)
+        {
+            from = to = -1;
+            int longest = MaxOverlapSections;
+            int runFrom = -1;
+
+            for (int i = 0; i <= planned.Count; i++)
+            {
+                bool lies = i < planned.Count && LiesOnTrack(planned[i], sectionsIn);
+                // Накладання триває, поки секції лежать на колії і йдуть одна за одною без розриву
+                if (lies && runFrom >= 0 && planned[i - 1].FullEndPosition.DistanceTo(planned[i].FullStartPosition) <= PositionTolerance) continue;
+
+                if (runFrom >= 0)
+                {
+                    int length = i - runFrom
+                        + LaidOverlap(planned[runFrom], true, sectionsIn, resolve)
+                        + LaidOverlap(planned[i - 1], false, sectionsIn, resolve);
+                    if (length > longest)
+                    {
+                        longest = length;
+                        from = runFrom;
+                        to = i - 1;
+                    }
+                }
+                runFrom = lies ? i : -1;
+            }
+            return from >= 0;
+        }
+
+        // Скільки секцій покладеної колії, з якою стикується цей кінець нової секції, поспіль лежать на іншій
+        // колії, якщо йти від стику. Далі за дозволену межу не рахує: більше знати не треба
+        private static int LaidOverlap(Section section, bool atStart, System.Func<Vec3i, IEnumerable<Section>> sectionsIn,
+            System.Func<SectionLink, Section> resolve)
+        {
+            int best = 0;
+            foreach (SectionLink meeting in Meeting(section, atStart, sectionsIn))
+            {
+                Section current = resolve(meeting);
+                bool entered = meeting.AtStart;
+                int count = 0;
+
+                while (current != null && count <= MaxOverlapSections && LiesOnTrack(current, sectionsIn))
+                {
+                    count++;
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    entered = ahead[0].AtStart;
+                    current = resolve(ahead[0]);
+                }
+                best = Math.Max(best, count);
+            }
+            return best;
+        }
+
+        // Чи шпала нової секції перекривається зі шпалою якоїсь покладеної секції
+        private static bool LiesOnTrack(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            Vec3d p = section.GetGlobalPos();
+
+            // Покладена секція зберігається в чанку свого центру, а центр не далі ніж за два блоки звідси
+            var chunks = new HashSet<Vec3i>();
+            for (int dx = -1; dx <= 1; dx += 2)
+                for (int dy = -1; dy <= 1; dy += 2)
+                    for (int dz = -1; dz <= 1; dz += 2)
+                        chunks.Add(ModMath.FindChunk(p.X + dx * 2, p.Y + dy * 2, p.Z + dz * 2));
+
+            foreach (Vec3i chunkCoord in chunks)
+            {
+                IEnumerable<Section> sections = sectionsIn(chunkCoord);
+                if (sections == null) continue;
+
+                foreach (Section other in sections)
+                {
+                    if (other == section) continue;
+
+                    Vec3d q = other.GetGlobalPos();
+                    if (Math.Abs(q.X - p.X) > 2 || Math.Abs(q.Z - p.Z) > 2 || Math.Abs(q.Y - p.Y) >= RouteCurve.CrossingClearance) continue;
+
+                    double along = RouteCurve.Along(other, true, p, out double length, out double sideways);
+                    if (along < 0 || along > length) continue;
+                    if (sideways < (section.SleeperLength + other.SleeperLength) / 2) return true;
+                }
+            }
+            return false;
         }
 
         private static void Connect(Section a, bool aAtStart, Section b, bool bAtStart)

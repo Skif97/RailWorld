@@ -14,9 +14,9 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Будує секції з точок: кожні три поспіль точки з кроком два це одна секція.
         /// Матеріали і заміну блоків бере з налаштувань предмета, яким кладуть колію.
-        /// Повертає false, якщо колію не покладено зовсім, бо вона дала б стрілку в зоні іншої стрілки.
+        /// Повертає причину, з якої колію не покладено зовсім, або null, якщо покладено.
         /// </summary>
-        public static bool Build(IWorldAccessor world, IPlayer byPlayer, ItemStack tool, List<PointOnBezierCurve> pointList)
+        public static string Build(IWorldAccessor world, IPlayer byPlayer, ItemStack tool, List<PointOnBezierCurve> pointList)
         {
             string sleeperMaterial = tool.Attributes.GetString("sleeperMaterial", "oak");
             string railMaterial = tool.Attributes.GetString("railMaterial", "iron");
@@ -25,9 +25,9 @@ namespace RailWorld.src.RailWay
 
             RailDataSession session = new RailDataSession(world);
 
-            // Нова колія не може дати стрілку в зоні іншої стрілки. Маршрут по точках це вже перевірив,
-            // але колію кладуть і іншими способами, а правило одне на всі. Перевіряємо до того,
-            // як щось зміниться у світі
+            // Нова колія не може довго лежати на покладеній і не може дати стрілку в зоні іншої стрілки.
+            // Маршрут по точках це вже перевірив, але колію кладуть і іншими способами, а правила одні
+            // на всі. Перевіряємо до того, як щось зміниться у світі
             var planned = new List<Section>();
             for (int i = 0; i < pointList.Count - 2; i += 2)
             {
@@ -37,14 +37,20 @@ namespace RailWorld.src.RailWay
                 if (!session.IsChunkLoaded(section.ChunkAddres) || (data != null && SectionLinker.HasSameSection(data, section))) continue;
                 planned.Add(section);
             }
-            if (SectionLinker.FindSwitchInZone(planned, chunk => session.Get(chunk)?.RailWaySections.Values, session.GetSection) >= 0)
+            System.Func<Vintagestory.API.MathTools.Vec3i, IEnumerable<Section>> sectionsIn = chunk => session.Get(chunk)?.RailWaySections.Values;
+            string refusal = null;
+            if (SectionLinker.FindLongOverlap(planned, sectionsIn, session.GetSection, out _, out _)) refusal = "колії надто довго йдуть одна поверх одної";
+            else refusal = SectionLinker.FindSwitchProblem(planned, sectionsIn, session.GetSection, out _);
+            if (refusal != null)
             {
-                (byPlayer as IServerPlayer)?.SendIngameError("railswitchzone", "Надто близько до іншої стрілки");
-                return false;
+                (byPlayer as IServerPlayer)?.SendIngameError("railrefused", "Колію не покладено: " + refusal);
+                return refusal;
             }
 
             List<Section> stretch = new List<Section>();
             int existing = 0, blocked = 0, unloaded = 0;
+            // Що ця побудова змінить у світі: потрібно, щоб її можна було відкотити
+            var record = new BuildRecord();
 
             for (int i = 0; i < pointList.Count - 2; i += 2)
             {
@@ -65,6 +71,8 @@ namespace RailWorld.src.RailWay
                     existing++;
                     continue;
                 }
+
+                record.Remember(world, section);
 
                 // У меню ввімкнено заміну: блоки на шляху колії ламаються, а не блокують секцію
                 if (replaceBlocks) TrackBed.ClearObstructions(world, section, byPlayer);
@@ -95,6 +103,10 @@ namespace RailWorld.src.RailWay
             foreach (Section section in stretch)
                 TrackBed.Attach(world, section);
 
+            // Номери в чанках секції отримали, коли їх записали: тепер побудову можна занести в журнал
+            foreach (Section section in stretch) record.Sections.Add(new SectionLink(section, true));
+            if (byPlayer != null) world.Api.ModLoader.GetModSystem<RailWaySystem>()?.Journal?.Add(byPlayer.PlayerUID, record);
+
             // За мить надсилаємо блоки ще раз: при довгій ділянці не всі оновлення доходять у правильному порядку
             world.RegisterCallback(dt => TrackBed.Resend(world, stretch), 500);
 
@@ -107,7 +119,7 @@ namespace RailWorld.src.RailWay
             if (unloaded > 0) report += " У незавантажених чанках: " + unloaded + ".";
 
             (byPlayer as IServerPlayer)?.SendMessage(GlobalConstants.GeneralChatGroup, report, EnumChatType.Notification);
-            return true;
+            return null;
         }
 
         private static string Describe(string material)

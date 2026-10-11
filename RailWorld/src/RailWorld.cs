@@ -267,7 +267,7 @@ namespace RailWorld
             if (problem != null) return problem;
             if (points.Count < 3) return "маршрут надто короткий";
 
-            return TrackBuilder.Build(_sapi.World, fromPlayer, tool, points) ? null : "надто близько до іншої стрілки";
+            return TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
         }
 
         /// <summary>

@@ -147,13 +147,14 @@ namespace RailWorld.src.RailWay
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
             if (followed) BlendCant(all, weight, trackCant);
-            if (sectionsIn != null) SwitchesInZone(all, resolve, sectionsIn, conflictAt, ref conflict);
+            if (sectionsIn != null) CheckAgainstLaidTrack(all, resolve, sectionsIn, conflictAt, ref conflict);
             return all;
         }
 
         // Маршрут не можна будувати, якщо його секції, з'єднавшись із покладеною колією, дали б стрілку в зоні
-        // іншої стрілки. Це буває і без прив'язки точки до колії: досить, щоб кінець ділянки ліг на чужий стик
-        private static void SwitchesInZone(List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve,
+        // іншої стрілки. Це буває і без прив'язки точки до колії: досить, щоб кінець ділянки ліг на чужий стик.
+        // І не можна, якщо він надто довго лежить на покладеній колії: тоді дві колії не розходяться
+        private static void CheckAgainstLaidTrack(List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve,
             Func<Vec3i, IEnumerable<Section>> sectionsIn, List<int> conflictAt, ref string conflict)
         {
             // Секції, які маршрут справді покладе: така сама, що вже лежить, удруге не кладеться
@@ -168,10 +169,20 @@ namespace RailWorld.src.RailWay
                 plannedAt.Add(i);
             }
 
-            int found = SectionLinker.FindSwitchInZone(planned, sectionsIn, resolve);
-            if (found < 0) return;
+            // Довге накладання підсвічується все, від першої секції до останньої
+            if (SectionLinker.FindLongOverlap(planned, sectionsIn, resolve, out int from, out int to))
+            {
+                conflict = conflict ?? "колії надто довго йдуть одна поверх одної";
+                if (conflictAt != null)
+                {
+                    for (int i = plannedAt[from]; i <= Math.Min(plannedAt[to] + 2, points.Count - 1); i++) conflictAt.Add(i);
+                }
+            }
 
-            conflict = conflict ?? "стрілка маршруту надто близько до іншої стрілки";
+            string switchProblem = SectionLinker.FindSwitchProblem(planned, sectionsIn, resolve, out int found);
+            if (switchProblem == null) return;
+
+            conflict = conflict ?? switchProblem;
             if (conflictAt == null) return;
             for (int i = Math.Max(plannedAt[found] - 3, 0); i <= Math.Min(plannedAt[found] + 5, points.Count - 1); i++) conflictAt.Add(i);
         }
