@@ -270,6 +270,12 @@ namespace RailWorld.src.RailWay
             return found;
         }
 
+        /// <summary>Те саме по вже розкладеній колії.</summary>
+        public static List<SectionLink> Meeting(Section section, bool atStart, TrackIndex track)
+        {
+            return Meeting(section, atStart, track.InChunk);
+        }
+
         // Місце, де кінець нової секції з'єднається з кінцем уже покладеної
         private class Join
         {
@@ -298,7 +304,13 @@ namespace RailWorld.src.RailWay
         /// розходяться надто полого або гілка закоротка, щоб рейки встигли перетнутися, будувати її не можна.
         /// Повертає причину відмови або null; at це номер секції в planned, біля якої стрілка.
         /// </summary>
-        public static string FindSwitchProblem(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<SectionLink, Section> resolve, out int at)
+        public static string FindSwitchProblem(IList<Section> planned, TrackIndex track, System.Func<SectionLink, Section> resolve, out int at)
+        {
+            return FindSwitchProblem(planned, Examine(planned, track), track, resolve, out at);
+        }
+
+        /// <summary>Те саме, коли нові секції вже оглянуто: facts це факти про кожну з planned.</summary>
+        public static string FindSwitchProblem(IList<Section> planned, IList<SectionFacts> facts, TrackIndex track, System.Func<SectionLink, Section> resolve, out int at)
         {
             at = -1;
             var joins = new List<Join>();
@@ -313,7 +325,7 @@ namespace RailWorld.src.RailWay
                     if (neighbour >= 0 && neighbour < planned.Count
                         && planned[neighbour].GetEndPosition(!atStart).DistanceTo(planned[i].GetEndPosition(atStart)) <= PositionTolerance) continue;
 
-                    foreach (SectionLink meeting in Meeting(planned[i], atStart, sectionsIn))
+                    foreach (SectionLink meeting in Meeting(planned[i], atStart, track))
                     {
                         Section other = resolve(meeting);
                         if (other == null) continue;
@@ -391,11 +403,11 @@ namespace RailWorld.src.RailWay
                 if (built != null && built.Resolved && built.Branches[0].FrogFrom == 0) return "стрілка без хрестовини: гілки розходяться надто полого або гілка закоротка";
 
                 // Важелю має бути де стати: якщо з обох боків від стрілки вже лежать інші колії, будувати її не можна
-                if (ChooseLeverSide(join.Copy, join.Other.AtStart, Find, sectionsIn) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
+                if (ChooseLeverSide(join.Copy, join.Other.AtStart, Find, track) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
 
                 // Стрілку не перетинає інша колія: це правило діє в обидва боки. Маршрут не може перетнути
                 // стрілку, що вже лежить, і так само не може поставити стрілку там, де колію вже перетинає інша
-                if (built != null && CrossedNearBody(join.Copy, join.Other.AtStart, built, Find, sectionsIn)) return "стрілка надто близько до перетину з іншою колією";
+                if (built != null && CrossedNearBody(join.Copy, join.Other.AtStart, built, Find, track)) return "стрілка надто близько до перетину з іншою колією";
 
                 // І не лягає на колію, що до неї не належить: під тілом стрілки може просто лежати чужий шматок
                 // колії, який нічого не перетинає. Тіло це обидві гілки, і вже покладена теж
@@ -408,7 +420,10 @@ namespace RailWorld.src.RailWay
                     }
                     foreach (Section section in body)
                     {
-                        if (LiesInPlaneOf(section, sectionsIn, other => !own.Contains(SectionKey(other))) != null) return "стрілка лягає на іншу колію";
+                        // Сама секція тіла, якщо вона вже лежить, серед покладених теж є: це не чужа колія
+                        string self = SectionKey(section);
+                        if (TrackSurvey.Examine(section, track).InPlane.Exists(other => !own.Contains(SectionKey(other)) && SectionKey(other) != self))
+                            return "стрілка лягає на іншу колію";
                     }
                 }
             }
@@ -419,13 +434,7 @@ namespace RailWorld.src.RailWay
             var crossings = new List<KeyValuePair<int, double>>();
             for (int i = 0; i < planned.Count; i++)
             {
-                Vec3d middle = planned[i].GetGlobalPos();
-                foreach (Section other in Around(middle, sectionsIn))
-                {
-                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
-                    if (RouteCurve.Crosses(planned[i].FullStartPosition, planned[i].FullEndPosition, other, out _, out double angle))
-                        crossings.Add(new KeyValuePair<int, double>(i, angle));
-                }
+                foreach (double angle in facts[i].Crossed) crossings.Add(new KeyValuePair<int, double>(i, angle));
             }
 
             // Чи секція лежить у стрілці колії, якою вона стане після побудови
@@ -436,12 +445,10 @@ namespace RailWorld.src.RailWay
 
             for (int i = 0; i < planned.Count; i++)
             {
-                Section other = LiesInPlaneOf(planned[i], sectionsIn, candidate => true);
-                if (other == null) continue;
+                if (facts[i].InPlane.Count == 0) continue;
+                Section other = facts[i].InPlane[0];
 
-                Section laid = Find(new SectionLink(other, true));
-                if (InSwitch(planned[i]) && InSwitch(laid)) continue;
-
+                // Спершу перетин: це видно одразу, а щоб дізнатися про стрілку, треба пройти вздовж колії
                 bool atCrossing = false;
                 foreach (KeyValuePair<int, double> crossing in crossings)
                 {
@@ -450,41 +457,15 @@ namespace RailWorld.src.RailWay
                 }
                 if (atCrossing) continue;
 
+                Section laid = Find(new SectionLink(other, true));
+                if (InSwitch(planned[i]) && InSwitch(laid)) continue;
+
                 at = i;
                 return "колія лягає на іншу без стрілки чи перетину";
             }
 
             at = -1;
             return null;
-        }
-
-        // Покладена секція, на габарит якої лягає габарит цієї секції в тій самій площині, або null.
-        // counts каже, які секції брати до уваги. Секція, з якою ця стикується кінцем, не рахується:
-        // це продовження тієї самої колії
-        private static Section LiesInPlaneOf(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<Section, bool> counts)
-        {
-            foreach (Section other in Around(section.GetGlobalPos(), sectionsIn))
-            {
-                if (other == section || !counts(other)) continue;
-                if (other.IndexInChunk == section.IndexInChunk && other.ChunkAddres.Equals(section.ChunkAddres)) continue;
-                if (Footprint.Joined(section, other)) continue;
-
-                if (HeightGap(section, other, out double gap) && gap <= SamePlane) return other;
-            }
-            return null;
-        }
-
-        // Наскільки розходяться по висоті дві секції там, де перекриваються їхні габарити.
-        // false, якщо габарити не перекриваються
-        private static bool HeightGap(Section a, Section b, out double gap)
-        {
-            gap = 0;
-            if (!Footprint.Overlap(a, b, out double x, out double z)) return false;
-
-            Vec3d where = new Vec3d(x, 0, z);
-            if (!RouteCurve.CrossPlane(a, where, 0, 0, out double aY, out _) || !RouteCurve.CrossPlane(b, where, 0, 0, out double bY, out _)) return false;
-            gap = Math.Abs(aY - bY);
-            return true;
         }
 
         /// <summary>
@@ -503,7 +484,14 @@ namespace RailWorld.src.RailWay
         /// довге накладання можна було б зібрати з кількох коротких.
         /// planned це нові секції по порядку. from і to це перша й остання нова секція найдовшого накладання.
         /// </summary>
-        public static bool FindLongOverlap(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn,
+        public static bool FindLongOverlap(IList<Section> planned, TrackIndex track,
+            System.Func<SectionLink, Section> resolve, out int from, out int to)
+        {
+            return FindLongOverlap(planned, Examine(planned, track), track, resolve, out from, out to);
+        }
+
+        /// <summary>Те саме, коли нові секції вже оглянуто.</summary>
+        public static bool FindLongOverlap(IList<Section> planned, IList<SectionFacts> facts, TrackIndex track,
             System.Func<SectionLink, Section> resolve, out int from, out int to)
         {
             from = to = -1;
@@ -512,15 +500,15 @@ namespace RailWorld.src.RailWay
 
             for (int i = 0; i <= planned.Count; i++)
             {
-                bool lies = i < planned.Count && LiesOnTrack(planned[i], sectionsIn);
+                bool lies = i < planned.Count && facts[i].LiesOnTrack;
                 // Накладання триває, поки секції лежать на колії і йдуть одна за одною без розриву
                 if (lies && runFrom >= 0 && planned[i - 1].FullEndPosition.DistanceTo(planned[i].FullStartPosition) <= PositionTolerance) continue;
 
                 if (runFrom >= 0)
                 {
                     int length = i - runFrom
-                        + LaidOverlap(planned[runFrom], true, sectionsIn, resolve)
-                        + LaidOverlap(planned[i - 1], false, sectionsIn, resolve);
+                        + LaidOverlap(planned[runFrom], true, track, resolve)
+                        + LaidOverlap(planned[i - 1], false, track, resolve);
                     if (length > longest)
                     {
                         longest = length;
@@ -535,17 +523,17 @@ namespace RailWorld.src.RailWay
 
         // Скільки секцій покладеної колії, з якою стикується цей кінець нової секції, поспіль лежать на іншій
         // колії, якщо йти від стику. Далі за дозволену межу не рахує: більше знати не треба
-        private static int LaidOverlap(Section section, bool atStart, System.Func<Vec3i, IEnumerable<Section>> sectionsIn,
+        private static int LaidOverlap(Section section, bool atStart, TrackIndex track,
             System.Func<SectionLink, Section> resolve)
         {
             int best = 0;
-            foreach (SectionLink meeting in Meeting(section, atStart, sectionsIn))
+            foreach (SectionLink meeting in Meeting(section, atStart, track))
             {
                 Section current = resolve(meeting);
                 bool entered = meeting.AtStart;
                 int count = 0;
 
-                while (current != null && count <= MaxOverlapSections && LiesOnTrack(current, sectionsIn))
+                while (current != null && count <= MaxOverlapSections && TrackSurvey.Examine(current, track).LiesOnTrack)
                 {
                     count++;
                     List<SectionLink> ahead = current.GetLinks(!entered);
@@ -558,55 +546,32 @@ namespace RailWorld.src.RailWay
             return best;
         }
 
-        // Чи габарит секції перекривається з габаритом якоїсь покладеної секції іншої колії.
-        // Секція, з якою ця стикується кінцем, це та сама колія
-        private static bool LiesOnTrack(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
-        {
-            Vec3d p = section.GetGlobalPos();
-
-            foreach (Section other in Around(p, sectionsIn))
-            {
-                if (other == section || Footprint.Joined(section, other)) continue;
-                if (Math.Abs(other.GetGlobalPos().Y - p.Y) >= RouteCurve.CrossingClearance) continue;
-                if (Footprint.Overlap(section, other)) return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Чи нова ділянка проходить по важелю стрілки, що вже стоїть. Важіль стоїть збоку від колії, поза
         /// її шпалами, тож зона стрілки його не захищає: чужа колія може пройти поруч і накрити його.
         /// Повертає номер секції в planned, під якою опинився б важіль, або -1.
         /// </summary>
-        public static int FindLeverInTrack(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        public static int FindLeverInTrack(IList<Section> planned, TrackIndex track)
         {
-            for (int i = 0; i < planned.Count; i++)
+            return FindLeverInTrack(Examine(planned, track));
+        }
+
+        /// <summary>Те саме, коли нові секції вже оглянуто.</summary>
+        public static int FindLeverInTrack(IList<SectionFacts> facts)
+        {
+            for (int i = 0; i < facts.Count; i++)
             {
-                Section section = planned[i];
-                Vec3d middle = section.GetGlobalPos();
-
-                foreach (Section other in Around(middle, sectionsIn))
-                {
-                    for (int end = 0; end < 2; end++)
-                    {
-                        bool atStart = end == 0;
-                        if (!other.HasSwitch(atStart)) continue;
-
-                        if (CoversLever(section, SectionPicker.LeverPosition(other, atStart))) return i;
-                    }
-                }
+                if (facts[i].CoversLever) return i;
             }
             return -1;
         }
 
-        // Чи важіль у цьому місці опинився б під колією: під шпалами секції, на близькій до неї висоті
-        private static bool CoversLever(Section section, Vec3d lever)
+        /// <summary>Оглядає покладену колію навколо кожної з нових секцій.</summary>
+        public static List<SectionFacts> Examine(IList<Section> planned, TrackIndex track)
         {
-            if (Math.Abs(lever.Y - section.GetGlobalPos().Y) >= RouteCurve.CrossingClearance) return false;
-
-            // Важіль під колією, якщо він ближче до її осі, ніж край шпали
-            double along = RouteCurve.Along(section, true, lever, out double length, out double sideways);
-            return along >= 0 && along <= length && sideways < section.SleeperLength / 2 + SectionBox.LeverHalfWidth;
+            var facts = new List<SectionFacts>(planned.Count);
+            foreach (Section section in planned) facts.Add(TrackSurvey.Examine(section, track));
+            return facts;
         }
 
         // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
@@ -623,7 +588,7 @@ namespace RailWorld.src.RailWay
         // боки від місця, де перетнулися осі, тож шукати перетини треба не лише в самому тілі, а й далі від
         // нього: на спільній колії перед стиком і на гілках за тілом
         private static bool CrossedNearBody(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve,
-            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+            TrackIndex track)
         {
             // Далі за найдовший можливий вузол шукати нема чого
             double reach = RouteCurve.CrossingHalf(Footprint.Width(trunk), Footprint.Width(trunk), RouteCurve.MinCrossingAngleDeg * Math.PI / 180);
@@ -664,7 +629,7 @@ namespace RailWorld.src.RailWay
                 Vec3d middle = step.Section.GetGlobalPos();
                 double length = from.DistanceTo(to);
 
-                foreach (Section other in Around(middle, sectionsIn))
+                foreach (Section other in track.Around(middle, TrackSurvey.CrossReach, RouteCurve.CrossingClearance))
                 {
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
                     if (own.Contains(Key(other))) continue;
@@ -679,12 +644,6 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Наскільки висоти двох колій можуть розходитися там, де їхні габарити перекриваються, щоб це ще
-        /// вважалося однією площиною: перетином або стрілкою.
-        /// </summary>
-        private const double SamePlane = 0.15;
-
-        /// <summary>
         /// Чи нова ділянка проходить над чи під покладеною колією надто близько. Там, де габарити двох колій
         /// перекриваються, нова або лежить у площині покладеної (це перетин чи стрілка), або вища чи нижча
         /// щонайменше на RouteCurve.CrossingClearance (це міст чи тунель). Проміжного не буває: інакше шпала
@@ -692,41 +651,18 @@ namespace RailWorld.src.RailWay
         /// колія може пройти над самим краєм чи боком іншої.
         /// Повертає номери всіх секцій у planned, де це сталося б: показ підсвічує кожну.
         /// </summary>
-        public static List<int> FindTooCloseAbove(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        public static List<int> FindTooCloseAbove(IList<Section> planned, TrackIndex track)
         {
-            var found = new List<int>();
-            for (int i = 0; i < planned.Count; i++)
-            {
-                Section section = planned[i];
-
-                foreach (Section other in Around(section.GetGlobalPos(), sectionsIn, RouteCurve.CrossingClearance))
-                {
-                    if (other == section) continue;
-                    if (!HeightGap(section, other, out double gap)) continue;
-                    if (gap <= SamePlane || gap >= RouteCurve.CrossingClearance) continue;
-
-                    found.Add(i);
-                    break;
-                }
-            }
-            return found;
+            return FindTooCloseAbove(Examine(planned, track));
         }
 
-        // Покладені секції поблизу точки: з чанків, куди може потрапити центр секції, не дальшої за два блоки
-        // в плані й за vertical блоків по висоті
-        private static List<Section> Around(Vec3d p, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, double vertical = 2)
+        /// <summary>Те саме, коли нові секції вже оглянуто.</summary>
+        public static List<int> FindTooCloseAbove(IList<SectionFacts> facts)
         {
-            var chunks = new HashSet<Vec3i>();
-            for (int dx = -1; dx <= 1; dx += 2)
-                for (int dy = -1; dy <= 1; dy += 2)
-                    for (int dz = -1; dz <= 1; dz += 2)
-                        chunks.Add(ModMath.FindChunk(p.X + dx * 2, p.Y + dy * vertical, p.Z + dz * 2));
-
-            var found = new List<Section>();
-            foreach (Vec3i chunkCoord in chunks)
+            var found = new List<int>();
+            for (int i = 0; i < facts.Count; i++)
             {
-                IEnumerable<Section> sections = sectionsIn(chunkCoord);
-                if (sections != null) found.AddRange(sections);
+                if (facts[i].TooClose) found.Add(i);
             }
             return found;
         }
@@ -758,7 +694,7 @@ namespace RailWorld.src.RailWay
             // Гравець переставив важіль сам: його вибір лишається
             if (trunk.IsLeverManual(atStart)) return;
 
-            int side = ChooseLeverSide(trunk, atStart, session.GetSection, chunk => session.Get(chunk)?.RailWaySections.Values);
+            int side = ChooseLeverSide(trunk, atStart, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values));
             if (side == 0) return;
 
             if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;
@@ -773,7 +709,7 @@ namespace RailWorld.src.RailWay
         /// опинився б під її шпалами, береться другий бік. Повертає 0, якщо зайняті обидва.
         /// </summary>
         public static int ChooseLeverSide(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve,
-            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+            TrackIndex track)
         {
             List<SectionLink> links = trunk.GetLinks(atStart);
             if (links.Count < 2) return 0;
@@ -816,7 +752,7 @@ namespace RailWorld.src.RailWay
 
             foreach (int side in new[] { preferred, -preferred })
             {
-                if (LeverSideFree(trunk, atStart, side, own, sectionsIn)) return side;
+                if (LeverSideFree(trunk, atStart, side, own, track)) return side;
             }
             return 0;
         }
@@ -825,7 +761,7 @@ namespace RailWorld.src.RailWay
         /// Чи може важіль стрілки стати з цього боку: чи не опиниться він під шпалами іншої колії.
         /// </summary>
         public static bool LeverSideFree(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve,
-            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+            TrackIndex track)
         {
             // Секції самої стрілки лежать поруч із важелем, але це не чужа колія
             var own = new HashSet<string>();
@@ -843,15 +779,15 @@ namespace RailWorld.src.RailWay
                     current = resolve(ahead[0]);
                 }
             }
-            return LeverSideFree(trunk, atStart, side, own, sectionsIn);
+            return LeverSideFree(trunk, atStart, side, own, track);
         }
 
-        private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<string> own, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<string> own, TrackIndex track)
         {
             Vec3d lever = SectionPicker.LeverPosition(trunk, atStart, side);
-            foreach (Section other in Around(lever, sectionsIn, RouteCurve.CrossingClearance))
+            foreach (Section other in track.Around(lever, TrackSurvey.Reach, RouteCurve.CrossingClearance))
             {
-                if (!own.Contains(SectionKey(other)) && CoversLever(other, lever)) return false;
+                if (!own.Contains(SectionKey(other)) && TrackSurvey.CoversLever(other, lever)) return false;
             }
             return true;
         }

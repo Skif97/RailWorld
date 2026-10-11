@@ -268,31 +268,69 @@ namespace RailWorld
             PointOnBezierCurve point = new PointOnBezierCurve();
 
             double minTimeStep = MinimumTimeStepSearcher(approximatelyPieceLength);
-            int approximateQuantityPiece = (int)Math.Floor(LengthFull(minTimeStep) / approximatelyPieceLength);
+
+            // Крива проходиться дрібними кроками один раз: запам'ятовуємо, скільки пройдено на кожному кроці.
+            // З цього виходить і повна довжина, і місця, де ставити точки. Раніше крива проходилася тричі
+            // (двічі заради довжини і ще раз заради точок); числа виходять ті самі до останнього біта
+            List<double> times = new List<double>();
+            List<double> lengths = new List<double>();
+            double xPrevious = x0, yPrevious = y0, zPrevious = z0;
+            double xNext = x0, yNext = y0, zNext = z0;
+            double walked = 0;
+            for (double time = 0; time >= 0 && time <= 1; time += minTimeStep)
+            {
+                xNext = InterpolationX_WithWeight(time);
+                yNext = InterpolationY_WithWeight(time);
+                zNext = InterpolationZ_WithWeight(time);
+
+                walked += LenghtLine3D(xNext, yNext, zNext, xPrevious, yPrevious, zPrevious);
+                xPrevious = xNext;
+                yPrevious = yNext;
+                zPrevious = zNext;
+                times.Add(time);
+                lengths.Add(walked);
+            }
+            double fullLength = walked + LenghtLine3D(xNext, yNext, zNext, x3, y3, z3);
+
+            int approximateQuantityPiece = (int)Math.Floor(fullLength / approximatelyPieceLength);
             int quntityPoints = 0;
             //if (approximateQuantityPiece % 2 == 0) { quntityPoints = approximateQuantityPiece - 1; }
            // else { quntityPoints = approximateQuantityPiece; }
             quntityPoints = ((int)Math.Floor(approximateQuantityPiece / 2f) * 2)+1;
-            double pieceLength = LengthFull(minTimeStep) / (quntityPoints - 1f);
+            double pieceLength = fullLength / (quntityPoints - 1f);
             double timeNext = 0f;
             double totalLenght = 0;
             int step = 0;
+            int walkStep = 0;
 
             point.position = InterpolationWithWeight(0f);
             point.tangent = Derivative(0f).ToVec3f();
             point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
             pointsList.Add(point);
             step++;
-            Vec3d prevPos = point.position;
 
-            while (timeNext < 1 && step < quntityPoints) 
+            while (timeNext < 1 && step < quntityPoints)
             {
-                timeNext += minTimeStep;
-                point.position = InterpolationWithWeight(timeNext);
-                totalLenght += LenghtLine3D(prevPos.X, prevPos.Y, prevPos.Z, point.position.X, point.position.Y, point.position.Z);
-                prevPos = point.position;
-                if (totalLenght > pieceLength * step) 
+                walkStep++;
+                if (walkStep < times.Count)
                 {
+                    timeNext = times[walkStep];
+                    totalLenght = lengths[walkStep];
+                }
+                else
+                {
+                    // Один крок за кінець кривої: у запам'ятоване він не потрапив
+                    timeNext += minTimeStep;
+                    double x = InterpolationX_WithWeight(timeNext), y = InterpolationY_WithWeight(timeNext), z = InterpolationZ_WithWeight(timeNext);
+                    totalLenght += LenghtLine3D(xPrevious, yPrevious, zPrevious, x, y, z);
+                    xPrevious = x;
+                    yPrevious = y;
+                    zPrevious = z;
+                }
+
+                if (totalLenght > pieceLength * step)
+                {
+                    point.position = InterpolationWithWeight(timeNext);
                     point.tangent = Derivative(timeNext).ToVec3f();
                     point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
                     pointsList.Add(point);

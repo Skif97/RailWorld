@@ -53,8 +53,11 @@ namespace RailWorld.Tests
             return track;
         }
 
+        /// <summary>Покладена колія, якою її бачать правила. Щоразу нова: між перевірками тести докладають колію.</summary>
+        protected TrackIndex SectionsIn => new TrackIndex(StoredIn);
+
         /// <summary>Секції, що зберігаються в чанку: те саме, що гра дістає з даних чанка.</summary>
-        protected IEnumerable<Section> SectionsIn(Vec3i chunk)
+        protected IEnumerable<Section> StoredIn(Vec3i chunk)
         {
             var found = new List<Section>();
             foreach (Section section in sections.Values)

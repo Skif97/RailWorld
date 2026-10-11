@@ -37,12 +37,12 @@ namespace RailWorld.src.RailWay
                 if (!session.IsChunkLoaded(section.ChunkAddres) || (data != null && SectionLinker.HasSameSection(data, section))) continue;
                 planned.Add(section);
             }
-            System.Func<Vintagestory.API.MathTools.Vec3i, IEnumerable<Section>> sectionsIn = chunk => session.Get(chunk)?.RailWaySections.Values;
+            var track = new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values);
             string refusal = null;
-            if (SectionLinker.FindLongOverlap(planned, sectionsIn, session.GetSection, out _, out _)) refusal = "колії надто довго йдуть одна поверх одної";
-            else if (SectionLinker.FindTooCloseAbove(planned, sectionsIn).Count > 0) refusal = "колія проходить надто близько над чи під іншою";
-            else if (SectionLinker.FindLeverInTrack(planned, sectionsIn) >= 0) refusal = "колія проходить по важелю стрілки";
-            else refusal = SectionLinker.FindSwitchProblem(planned, sectionsIn, session.GetSection, out _);
+            if (SectionLinker.FindLongOverlap(planned, track, session.GetSection, out _, out _)) refusal = "колії надто довго йдуть одна поверх одної";
+            else if (SectionLinker.FindTooCloseAbove(planned, track).Count > 0) refusal = "колія проходить надто близько над чи під іншою";
+            else if (SectionLinker.FindLeverInTrack(planned, track) >= 0) refusal = "колія проходить по важелю стрілки";
+            else refusal = SectionLinker.FindSwitchProblem(planned, track, session.GetSection, out _);
             if (refusal != null)
             {
                 (byPlayer as IServerPlayer)?.SendIngameError("railrefused", "Колію не покладено: " + refusal);

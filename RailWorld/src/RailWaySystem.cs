@@ -259,6 +259,12 @@ namespace RailWorld
             return clientTrack.FindSection(link);
         }
 
+        /// <summary>
+        /// Міняється щоразу, коли клієнт дізнається про зміну колії в якомусь чанку. Хто запам'ятав щось,
+        /// пораховане з колії, за цим числом бачить, що запам'ятоване застаріло.
+        /// </summary>
+        public int ClientRevision { get; private set; }
+
         /// <summary>Секції колії, що зберігаються в чанку, якими їх знає клієнт; null, якщо колії там немає.</summary>
         public IEnumerable<Section> ClientSectionsIn(Vec3i chunkCoord)
         {
@@ -291,6 +297,7 @@ namespace RailWorld
 
             Vec3i coord = chunkCoord.Clone();
             clientTrack.Set(coord, data, Handler);
+            ClientRevision++;
             selectionRenderer?.MarkChunkDirty(coord);
 
             chunkRenderer?.Rebuild(coord, data.RailWaySections);
@@ -332,6 +339,7 @@ namespace RailWorld
         public void RemoveChunk(Vec3i chunkCoord)
         {
             bool known = clientTrack.Remove(chunkCoord);
+            ClientRevision++;
             switchAnimator.Forget(chunkCoord);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
             // Колія в чанку зникла: сусіди могли малювати з нею спільні шпали

@@ -103,12 +103,13 @@ namespace RailWorld.src.RailWay
         /// стрілкою) і вони вимагають різної висоти в одному місці або не лишають місця на перехід між собою,
         /// conflict каже, що саме не так, і такий маршрут будувати не можна: рейки на межі розірвало б сходинкою.
         /// </summary>
-        /// sectionsIn каже, які секції покладеної колії зберігаються в чанку; потрібен, щоб знайти колії,
-        /// які маршрут перетинає. Без нього перетини не шукаються.
+        /// track це вже покладена колія; потрібна, щоб знайти колії, які маршрут перетинає чи зачіпає.
+        /// Без неї правила щодо покладеної колії не перевіряються.
         /// conflictAt, якщо заданий, збирає номери точок нарізки, де маршрут порушує правила перетину:
         /// за ними показ підсвічує саме це місце.
+        /// cache це пам'ять розмітки між перерахунками (RouteCache); результат з нею і без неї той самий.
         public static List<PointOnBezierCurve> BuildPoints(List<RoutePoint> route, Func<SectionLink, Section> resolve, out string conflict,
-            Func<Vec3i, IEnumerable<Section>> sectionsIn = null, List<int> conflictAt = null)
+            TrackIndex track = null, List<int> conflictAt = null, RouteCache cache = null)
         {
             conflict = null;
             var all = new List<PointOnBezierCurve>();
@@ -122,7 +123,7 @@ namespace RailWorld.src.RailWay
                 RoutePoint a = route[i];
                 RoutePoint b = route[i + 1];
 
-                List<PointOnBezierCurve> points = Leg(a, b);
+                List<PointOnBezierCurve> points = cache != null ? cache.Leg(a, b) : Leg(a, b);
                 if (points == null) continue;
 
                 // Кінець попередньої кривої і початок цієї це та сама точка
@@ -142,12 +143,12 @@ namespace RailWorld.src.RailWay
 
             bool followed = FollowTracks(all, first, last, resolve, weight, trackCant, joints, ref conflict);
             // Де маршрут перетинає вже покладену колію на близькій висоті, він лягає в її площину
-            if (sectionsIn != null && LevelCrossings(all, first, last, resolve, sectionsIn, weight, trackCant, conflictAt, joints, ref conflict)) followed = true;
+            if (track != null && LevelCrossings(all, first, last, resolve, track, cache, weight, trackCant, conflictAt, joints, ref conflict)) followed = true;
             if (followed) RecomputeSlopes(all);
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
             if (followed) BlendCant(all, weight, trackCant);
-            if (sectionsIn != null) CheckAgainstLaidTrack(all, resolve, sectionsIn, conflictAt, ref conflict);
+            if (track != null) CheckAgainstLaidTrack(all, resolve, track, cache, conflictAt, ref conflict);
             return all;
         }
 
@@ -155,22 +156,26 @@ namespace RailWorld.src.RailWay
         // іншої стрілки. Це буває і без прив'язки точки до колії: досить, щоб кінець ділянки ліг на чужий стик.
         // І не можна, якщо він надто довго лежить на покладеній колії: тоді дві колії не розходяться
         private static void CheckAgainstLaidTrack(List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve,
-            Func<Vec3i, IEnumerable<Section>> sectionsIn, List<int> conflictAt, ref string conflict)
+            TrackIndex track, RouteCache cache, List<int> conflictAt, ref string conflict)
         {
-            // Секції, які маршрут справді покладе: така сама, що вже лежить, удруге не кладеться
+            // Секції, які маршрут справді покладе: така сама, що вже лежить, удруге не кладеться.
+            // Кожна оглядається відносно покладеної колії один раз, і всі правила далі читають ці факти
             var planned = new List<Section>();
             var plannedAt = new List<int>();
+            var facts = new List<SectionFacts>();
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
                 var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
-                if (SectionLinker.HasSameSection(sectionsIn(section.ChunkAddres), section)) continue;
+                SectionFacts found = cache != null ? cache.Facts(points[i], points[i + 1], points[i + 2], section, track) : TrackSurvey.Examine(section, track);
+                if (found.AlreadyLaid) continue;
 
                 planned.Add(section);
                 plannedAt.Add(i);
+                facts.Add(found);
             }
 
             // Довге накладання підсвічується все, від першої секції до останньої
-            if (SectionLinker.FindLongOverlap(planned, sectionsIn, resolve, out int from, out int to))
+            if (SectionLinker.FindLongOverlap(planned, facts, track, resolve, out int from, out int to))
             {
                 conflict = conflict ?? "колії надто довго йдуть одна поверх одної";
                 if (conflictAt != null)
@@ -179,7 +184,7 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            List<int> close = SectionLinker.FindTooCloseAbove(planned, sectionsIn);
+            List<int> close = SectionLinker.FindTooCloseAbove(facts);
             if (close.Count > 0)
             {
                 conflict = conflict ?? "колія проходить надто близько над чи під іншою: потрібно " + CrossingClearance.ToString("0") + " блоки просвіту";
@@ -193,7 +198,7 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            int lever = SectionLinker.FindLeverInTrack(planned, sectionsIn);
+            int lever = SectionLinker.FindLeverInTrack(facts);
             if (lever >= 0)
             {
                 conflict = conflict ?? "колія проходить по важелю стрілки";
@@ -203,12 +208,12 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            string switchProblem = SectionLinker.FindSwitchProblem(planned, sectionsIn, resolve, out int found);
+            string switchProblem = SectionLinker.FindSwitchProblem(planned, facts, track, resolve, out int at);
             if (switchProblem == null) return;
 
             conflict = conflict ?? switchProblem;
             if (conflictAt == null) return;
-            for (int i = Math.Max(plannedAt[found] - 3, 0); i <= Math.Min(plannedAt[found] + 5, points.Count - 1); i++) conflictAt.Add(i);
+            for (int i = Math.Max(plannedAt[at] - 3, 0); i <= Math.Min(plannedAt[at] + 5, points.Count - 1); i++) conflictAt.Add(i);
         }
 
         // ── Перетини з уже покладеними коліями ──
@@ -233,6 +238,8 @@ namespace RailWorld.src.RailWay
 
         private class Crossing
         {
+            // Перетин шматка маршруту з віссю колії, з якого цей вузол узято
+            public SegmentHit Hit;
             public double At;
             public Section Section;
             public double Angle;
@@ -267,7 +274,7 @@ namespace RailWorld.src.RailWay
         /// Повертає true, якщо висоти маршруту змінилися.
         /// </summary>
         private static bool LevelCrossings(List<PointOnBezierCurve> points, RoutePoint first, RoutePoint last,
-            Func<SectionLink, Section> resolve, Func<Vec3i, IEnumerable<Section>> sectionsIn, double[] weight, double[] trackCant,
+            Func<SectionLink, Section> resolve, TrackIndex track, RouteCache cache, double[] weight, double[] trackCant,
             List<int> conflictAt, List<int> joints, ref string conflict)
         {
             int count = points.Count;
@@ -277,32 +284,6 @@ namespace RailWorld.src.RailWay
                 if (conflictAt == null) return;
                 for (int i = Math.Max(index - 3, 0); i <= Math.Min(index + 3, count - 1); i++) conflictAt.Add(i);
             }
-
-            // Секції покладеної колії поблизу маршруту: з чанків, яких він торкається, із запасом
-            const int chunkSize = 32;
-            var chunks = new HashSet<Vec3i>();
-            for (int i = 0; i < count; i += 2)
-            {
-                Vec3d p = points[i].position;
-                for (int dx = -4; dx <= 4; dx += 8)
-                {
-                    for (int dy = -1; dy <= 1; dy += 2)
-                    {
-                        for (int dz = -4; dz <= 4; dz += 8)
-                        {
-                            chunks.Add(new Vec3i((int)Math.Floor((p.X + dx) / chunkSize), (int)Math.Floor((p.Y + dy * (CrossingClearance + 1)) / chunkSize),
-                                (int)Math.Floor((p.Z + dz) / chunkSize)));
-                        }
-                    }
-                }
-            }
-            var candidates = new List<Section>();
-            foreach (Vec3i chunk in chunks)
-            {
-                IEnumerable<Section> found = sectionsIn(chunk);
-                if (found != null) candidates.AddRange(found);
-            }
-            if (candidates.Count == 0) return false;
 
             // Відстань у плані вздовж маршруту від його початку
             double[] run = new double[count];
@@ -330,15 +311,16 @@ namespace RailWorld.src.RailWay
                 Vec3d a = points[k].position, b = points[k + 1].position;
                 bool atOwnSwitch = k + 1 <= ownUntil || k >= ownFrom;
 
-                foreach (Section section in candidates)
+                // Майже жоден шматок маршруту нічого не перетинає
+                List<SegmentHit> hits = cache != null ? cache.Hits(a, b, track) : TrackSurvey.Hits(a, b, track);
+                if (hits == null) continue;
+
+                foreach (SegmentHit hit in hits)
                 {
+                    Section section = hit.Section;
+                    double t = hit.T;
                     Vec3d c = section.FullStartPosition, d = section.FullEndPosition;
                     double rx = b.X - a.X, rz = b.Z - a.Z, sx = d.X - c.X, sz = d.Z - c.Z;
-                    double denominator = rx * sz - rz * sx;
-                    if (Math.Abs(denominator) < 1e-12) continue;
-                    double t = ((c.X - a.X) * sz - (c.Z - a.Z) * sx) / denominator;
-                    double u = ((c.X - a.X) * rz - (c.Z - a.Z) * rx) / denominator;
-                    if (t < 0 || t >= 1 || u < 0 || u >= 1) continue;
 
                     // Самий початок і кінець маршруту: там він стикується з колією, яку продовжує
                     double at = run[k] + (run[k + 1] - run[k]) * t;
@@ -361,7 +343,8 @@ namespace RailWorld.src.RailWay
                         Mark(k);
                         continue;
                     }
-                    if (SwitchZone.InBody(section, resolve))
+                    if (hit.InSwitchBody == null) hit.InSwitchBody = SwitchZone.InBody(section, resolve);
+                    if (hit.InSwitchBody.Value)
                     {
                         conflict = conflict ?? "маршрут перетинає стрілку";
                         Mark(k);
@@ -377,14 +360,16 @@ namespace RailWorld.src.RailWay
 
                     // Вузол перетину тягнеться вздовж колії в обидва боки від місця, де перетнулися осі: на косому
                     // перетині на кілька блоків. На тіло стрілки він не накладається ніде, а не лише в цій секції
-                    if (SwitchBodyWithin(section, where, CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle), resolve))
+                    if (hit.ReachesSwitchBody == null)
+                        hit.ReachesSwitchBody = SwitchBodyWithin(section, where, CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle), resolve);
+                    if (hit.ReachesSwitchBody.Value)
                     {
                         conflict = conflict ?? "перетин надто близько до стрілки";
                         Mark(k);
                         continue;
                     }
 
-                    crossings.Add(new Crossing { At = at, Section = section, Angle = angle, Where = where, Index = k,
+                    crossings.Add(new Crossing { Hit = hit, At = at, Section = section, Angle = angle, Where = where, Index = k,
                         Half = CrossingHalf(Footprint.StandardWidth, Footprint.Width(section), angle),
                         HalfOnTrack = CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle) });
                 }
@@ -407,7 +392,8 @@ namespace RailWorld.src.RailWay
             // Потім перетин, поруч з яким на тій самій колії вже є перетин з іншою, якої маршрут не зачіпає
             foreach (Crossing crossing in crossings)
             {
-                if (!NearLaidCrossing(crossing, candidates, resolve)) continue;
+                if (crossing.Hit.NearAnotherCrossing == null) crossing.Hit.NearAnotherCrossing = NearLaidCrossing(crossing, track, resolve);
+                if (!crossing.Hit.NearAnotherCrossing.Value) continue;
 
                 conflict = conflict ?? "перетин надто близько до іншого перетину";
                 Mark(crossing.Index);
@@ -575,7 +561,7 @@ namespace RailWorld.src.RailWay
 
         // Чи на колії, яку маршрут перетинає, поруч уже є перетин з іншою колією: так близько, що два вузли
         // наклалися б. Іде по колії від місця перетину в обидва боки і шукає, що її перетинає
-        private static bool NearLaidCrossing(Crossing crossing, List<Section> candidates, Func<SectionLink, Section> resolve)
+        private static bool NearLaidCrossing(Crossing crossing, TrackIndex track, Func<SectionLink, Section> resolve)
         {
             // Найдовший вузол, який може лежати на цій колії: під найгострішим дозволеним кутом
             double length = Footprint.Width(crossing.Section);
@@ -594,7 +580,7 @@ namespace RailWorld.src.RailWay
                     Vec3d from = current.GetEndPosition(!exitAtStart);
                     exit = current.GetEndPosition(exitAtStart);
 
-                    foreach (Section other in candidates)
+                    foreach (Section other in track.Around(current.GetGlobalPos(), TrackSurvey.CrossReach, CrossingClearance + 1))
                     {
                         if (other == current || !Crosses(from, exit, other, out double t, out double angle)) continue;
 
@@ -725,7 +711,7 @@ namespace RailWorld.src.RailWay
         }
 
         // Крива між двома сусідніми точками маршруту, нарізана на точки; null, якщо точки надто близько
-        private static List<PointOnBezierCurve> Leg(RoutePoint a, RoutePoint b)
+        internal static List<PointOnBezierCurve> Leg(RoutePoint a, RoutePoint b)
         {
             double span = a.Position.DistanceTo(b.Position);
             if (span < MinSpan) return null;

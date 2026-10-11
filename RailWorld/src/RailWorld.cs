@@ -258,7 +258,7 @@ namespace RailWorld
             if (route == null) return "з цих точок маршрут не складається";
 
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict,
-                chunk => lookup.Get(chunk)?.RailWaySections.Values);
+                new TrackIndex(chunk => lookup.Get(chunk)?.RailWaySections.Values));
 
             // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
             // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден

@@ -21,8 +21,6 @@ namespace RailWorld.src.RailWay
 
         // Спільна площа, менша за це, перекриттям не вважається: два прямокутники лише торкаються
         private const double MinArea = 1e-4;
-        // Кінці двох секцій, ближчі за це, лежать в одному стику
-        private const double JointTolerance = 0.01;
 
         public static double Width(Section section)
         {
@@ -48,6 +46,13 @@ namespace RailWorld.src.RailWay
         public static bool Overlap(Vec3d aFrom, Vec3d aTo, double aWidth, Vec3d bFrom, Vec3d bTo, double bWidth, out double x, out double z)
         {
             x = z = 0;
+
+            // Спершу дешева відмова: прямокутники, чиї середини далі одна від одної, ніж сягають їхні кути,
+            // перекритися не можуть. Таких пар переважна більшість, і різати їх нема чого
+            double apartX = (aFrom.X + aTo.X - bFrom.X - bTo.X) / 2, apartZ = (aFrom.Z + aTo.Z - bFrom.Z - bTo.Z) / 2;
+            double reach = (Math.Abs(aTo.X - aFrom.X) + Math.Abs(aTo.Z - aFrom.Z) + Math.Abs(bTo.X - bFrom.X) + Math.Abs(bTo.Z - bFrom.Z) + aWidth + bWidth) / 2;
+            if (apartX * apartX + apartZ * apartZ > reach * reach) return false;
+
             double[] a = Corners(aFrom, aTo, aWidth), b = Corners(bFrom, bTo, bWidth);
             if (a == null || b == null) return false;
 
@@ -101,7 +106,8 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Чи дві секції стикуються кінцями: у них є спільний стик. Габарити таких секцій на кривій трохи
+        /// Чи дві секції стикуються кінцями: у них є спільний стик, з тим самим допуском, з яким кінці
+        /// з'єднуються при укладанні. Габарити таких секцій на кривій трохи
         /// заходять один на одного кутами, але це одна колія, а не дві колії одна на одній.
         /// </summary>
         public static bool Joined(Section a, Section b)
@@ -109,7 +115,7 @@ namespace RailWorld.src.RailWay
             Vec3d[] ends = { a.FullStartPosition, a.FullEndPosition };
             foreach (Vec3d end in ends)
             {
-                if (end.DistanceTo(b.FullStartPosition) <= JointTolerance || end.DistanceTo(b.FullEndPosition) <= JointTolerance) return true;
+                if (end.DistanceTo(b.FullStartPosition) <= SectionLinker.PositionTolerance || end.DistanceTo(b.FullEndPosition) <= SectionLinker.PositionTolerance) return true;
             }
             return false;
         }

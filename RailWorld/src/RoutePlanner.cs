@@ -59,6 +59,11 @@ namespace RailWorld
         // Ліва кнопка скасовує один крок за один натиск, а не за кожен повтор, поки її тримають
         private bool undoArmed = true;
 
+        // Те, що між перерахунками маршруту лишається тим самим: поки гравець веде останню точку,
+        // міняється лише хвіст маршруту. Дійсне, доки не змінилася покладена колія
+        private readonly RouteCache cache = new RouteCache();
+        private int cacheRevision = -1;
+
         private MeshRef mesh;
         private Vec3d meshOrigin = new Vec3d();
         private string meshKey = "";
@@ -110,6 +115,7 @@ namespace RailWorld
             templateAnchor = null;
             preview = false;
             serverRefusal = null;
+            cache.Clear();
         }
 
         // ── Кліки ────────────────────────────────────────────────────────────
@@ -350,16 +356,10 @@ namespace RailWorld
             return neighbour != null && neighbour.GetLinks(links[0].AtStart).Count < SectionLinker.MaxLinksPerEnd;
         }
 
+        // Секція, на яку вказує посилання, з того, що клієнт знає про колію
         private Section FindClientSection(SectionLink link)
         {
-            List<SectionBox> boxes = system.GetClientBoxes(link.Chunk);
-            if (boxes == null) return null;
-
-            foreach (SectionBox box in boxes)
-            {
-                if (box.Part == SectionPart.Whole && box.Section.IndexInChunk == link.Index) return box.Section;
-            }
-            return null;
+            return system.FindClientSection(link);
         }
 
         // Блок під прицілом для розмітки. Від звичайного прицілу гри відрізняється двома речами:
@@ -504,7 +504,14 @@ namespace RailWorld
 
             meshOrigin = new Vec3d(shown[0].Block.X, shown[0].Block.Y, shown[0].Block.Z);
             var conflictAt = new List<int>();
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(shown), FindClientSection, out string conflict, system.ClientSectionsIn, conflictAt);
+            // Колія змінилася: запам'ятоване посилається на секції, яких уже може не бути
+            if (cacheRevision != system.ClientRevision)
+            {
+                cache.Clear();
+                cacheRevision = system.ClientRevision;
+            }
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(shown), FindClientSection, out string conflict,
+                new TrackIndex(system.ClientSectionsIn), conflictAt, cache);
 
             int boxes = shown.Count + (preview ? points.Count / 2 * 5 : Math.Max(0, points.Count - 1) * 2);
             MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
@@ -552,6 +559,7 @@ namespace RailWorld
                 template ? "" : "\nCtrl + клік: точка, через яку маршрут пройде точно",
                 (routeProblem == null ? "" : "\nНе можна будувати: " + routeProblem)
                 + (awaitingId != 0 ? "\nЧекаємо відповіді сервера" : serverRefusal != null ? "\nСервер відхилив: " + serverRefusal : "")));
+
         }
 
         private static string RadiusText(double radius)

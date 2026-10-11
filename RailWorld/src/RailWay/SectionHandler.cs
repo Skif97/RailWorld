@@ -168,7 +168,7 @@ namespace RailWorld.src.RailWay
             if (!FindSwitchEnd(section, sel, out bool atStart)) return;
 
             int side = -section.GetLeverSide(atStart);
-            if (!SectionLinker.LeverSideFree(section, atStart, side, session.GetSection, chunk => session.Get(chunk)?.RailWaySections.Values))
+            if (!SectionLinker.LeverSideFree(section, atStart, side, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values)))
             {
                 (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railleverside", "З того боку важелю заважає інша колія");
                 return;
