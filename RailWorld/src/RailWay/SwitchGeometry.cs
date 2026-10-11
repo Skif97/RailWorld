@@ -96,6 +96,52 @@ namespace RailWorld.src.RailWay
             return sections;
         }
 
+        /// <summary>
+        /// Де в перерізі frame гостряка лежить рамна рейка, до якої він прилягає: зовнішня рейка сусідньої
+        /// колії. Відстань від лінії гостряка в бік сусідньої колії, блоків. Біля стрілки це нуль, рамна
+        /// рейка лежить на лінії гостряка; далі вона відходить убік.
+        /// otherInner це внутрішня рейка сусідньої колії, near номер її перерізу, біля якого шукати.
+        /// false, якщо сусідня колія до цього перерізу не доходить.
+        /// </summary>
+        public static bool StockOffset(RailFrame frame, IList<RailFrame> otherInner, double trackWidth, int near, out double offset)
+        {
+            offset = 0;
+            // Зовнішня рейка лежить за ширину колії від внутрішньої, з протилежного від нас боку
+            if (!RailLine.Offset(otherInner, -trackWidth, frame, near, out offset)) return false;
+
+            offset = Math.Max(0, offset);
+            return true;
+        }
+
+        /// <summary>
+        /// Спільний переріз двох рейок, що сходяться: посередині між їхніми перерізами mine і theirs, упоперек
+        /// бісектриси їхніх напрямків. Бік дивиться туди ж, куди бік mine; боки двох рейок дивляться назустріч.
+        /// З котрої з двох рейок не будуй, площина та сама, а бік рівно протилежний: тому все, що в цьому
+        /// перерізі виміряно, виходить однаковим для обох колій. null, якщо рейки йдуть назустріч.
+        /// </summary>
+        public static RailFrame CommonStation(RailFrame mine, RailFrame theirs)
+        {
+            Vec3d along = new Vec3d(mine.Along.X + theirs.Along.X, mine.Along.Y + theirs.Along.Y, mine.Along.Z + theirs.Along.Z);
+            if (along.Length() < 1e-6) return null;
+            along.Normalize();
+
+            Vec3d side = new Vec3d(mine.Side.X - theirs.Side.X, mine.Side.Y - theirs.Side.Y, mine.Side.Z - theirs.Side.Z);
+            side.Sub(along.Clone().Mul(side.Dot(along)));
+            if (side.Length() < 1e-6) return null;
+            side.Normalize();
+
+            Vec3d up = side.Cross(along);
+            if (up.Y < 0) up.Mul(-1);
+
+            return new RailFrame
+            {
+                Center = new Vec3d((mine.Center.X + theirs.Center.X) / 2, (mine.Center.Y + theirs.Center.Y) / 2, (mine.Center.Z + theirs.Center.Z) / 2),
+                Side = side,
+                Up = up,
+                Along = along
+            };
+        }
+
         // Хрестовина. Розміри зі справжніх стрілок, перераховані на нашу рейку.
         // Жолоб для гребеня колеса між вусовиком і осердям, блоків
         public const double FrogFlangeway = 0.05;
@@ -188,27 +234,24 @@ namespace RailWorld.src.RailWay
             double clearance = head + FrogFlangeway;
             int tip = -1, crossing = -1, full = -1;
 
-            // Відстань між рейками в кожному перерізі, упоперек бісектриси їхніх напрямків. Саме впоперек:
-            // точки двох колій з однаковим номером не стоять одна навпроти одної, бо колії порізані на шматки
-            // трохи різної довжини і відгалуження йде дугою. Пряма відстань між такими точками біля перетину
-            // лишається чималою, хоча самі рейки там уже зійшлися.
+            // Відстань між рейками в кожному їхньому спільному перерізі. Міряється там, де рейки справді
+            // проходять крізь переріз, а не між точками з однаковим номером: ті не стоять одна навпроти одної,
+            // бо колії порізані на шматки трохи різної довжини і відгалуження йде дугою.
             // Відстань зі знаком: до перетину сусідня рейка з боку осі своєї колії, це від'ємний бік, після
             // з протилежного. Число однакове, з якої колії не дивись, тому й межі хрестовини в обох ті самі
             double[] apart = new double[count];
             for (int q = 0; q < count; q++)
             {
-                RailFrame own = result.Frames[q], other = result.Other[q];
-                double dx = other.Center.X - own.Center.X, dz = other.Center.Z - own.Center.Z;
-                double ax = own.Along.X + other.Along.X, az = own.Along.Z + other.Along.Z;
-                double length = Math.Sqrt(ax * ax + az * az);
-                if (length < 1e-6)
+                RailFrame station = CommonStation(result.Frames[q], result.Other[q]);
+                if (station != null && RailLine.Offset(result.Frames, 0, station, q, out double mineAt)
+                    && RailLine.Offset(result.Other, 0, station, q, out double theirsAt))
                 {
-                    apart[q] = q > 0 ? apart[q - 1] : -Math.Sqrt(dx * dx + dz * dz);
+                    apart[q] = theirsAt - mineAt;
                     continue;
                 }
-                double px = -az / length, pz = ax / length;
-                double facing = own.Side.X * px + own.Side.Z * pz;
-                apart[q] = (dx * px + dz * pz) * (facing < 0 ? -1 : 1);
+
+                // Спільного перерізу тут немає: вважаємо, що рейки стоять, як у попередньому
+                apart[q] = q > 0 ? apart[q - 1] : -first.TrackWidth;
             }
 
             for (int q = 0; q < count; q++)

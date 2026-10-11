@@ -63,6 +63,27 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void CommonStationIsTheSameFromEitherRail()
+        {
+            List<Section> straight = Straight(), arc = Arc();
+            BranchGeometry geometry = SwitchGeometry.Branch(straight[0], true, arc[0], true, Resolve);
+
+            for (int q = 0; q < geometry.Across.Length; q += 5)
+            {
+                RailFrame mine = SwitchGeometry.CommonStation(geometry.Frames[q], geometry.Other[q]);
+                RailFrame theirs = SwitchGeometry.CommonStation(geometry.Other[q], geometry.Frames[q]);
+
+                // Та сама площина, бік рівно протилежний
+                Assert.Equal(mine.Center.X, theirs.Center.X);
+                Assert.Equal(mine.Center.Z, theirs.Center.Z);
+                Assert.Equal(mine.Along.X, theirs.Along.X);
+                Assert.Equal(mine.Along.Z, theirs.Along.Z);
+                Assert.Equal(mine.Side.X, -theirs.Side.X);
+                Assert.Equal(mine.Side.Z, -theirs.Side.Z);
+            }
+        }
+
+        [Fact]
         public void WithoutTheOtherBranchThereIsNoFrog()
         {
             List<Section> straight = Straight(), arc = Arc();

@@ -1,0 +1,124 @@
+using System;
+using System.Collections.Generic;
+using Vintagestory.API.MathTools;
+
+namespace RailWorld.src.RailWay
+{
+    /// <summary>
+    /// Лінія рейки: її перерізи по порядку вздовж колії. Дві колії, що лежать поруч або перетинаються,
+    /// порізані на шматки кожна по-своєму, тому переріз однієї з номером N не стоїть навпроти перерізу
+    /// другої з тим самим номером. Зіставляти їх треба геометрично: де лінія однієї рейки проходить
+    /// крізь площину перерізу другої. Потрібно стрілкам і перетинам колій.
+    /// </summary>
+    public static class RailLine
+    {
+        // Наскільки далеко за свій край лінію можна продовжити прямою, блоків: одна секція колії
+        private const double MaxExtend = 0.5;
+        // Ближче за це до площини переріз вважається таким, що лежить на ній, блоків
+        private const double OnPlane = 1e-9;
+
+        /// <summary>Переріз між двома сусідніми: part від 0 (перший) до 1 (другий).</summary>
+        public static RailFrame Between(RailFrame a, RailFrame b, double part)
+        {
+            Vec3d Mixed(Vec3d p, Vec3d q) => new Vec3d(p.X + (q.X - p.X) * part, p.Y + (q.Y - p.Y) * part, p.Z + (q.Z - p.Z) * part);
+            return new RailFrame { Center = Mixed(a.Center, b.Center), Side = Mixed(a.Side, b.Side).Normalize(), Up = Mixed(a.Up, b.Up).Normalize(), Along = Mixed(a.Along, b.Along).Normalize() };
+        }
+
+        /// <summary>
+        /// Де лінія рейки проходить крізь площину перерізу station: площину через його середину впоперек
+        /// його напрямку. Повертає переріз лінії в цьому місці або null, якщо лінія туди не доходить.
+        /// offset зсуває лінію вбік на стільки блоків уздовж Side кожного її перерізу: так з однієї рейки
+        /// колії виходить друга. near це номер перерізу лінії, біля якого шукати: якщо лінія перетинає
+        /// площину не раз, береться найближчий до нього перетин.
+        /// </summary>
+        public static RailFrame Cross(IList<RailFrame> line, double offset, RailFrame station, int near)
+        {
+            if (line == null || line.Count == 0 || station == null) return null;
+
+            int count = line.Count;
+            // Наскільки кожен переріз лінії попереду площини, блоків; за площиною від'ємне
+            double[] ahead = new double[count];
+            for (int i = 0; i < count; i++)
+            {
+                RailFrame frame = line[i];
+                ahead[i] = (frame.Center.X + frame.Side.X * offset - station.Center.X) * station.Along.X
+                    + (frame.Center.Y + frame.Side.Y * offset - station.Center.Y) * station.Along.Y
+                    + (frame.Center.Z + frame.Side.Z * offset - station.Center.Z) * station.Along.Z;
+            }
+
+            // Як далеко кожен переріз від початку лінії, якщо йти вздовж неї, блоків
+            double[] path = new double[count];
+            for (int i = 1; i < count; i++) path[i] = path[i - 1] + line[i].Center.DistanceTo(line[i - 1].Center);
+
+            near = GameMath.Clamp(near, 0, count - 1);
+            // Крута колія може перетнути ту саму площину ще раз, далеко за поворотом. Потрібен перетин,
+            // найближчий до near, якщо йти вздовж лінії: чи то всередині неї, чи одразу за її краєм
+            RailFrame best = null;
+            double bestAway = double.MaxValue;
+
+            for (int from = 0; from < count - 1; from++)
+            {
+                double a = ahead[from], b = ahead[from + 1];
+                // Переріз, що лежить на самій площині з точністю до похибки обчислень, це теж перетин
+                if ((a > OnPlane && b > OnPlane) || (a < -OnPlane && b < -OnPlane)) continue;
+
+                double part = Math.Abs(a - b) < 1e-12 ? 0 : GameMath.Clamp(a / (a - b), 0, 1);
+                double away = Math.Abs(path[from] + (path[from + 1] - path[from]) * part - path[near]);
+                if (away >= bestAway) continue;
+
+                bestAway = away;
+                best = Shifted(Between(line[from], line[from + 1], part), offset);
+            }
+
+            // Площина лежить за краєм лінії: продовжуємо лінію прямою від цього краю, але не далеко
+            for (int turn = 0; turn < 2; turn++)
+            {
+                int end = turn == 0 ? 0 : count - 1;
+                RailFrame last = line[end];
+                double facing = last.Along.X * station.Along.X + last.Along.Y * station.Along.Y + last.Along.Z * station.Along.Z;
+                if (Math.Abs(facing) < 1e-6) continue;
+
+                // Лише назовні: всередині лінії перетин уже знайдено б
+                double step = -ahead[end] / facing;
+                if (end == 0 ? step > 0 : step < 0) continue;
+                if (Math.Abs(step) > MaxExtend) continue;
+
+                double away = Math.Abs(path[end] - path[near]) + Math.Abs(step);
+                if (away >= bestAway) continue;
+
+                bestAway = away;
+                best = Shifted(last, offset);
+                best.Center.Add(last.Along.X * step, last.Along.Y * step, last.Along.Z * step);
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Те саме, що Cross, але повертає лише місце перетину в самому перерізі station: відстань від його
+        /// середини вздовж його боку, блоків. false, якщо лінія до перерізу не доходить.
+        /// </summary>
+        public static bool Offset(IList<RailFrame> line, double offset, RailFrame station, int near, out double across)
+        {
+            across = 0;
+            RailFrame hit = Cross(line, offset, station, near);
+            if (hit == null) return false;
+
+            across = (hit.Center.X - station.Center.X) * station.Side.X + (hit.Center.Y - station.Center.Y) * station.Side.Y
+                + (hit.Center.Z - station.Center.Z) * station.Side.Z;
+            return true;
+        }
+
+        // Той самий переріз, зсунутий убік уздовж свого Side
+        private static RailFrame Shifted(RailFrame frame, double offset)
+        {
+            return new RailFrame
+            {
+                Center = new Vec3d(frame.Center.X + frame.Side.X * offset, frame.Center.Y + frame.Side.Y * offset, frame.Center.Z + frame.Side.Z * offset),
+                Side = frame.Side,
+                Up = frame.Up,
+                Along = frame.Along
+            };
+        }
+    }
+}
