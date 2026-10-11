@@ -65,6 +65,43 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void LoopThatNeverLeavesTheTrackIsRefused()
+        {
+            // Довга пряма без стрілок. Маршрут відходить від неї на пів блока і тут же повертається:
+            // шпали двох колій весь час перекриваються, і дві його стрілки стоять одна в одній
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> loop = Plan(Point(10, 0, 1, 0), Point(13, 0.5, 1, 0), Point(16, 0, 1, 0));
+
+            Assert.True(SectionLinker.FindSwitchInZone(loop, SectionsIn, Resolve) >= 0);
+        }
+
+        [Fact]
+        public void SidingThatLeavesTheTrackProperlyIsAllowed()
+        {
+            // Роз'їзд: відходить на три блоки вбік, іде поруч і повертається за сорок блоків
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> siding = Plan(Point(10, 0, 1, 0), Point(20, 3, 1, 0), Point(40, 3, 1, 0), Point(50, 0, 1, 0));
+
+            Assert.Equal(-1, SectionLinker.FindSwitchInZone(siding, SectionsIn, Resolve));
+        }
+
+        [Fact]
+        public void TryingAStretchDoesNotTouchTheLaidTrack()
+        {
+            List<Section> main = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> siding = Plan(Point(10, 0, 1, 0), Point(20, 3, 1, 0), Point(40, 3, 1, 0), Point(50, 0, 1, 0));
+
+            SectionLinker.FindSwitchInZone(siding, SectionsIn, Resolve);
+
+            // Примірка йшла на копіях: у покладених секцій сусідів стільки ж, скільки було
+            foreach (Section section in main)
+            {
+                Assert.True(section.GetLinks(true).Count <= 1);
+                Assert.True(section.GetLinks(false).Count <= 1);
+            }
+        }
+
+        [Fact]
         public void OpenEndIsFoundWithinAFewSections()
         {
             straight = Straight();

@@ -14,8 +14,9 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Будує секції з точок: кожні три поспіль точки з кроком два це одна секція.
         /// Матеріали і заміну блоків бере з налаштувань предмета, яким кладуть колію.
+        /// Повертає false, якщо колію не покладено зовсім, бо вона дала б стрілку в зоні іншої стрілки.
         /// </summary>
-        public static void Build(IWorldAccessor world, IPlayer byPlayer, ItemStack tool, List<PointOnBezierCurve> pointList)
+        public static bool Build(IWorldAccessor world, IPlayer byPlayer, ItemStack tool, List<PointOnBezierCurve> pointList)
         {
             string sleeperMaterial = tool.Attributes.GetString("sleeperMaterial", "oak");
             string railMaterial = tool.Attributes.GetString("railMaterial", "iron");
@@ -39,7 +40,7 @@ namespace RailWorld.src.RailWay
             if (SectionLinker.FindSwitchInZone(planned, chunk => session.Get(chunk)?.RailWaySections.Values, session.GetSection) >= 0)
             {
                 (byPlayer as IServerPlayer)?.SendIngameError("railswitchzone", "Надто близько до іншої стрілки");
-                return;
+                return false;
             }
 
             List<Section> stretch = new List<Section>();
@@ -106,6 +107,7 @@ namespace RailWorld.src.RailWay
             if (unloaded > 0) report += " У незавантажених чанках: " + unloaded + ".";
 
             (byPlayer as IServerPlayer)?.SendMessage(GlobalConstants.GeneralChatGroup, report, EnumChatType.Notification);
+            return true;
         }
 
         private static string Describe(string material)

@@ -401,7 +401,7 @@ namespace RailWorld
             string prefix = Prefix(chunkCoord);
             foreach (var pair in blades)
             {
-                if (pair.Key.StartsWith(prefix)) pair.Value.Live = false;
+                if (pair.Key.StartsWith(prefix, StringComparison.Ordinal)) pair.Value.Live = false;
             }
         }
 
@@ -411,7 +411,7 @@ namespace RailWorld
         public void EndChunk(Vec3i chunkCoord)
         {
             string prefix = Prefix(chunkCoord);
-            foreach (string key in blades.Where(pair => !pair.Value.Live && pair.Key.StartsWith(prefix)).Select(pair => pair.Key).ToList()) Remove(key);
+            foreach (string key in blades.Where(pair => !pair.Value.Live && pair.Key.StartsWith(prefix, StringComparison.Ordinal)).Select(pair => pair.Key).ToList()) Remove(key);
         }
 
         private void Remove(string key)
@@ -424,7 +424,7 @@ namespace RailWorld
         public void RemoveChunk(Vec3i chunkCoord)
         {
             string prefix = Prefix(chunkCoord);
-            foreach (string key in blades.Keys.Where(k => k.StartsWith(prefix)).ToList()) Remove(key);
+            foreach (string key in blades.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) Remove(key);
         }
 
         private Vec4f GetLight(Vec3d pos)

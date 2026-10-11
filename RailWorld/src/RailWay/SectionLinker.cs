@@ -270,15 +270,34 @@ namespace RailWorld.src.RailWay
             return found;
         }
 
+        // Місце, де кінець нової секції з'єднається з кінцем уже покладеної
+        private class Join
+        {
+            // Номер нової секції в ділянці і котрий її кінець
+            public int Index;
+            public bool AtStart;
+            // Покладена секція і її кінець
+            public SectionLink Other;
+            // З цього кінця покладена колія вже йде далі: зі з'єднанням тут буде стрілка
+            public bool MakesSwitch;
+            // Копія покладеної секції, на якій з'єднання приміряється
+            public Section Copy;
+        }
+
         /// <summary>
         /// Чи ділянка нових секцій, покладена поруч із колією, що вже лежить, дала б стрілку в зоні іншої
         /// стрілки. Стрілка виникає не лише там, де маршрут навмисно причепили до колії: кінець нової ділянки
         /// з'єднується з усім, що лежить у тій самій точці, і якщо колія звідти вже йде далі, це стрілка.
-        /// planned це нові секції по порядку, ще не записані. Повертає номер секції в planned, біля якої
-        /// це сталося б, або -1.
+        /// Інша стрілка це й та, що вже лежить, і та, яку дасть другий кінець цієї ж ділянки: ділянка, що
+        /// відходить від колії і тут же в неї повертається, ставить дві стрілки одна в одну.
+        /// Тому правило перевіряється на колії, якою вона стане після побудови: нова ділянка приміряється
+        /// поверх покладеної, а покладені секції, до яких вона чіпляється, беруться копіями, справжні дані
+        /// не змінюються. planned це нові секції по порядку, щойно створені й ще нікуди не записані; метод
+        /// з'єднує їх між собою. Повертає номер секції в planned, біля якої це сталося б, або -1.
         /// </summary>
         public static int FindSwitchInZone(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<SectionLink, Section> resolve)
         {
+            var joins = new List<Join>();
             for (int i = 0; i < planned.Count; i++)
             {
                 for (int end = 0; end < 2; end++)
@@ -293,13 +312,67 @@ namespace RailWorld.src.RailWay
                     foreach (SectionLink meeting in Meeting(planned[i], atStart, sectionsIn))
                     {
                         Section other = resolve(meeting);
+                        if (other == null) continue;
+
+                        // До стрілки третю гілку не приєднуємо: такого з'єднання не буде
+                        int links = other.GetLinks(meeting.AtStart).Count;
+                        if (links >= MaxLinksPerEnd) continue;
                         // З вільного кінця колія просто продовжується; стрілка там, де вона вже йде далі
-                        if (other == null || other.GetLinks(meeting.AtStart).Count != 1) continue;
-                        if (SwitchZone.IsBlocked(other, meeting.AtStart, resolve)) return i;
+                        joins.Add(new Join { Index = i, AtStart = atStart, Other = meeting, MakesSwitch = links == 1 });
                     }
                 }
             }
+            if (!joins.Exists(join => join.MakesSwitch)) return -1;
+
+            // Колія після побудови: нові секції і копії покладених, до яких вони чіпляються, поверх справжніх
+            var overlay = new Dictionary<string, Section>();
+            string Key(Vec3i chunk, int index) => chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + index;
+            Section Find(SectionLink link) => overlay.TryGetValue(Key(link.Chunk, link.Index), out Section found) ? found : resolve(link);
+
+            for (int i = 0; i < planned.Count; i++)
+            {
+                // Номера в чанку нова секція ще не має: даємо від'ємний, таких у справжніх не буває
+                planned[i].IndexInChunk = -(i + 2);
+                overlay[Key(planned[i].ChunkAddres, planned[i].IndexInChunk)] = planned[i];
+            }
+            for (int i = 0; i + 1 < planned.Count; i++)
+            {
+                if (planned[i].FullEndPosition.DistanceTo(planned[i + 1].FullStartPosition) > PositionTolerance) continue;
+                Connect(planned[i], false, planned[i + 1], true);
+            }
+            foreach (Join join in joins)
+            {
+                string key = Key(join.Other.Chunk, join.Other.Index);
+                if (!overlay.TryGetValue(key, out join.Copy))
+                {
+                    join.Copy = Serializer.DeepClone(resolve(join.Other));
+                    join.Copy.IndexInChunk = join.Other.Index;
+                    overlay[key] = join.Copy;
+                }
+                Connect(planned[join.Index], join.AtStart, join.Copy, join.Other.AtStart);
+            }
+
+            foreach (Join join in joins)
+            {
+                if (!join.MakesSwitch) continue;
+                Section mine = planned[join.Index];
+
+                // Саме це з'єднання знімаємо: перевіряється місце під стрілку, а не вже готова стрілка.
+                // Дивимося з обох боків: і вздовж покладеної колії, і вздовж нової ділянки
+                mine.RemoveLink(join.AtStart, join.Copy);
+                join.Copy.RemoveLink(join.Other.AtStart, mine);
+                bool blocked = SwitchZone.IsBlocked(join.Copy, join.Other.AtStart, Find) || SwitchZone.IsBlocked(mine, join.AtStart, Find);
+                Connect(mine, join.AtStart, join.Copy, join.Other.AtStart);
+
+                if (blocked) return join.Index;
+            }
             return -1;
+        }
+
+        private static void Connect(Section a, bool aAtStart, Section b, bool bAtStart)
+        {
+            a.AddLink(aAtStart, new SectionLink(b, bAtStart));
+            b.AddLink(bAtStart, new SectionLink(a, aAtStart));
         }
 
         private static void Link(RailDataSession session, Section a, bool aAtStart, Section b, bool bAtStart)

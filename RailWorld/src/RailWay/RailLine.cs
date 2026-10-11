@@ -36,54 +36,72 @@ namespace RailWorld.src.RailWay
             if (line == null || line.Count == 0 || station == null) return null;
 
             int count = line.Count;
-            // Наскільки кожен переріз лінії попереду площини, блоків; за площиною від'ємне
-            double[] ahead = new double[count];
-            for (int i = 0; i < count; i++)
+            near = GameMath.Clamp(near, 0, count - 1);
+
+            // Наскільки переріз лінії попереду площини, блоків; за площиною від'ємне
+            double Ahead(int i)
             {
                 RailFrame frame = line[i];
-                ahead[i] = (frame.Center.X + frame.Side.X * offset - station.Center.X) * station.Along.X
+                return (frame.Center.X + frame.Side.X * offset - station.Center.X) * station.Along.X
                     + (frame.Center.Y + frame.Side.Y * offset - station.Center.Y) * station.Along.Y
                     + (frame.Center.Z + frame.Side.Z * offset - station.Center.Z) * station.Along.Z;
             }
 
-            // Як далеко кожен переріз від початку лінії, якщо йти вздовж неї, блоків
-            double[] path = new double[count];
-            for (int i = 1; i < count; i++) path[i] = path[i - 1] + line[i].Center.DistanceTo(line[i - 1].Center);
-
-            near = GameMath.Clamp(near, 0, count - 1);
             // Крута колія може перетнути ту саму площину ще раз, далеко за поворотом. Потрібен перетин,
-            // найближчий до near, якщо йти вздовж лінії: чи то всередині неї, чи одразу за її краєм
+            // найближчий до near уздовж лінії. Тому відрізки лінії переглядаються по черзі в обидва боки
+            // від near, і пошук зупиняється на першому знайденому: далі можуть бути лише дальші.
+            // away це відстань до перетину в перерізах лінії
             RailFrame best = null;
             double bestAway = double.MaxValue;
+            double forward = Ahead(near), backward = forward;
 
-            for (int from = 0; from < count - 1; from++)
+            for (int reach = 0; reach < count && best == null; reach++)
             {
-                double a = ahead[from], b = ahead[from + 1];
-                // Переріз, що лежить на самій площині з точністю до похибки обчислень, це теж перетин
-                if ((a > OnPlane && b > OnPlane) || (a < -OnPlane && b < -OnPlane)) continue;
+                int from = near + reach;
+                if (from < count - 1)
+                {
+                    double next = Ahead(from + 1);
+                    if (Crosses(forward, next, out double part))
+                    {
+                        bestAway = reach + part;
+                        best = Shifted(Between(line[from], line[from + 1], part), offset);
+                    }
+                    forward = next;
+                }
 
-                double part = Math.Abs(a - b) < 1e-12 ? 0 : GameMath.Clamp(a / (a - b), 0, 1);
-                double away = Math.Abs(path[from] + (path[from + 1] - path[from]) * part - path[near]);
-                if (away >= bestAway) continue;
+                int back = near - reach - 1;
+                if (back >= 0)
+                {
+                    double previous = Ahead(back);
+                    if (Crosses(previous, backward, out double part) && reach + 1 - part < bestAway)
+                    {
+                        bestAway = reach + 1 - part;
+                        best = Shifted(Between(line[back], line[back + 1], part), offset);
+                    }
+                    backward = previous;
+                }
 
-                bestAway = away;
-                best = Shifted(Between(line[from], line[from + 1], part), offset);
+                if (from >= count - 1 && back < 0) break;
             }
 
-            // Площина лежить за краєм лінії: продовжуємо лінію прямою від цього краю, але не далеко
+            // Площина лежить за краєм лінії: продовжуємо лінію прямою від цього краю, але не далеко.
+            // Це береться, і коли перетину всередині немає, і коли він є, але далі від near, ніж край
             for (int turn = 0; turn < 2; turn++)
             {
                 int end = turn == 0 ? 0 : count - 1;
+                if (Math.Abs(end - near) >= bestAway) continue;
+
                 RailFrame last = line[end];
                 double facing = last.Along.X * station.Along.X + last.Along.Y * station.Along.Y + last.Along.Z * station.Along.Z;
                 if (Math.Abs(facing) < 1e-6) continue;
 
                 // Лише назовні: всередині лінії перетин уже знайдено б
-                double step = -ahead[end] / facing;
+                double step = -Ahead(end) / facing;
                 if (end == 0 ? step > 0 : step < 0) continue;
                 if (Math.Abs(step) > MaxExtend) continue;
 
-                double away = Math.Abs(path[end] - path[near]) + Math.Abs(step);
+                double spacing = count > 1 ? line[end].Center.DistanceTo(line[end == 0 ? 1 : count - 2].Center) : 1;
+                double away = Math.Abs(end - near) + (spacing > 1e-9 ? Math.Abs(step) / spacing : 0);
                 if (away >= bestAway) continue;
 
                 bestAway = away;
@@ -92,6 +110,18 @@ namespace RailWorld.src.RailWay
             }
 
             return best;
+        }
+
+        // Чи площина лежить між двома сусідніми перерізами, які попереду неї на a і b блоків, і де саме:
+        // part від 0 (перший) до 1 (другий). Переріз, що лежить на самій площині з точністю до похибки
+        // обчислень, це теж перетин
+        private static bool Crosses(double a, double b, out double part)
+        {
+            part = 0;
+            if ((a > OnPlane && b > OnPlane) || (a < -OnPlane && b < -OnPlane)) return false;
+
+            part = Math.Abs(a - b) < 1e-12 ? 0 : GameMath.Clamp(a / (a - b), 0, 1);
+            return true;
         }
 
         /// <summary>

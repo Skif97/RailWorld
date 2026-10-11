@@ -44,27 +44,37 @@ namespace RailWorld
     }
 
     /// <summary>
-    /// Підтверджений маршрут по точках: положення і напрямок колії в кожній точці.
-    /// Клієнт надсилає його лише після перегляду; до того розмітка живе тільки в нього.
+    /// Маршрут, який гравець підтвердив: точки розмітки, як він їх поставив. Маршрут із них складає сервер.
+    /// Точка на блоці це блок і кут погляду; точка на колії це секція, її кінець і бік, у який іде маршрут.
     /// </summary>
     [ProtoContract]
     public class RoutePacket
     {
-        [ProtoMember(1)] public double[] X;
-        [ProtoMember(2)] public double[] Y;
-        [ProtoMember(3)] public double[] Z;
-        [ProtoMember(4)] public double[] TangentX;
-        [ProtoMember(5)] public double[] TangentY;
-        [ProtoMember(6)] public double[] TangentZ;
-        // Нахил полотна в точках, що стоять на вже покладеній колії; NaN для решти
-        [ProtoMember(7)] public double[] Cant;
-        // Секція покладеної колії, поверх якої маршрут лежить за точкою: її чанк, номер у чанку і котрим кінцем
-        // вона в цій точці. Номер -1, якщо такої секції немає
-        [ProtoMember(8)] public int[] TrackChunkX;
-        [ProtoMember(9)] public int[] TrackChunkY;
-        [ProtoMember(10)] public int[] TrackChunkZ;
-        [ProtoMember(11)] public int[] TrackIndex;
-        [ProtoMember(12)] public bool[] TrackJointAtStart;
+        // Номер маршруту в клієнта: з ним сервер надсилає відповідь
+        [ProtoMember(1)] public int Id;
+        [ProtoMember(2)] public int[] BlockX;
+        [ProtoMember(3)] public int[] BlockY;
+        [ProtoMember(4)] public int[] BlockZ;
+        [ProtoMember(5)] public double[] Yaw;
+        [ProtoMember(6)] public bool[] Exact;
+        // Секція, на кінці якої стоїть точка. Номер -1 для точки на блоці
+        [ProtoMember(7)] public int[] JointChunkX;
+        [ProtoMember(8)] public int[] JointChunkY;
+        [ProtoMember(9)] public int[] JointChunkZ;
+        [ProtoMember(10)] public int[] JointIndex;
+        [ProtoMember(11)] public bool[] JointAtStart;
+        [ProtoMember(12)] public int[] Sign;
+    }
+
+    /// <summary>
+    /// Відповідь сервера на маршрут: побудовано чи ні, і якщо ні, то чому. Доти клієнт тримає перегляд.
+    /// </summary>
+    [ProtoContract]
+    public class RouteResultPacket
+    {
+        [ProtoMember(1)] public int Id;
+        [ProtoMember(2)] public bool Built;
+        [ProtoMember(3)] public string Reason;
     }
 
     public class RailWorld : ModSystem
@@ -110,7 +120,9 @@ namespace RailWorld
                 .RegisterMessageType<RailMenuPacket>()
                 .RegisterMessageType<RailDataPacket>()
                 .RegisterMessageType<RoutePacket>()
-                .SetMessageHandler<RailDataPacket>(OnRailDataReceived);
+                .RegisterMessageType<RouteResultPacket>()
+                .SetMessageHandler<RailDataPacket>(OnRailDataReceived)
+                .SetMessageHandler<RouteResultPacket>(packet => RoutePlanner.Instance?.OnServerAnswer(packet.Id, packet.Built, packet.Reason));
         }
 
         public override void StartServerSide(ICoreServerAPI api)
@@ -123,6 +135,7 @@ namespace RailWorld
                 .RegisterMessageType<RailMenuPacket>()
                 .RegisterMessageType<RailDataPacket>()
                 .RegisterMessageType<RoutePacket>()
+                .RegisterMessageType<RouteResultPacket>()
                 .SetMessageHandler<RailMenuPacket>(OnRailMenuPacketReceived)
                 .SetMessageHandler<RoutePacket>(OnRoutePacketReceived);
         }
@@ -154,39 +167,37 @@ namespace RailWorld
         private const double MaxRouteSpan = 400;
 
         /// <summary>
-        /// Клієнт: відправляє підтверджений маршрут на побудову.
+        /// Клієнт: відправляє підтверджений маршрут на побудову. id це номер, з яким сервер відповість.
         /// </summary>
-        public static void SendRoute(List<RoutePoint> route)
+        public static void SendRoute(List<RouteMarker> markers, int id)
         {
-            int count = route.Count;
+            int count = markers.Count;
             RoutePacket packet = new RoutePacket
             {
-                X = new double[count], Y = new double[count], Z = new double[count],
-                TangentX = new double[count], TangentY = new double[count], TangentZ = new double[count],
-                Cant = new double[count],
-                TrackChunkX = new int[count], TrackChunkY = new int[count], TrackChunkZ = new int[count],
-                TrackIndex = new int[count], TrackJointAtStart = new bool[count]
+                Id = id,
+                BlockX = new int[count], BlockY = new int[count], BlockZ = new int[count],
+                Yaw = new double[count], Exact = new bool[count],
+                JointChunkX = new int[count], JointChunkY = new int[count], JointChunkZ = new int[count],
+                JointIndex = new int[count], JointAtStart = new bool[count], Sign = new int[count]
             };
 
             for (int i = 0; i < count; i++)
             {
-                packet.X[i] = route[i].Position.X;
-                packet.Y[i] = route[i].Position.Y;
-                packet.Z[i] = route[i].Position.Z;
-                packet.TangentX[i] = route[i].Tangent.X;
-                packet.TangentY[i] = route[i].Tangent.Y;
-                packet.TangentZ[i] = route[i].Tangent.Z;
-                packet.Cant[i] = route[i].Cant;
+                RouteMarker marker = markers[i];
+                packet.BlockX[i] = marker.Block.X;
+                packet.BlockY[i] = marker.Block.Y;
+                packet.BlockZ[i] = marker.Block.Z;
+                packet.Yaw[i] = marker.Yaw;
+                packet.Exact[i] = marker.Exact;
 
-                Section track = route[i].Track;
-                packet.TrackIndex[i] = track == null ? -1 : track.IndexInChunk;
-                if (track != null)
-                {
-                    packet.TrackChunkX[i] = track.ChunkAddres.X;
-                    packet.TrackChunkY[i] = track.ChunkAddres.Y;
-                    packet.TrackChunkZ[i] = track.ChunkAddres.Z;
-                    packet.TrackJointAtStart[i] = route[i].TrackJointAtStart;
-                }
+                packet.JointIndex[i] = marker.Joint == null ? -1 : marker.Joint.IndexInChunk;
+                if (marker.Joint == null) continue;
+
+                packet.JointChunkX[i] = marker.Joint.ChunkAddres.X;
+                packet.JointChunkY[i] = marker.Joint.ChunkAddres.Y;
+                packet.JointChunkZ[i] = marker.Joint.ChunkAddres.Z;
+                packet.JointAtStart[i] = marker.JointAtStart;
+                packet.Sign[i] = marker.Sign;
             }
 
             _clientChannel?.SendPacket(packet);
@@ -195,75 +206,68 @@ namespace RailWorld
         // ── Сервер: будує маршрут по точках ──────────────────────────────────
         private void OnRoutePacketReceived(IServerPlayer fromPlayer, RoutePacket packet)
         {
+            // Клієнт тримає перегляд маршруту, доки не дізнається, чим скінчилося: відповідаємо завжди
+            string refusal = BuildRoute(fromPlayer, packet);
+            _serverChannel.SendPacket(new RouteResultPacket { Id = packet.Id, Built = refusal == null, Reason = refusal }, fromPlayer);
+        }
+
+        // Складає маршрут із точок гравця і кладе колію. Клієнтові віримо лише в тому, що поставив гравець:
+        // який блок, куди дивився, котрий стик колії. Усе інше береться зі своїх даних.
+        // Повертає причину відмови або null, якщо колію покладено
+        private string BuildRoute(IServerPlayer fromPlayer, RoutePacket packet)
+        {
             ItemStack tool = fromPlayer.InventoryManager.ActiveHotbarSlot?.Itemstack;
-            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true) return;
-            if (tool.Attributes.GetString("railMode") != RoutePlanner.ModeCode) return;
+            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true
+                || tool.Attributes.GetString("railMode") != RoutePlanner.ModeCode) return "предмет для прокладання колії не в руці";
 
-            int count = packet.X?.Length ?? 0;
-            if (count < 2 || count > MaxRoutePoints) return;
-            if (packet.Y?.Length != count || packet.Z?.Length != count) return;
-            if (packet.TangentX?.Length != count || packet.TangentY?.Length != count || packet.TangentZ?.Length != count) return;
-
-            RailDataSession zoneLookup = new RailDataSession(_sapi.World);
-            var route = new List<RoutePoint>();
-            for (int i = 0; i < count; i++)
-            {
-                Vec3d tangent = new Vec3d(packet.TangentX[i], packet.TangentY[i], packet.TangentZ[i]);
-                if (tangent.Length() < 1e-6) return;
-
-                Vec3d position = new Vec3d(packet.X[i], packet.Y[i], packet.Z[i]);
-                if (i > 0 && position.DistanceTo(route[i - 1].Position) > MaxRouteSpan) return;
-
-                double cant = packet.Cant != null && packet.Cant.Length == count ? packet.Cant[i] : double.NaN;
-                // Нахил колії не буває більшим за найбільший дозволений; решту вважаємо сміттям
-                if (!double.IsNaN(cant) && Math.Abs(cant) > ModMath.MaxCantRad * 1.5) cant = double.NaN;
-
-                RoutePoint point = new RoutePoint { Position = position, Tangent = tangent.Normalize(), Cant = cant };
-
-                // Секцію, поверх якої піде маршрут, шукаємо у своїх даних. Клієнтові віримо лише в тому,
-                // котра це секція, і лише якщо її кінець справді лежить у цій точці
-                bool hasTrack = packet.TrackIndex != null && packet.TrackIndex.Length == count && packet.TrackIndex[i] >= 0
-                    && packet.TrackChunkX?.Length == count && packet.TrackChunkY?.Length == count && packet.TrackChunkZ?.Length == count
-                    && packet.TrackJointAtStart?.Length == count;
-                if (hasTrack)
-                {
-                    Vec3i chunk = new Vec3i(packet.TrackChunkX[i], packet.TrackChunkY[i], packet.TrackChunkZ[i]);
-                    Section track = null;
-                    DataInChunk.Get(_sapi.World, chunk)?.RailWaySections.TryGetValue(packet.TrackIndex[i], out track);
-
-                    bool jointAtStart = packet.TrackJointAtStart[i];
-                    if (track != null && track.GetEndPosition(jointAtStart).DistanceTo(position) <= SectionLinker.PositionTolerance)
-                    {
-                        // Тут маршрут дасть нову стрілку. Клієнт це вже перевірив, але його дані могли застаріти
-                        if (SwitchZone.IsBlocked(track, jointAtStart, zoneLookup.GetSection))
-                        {
-                            fromPlayer.SendIngameError("railswitchzone", "Надто близько до іншої стрілки");
-                            return;
-                        }
-
-                        point.Track = track;
-                        point.TrackJointAtStart = jointAtStart;
-                    }
-                }
-
-                route.Add(point);
-            }
+            int count = packet.BlockX?.Length ?? 0;
+            if (count < 2 || count > MaxRoutePoints) return "у маршруті має бути від 2 до " + MaxRoutePoints + " точок";
+            if (packet.BlockY?.Length != count || packet.BlockZ?.Length != count || packet.Yaw?.Length != count || packet.Exact?.Length != count
+                || packet.JointChunkX?.Length != count || packet.JointChunkY?.Length != count || packet.JointChunkZ?.Length != count
+                || packet.JointIndex?.Length != count || packet.JointAtStart?.Length != count || packet.Sign?.Length != count) return "пошкоджений запит";
 
             RailDataSession lookup = new RailDataSession(_sapi.World);
+            var markers = new List<RouteMarker>();
+            for (int i = 0; i < count; i++)
+            {
+                RouteMarker marker;
+                if (packet.JointIndex[i] >= 0)
+                {
+                    var link = new SectionLink { ChunkX = packet.JointChunkX[i], ChunkY = packet.JointChunkY[i], ChunkZ = packet.JointChunkZ[i], Index = packet.JointIndex[i] };
+                    Section joint = lookup.GetSection(link);
+                    if (joint == null) return "колії в точці " + (i + 1) + " уже немає";
+
+                    bool atStart = packet.JointAtStart[i];
+                    marker = RouteMarker.OnJoint(joint, atStart, packet.Sign[i] < 0 ? -1 : 1, i == 0, lookup.GetSection);
+
+                    // Тут маршрут дасть нову стрілку. Клієнт це вже перевірив, але його дані могли застаріти
+                    if (marker.Track != null && SwitchZone.IsBlocked(joint, atStart, lookup.GetSection)) return "надто близько до іншої стрілки";
+                }
+                else
+                {
+                    double yaw = packet.Yaw[i];
+                    if (double.IsNaN(yaw) || double.IsInfinity(yaw)) return "пошкоджений запит";
+                    marker = RouteMarker.OnBlock(new BlockPos(packet.BlockX[i], packet.BlockY[i], packet.BlockZ[i], 0), yaw);
+                    marker.Exact = packet.Exact[i];
+                }
+
+                if (i > 0 && marker.Position.DistanceTo(markers[i - 1].Position) > MaxRouteSpan) return "точки надто далеко одна від одної";
+                markers.Add(marker);
+            }
+
+            List<RoutePoint> route = RouteBuilder.Build(markers);
+            if (route == null) return "з цих точок маршрут не складається";
+
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict,
                 chunk => lookup.Get(chunk)?.RailWaySections.Values);
 
             // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
             // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден
             string problem = conflict ?? RoutePlanner.FindProblem(points);
-            if (problem != null)
-            {
-                fromPlayer.SendIngameError("railrouteproblem", "Маршрут не будується: " + problem);
-                return;
-            }
-            if (points.Count < 3) return;
+            if (problem != null) return problem;
+            if (points.Count < 3) return "маршрут надто короткий";
 
-            TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
+            return TrackBuilder.Build(_sapi.World, fromPlayer, tool, points) ? null : "надто близько до іншої стрілки";
         }
 
         /// <summary>

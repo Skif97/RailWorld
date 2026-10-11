@@ -51,7 +51,11 @@ namespace RailWorld
         public int TextureId { get; private set; }
         private CustomMeshDataPartFloat matrixAndLightFloats;
 
-        private Dictionary<string, RailInstanceData> instances = new Dictionary<string, RailInstanceData>();
+        // Шматки рейок по чанках своїх секцій: чанк перебудовується цілком, і прибрати його рейки
+        // це викинути один список, а не шукати їх серед рейок усього світу
+        private Dictionary<Vec3i, List<RailInstanceData>> instances = new Dictionary<Vec3i, List<RailInstanceData>>();
+        // Скільки шматків у всіх чанках разом
+        private int instanceCount;
 
         // Габарити перерізу рейки, беруться з меша: висота над підошвою і півширина від осі
         private double railHeight;
@@ -110,7 +114,6 @@ namespace RailWorld
 
         public void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape = null)
         {
-            string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}";
             float sign = left ? 1f : -1f;
             float offset = section.TrackWidth / 2f * sign;
             Vec3d start = section.FullStartPosition;
@@ -127,15 +130,22 @@ namespace RailWorld
                 widths[1] = (shape.Width[1] + shape.Width[2]) / 2;
             }
 
-            AddPiece(key + "0", BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
-            AddPiece(key + "1", BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
+            AddPiece(chunkCoord, BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
+            AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
         }
 
-        private void AddPiece(string key, RailInstanceData piece)
+        private void AddPiece(Vec3i chunkCoord, RailInstanceData piece)
         {
             // Шматок нульової довжини: середина секції збіглася з її краєм
-            if (piece == null) instances.Remove(key);
-            else instances[key] = piece;
+            if (piece == null) return;
+
+            if (!instances.TryGetValue(chunkCoord, out List<RailInstanceData> pieces))
+            {
+                pieces = new List<RailInstanceData>();
+                instances[chunkCoord.Clone()] = pieces;
+            }
+            pieces.Add(piece);
+            instanceCount++;
             layoutDirty = true;
         }
 
@@ -151,12 +161,11 @@ namespace RailWorld
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            string prefix = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_";
-            foreach (var key in instances.Keys.Where(k => k.StartsWith(prefix)).ToList())
-            {
-                instances.Remove(key);
-                layoutDirty = true;
-            }
+            if (!instances.TryGetValue(chunkCoord, out List<RailInstanceData> pieces)) return;
+
+            instanceCount -= pieces.Count;
+            instances.Remove(chunkCoord);
+            layoutDirty = true;
         }
 
         // Шматок рейки між двома точками осі колії. fromOffset і toOffset це зсув рейки вбік від осі на кінцях
@@ -228,8 +237,10 @@ namespace RailWorld
 
         public void UpdateLights()
         {
-            foreach (RailInstanceData d in instances.Values)
-                d.Light = GetLight(d.Position);
+            foreach (List<RailInstanceData> pieces in instances.Values)
+            {
+                foreach (RailInstanceData d in pieces) d.Light = GetLight(d.Position);
+            }
             layoutDirty = true;
         }
 
@@ -266,9 +277,9 @@ namespace RailWorld
         public void PrepareFrame()
         {
             preparedCount = 0;
-            if (meshref == null || instances.Count == 0) return;
+            if (meshref == null || instanceCount == 0) return;
 
-            int count      = instances.Count;
+            int count      = instanceCount;
             int floatCount = count * 20;
 
             if (matrixAndLightFloats.Values == null || matrixAndLightFloats.Values.Length < floatCount) Grow(count);
@@ -282,7 +293,8 @@ namespace RailWorld
                 if (basePositions.Length < count * 3) basePositions = new double[count * 3 * 2];
 
                 int n = 0;
-                foreach (RailInstanceData d in instances.Values)
+                foreach (List<RailInstanceData> pieces in instances.Values)
+                foreach (RailInstanceData d in pieces)
                 {
                     Mat4f.Identity(tmpMat);
                     Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
