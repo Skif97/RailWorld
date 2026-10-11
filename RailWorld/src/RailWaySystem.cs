@@ -42,6 +42,21 @@ namespace RailWorld
         [ProtoMember(10)] public int CancelReason;
     }
 
+    /// <summary>
+    /// Сервер повідомляє клієнтам, що стрілку переведено. Revision це номер зміни даних чанка після цього.
+    /// </summary>
+    [ProtoContract]
+    public class SwitchTogglePacket
+    {
+        [ProtoMember(1)] public int ChunkX;
+        [ProtoMember(2)] public int ChunkY;
+        [ProtoMember(3)] public int ChunkZ;
+        [ProtoMember(4)] public int Index;
+        [ProtoMember(5)] public bool AtStart;
+        [ProtoMember(6)] public int Position;
+        [ProtoMember(7)] public int Revision;
+    }
+
     public class RailWaySystem : ModSystem
     {
         private const string ChannelName = "railworld-section";
@@ -54,6 +69,7 @@ namespace RailWorld
         private ICoreServerAPI sapi;
 
         private IClientNetworkChannel clientChannel;
+        private IServerNetworkChannel serverChannel;
 
         public RailWayRendererSystem Renderer { get; private set; }
 
@@ -94,9 +110,14 @@ namespace RailWorld
             base.StartClientSide(api);
             this.capi = api;
 
+            // Дані колії лежать у статичному сховищі й могли лишитися від попереднього світу
+            DataInChunk.ClearClientCache();
+
             clientChannel = api.Network
                 .RegisterChannel(ChannelName)
-                .RegisterMessageType<SectionActionPacket>();
+                .RegisterMessageType<SectionActionPacket>()
+                .RegisterMessageType<SwitchTogglePacket>()
+                .SetMessageHandler<SwitchTogglePacket>(OnSwitchToggled);
 
             api.Event.BlockTexturesLoaded += OnLoaded;
 
@@ -137,9 +158,10 @@ namespace RailWorld
             // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
 
-            api.Network
+            serverChannel = api.Network
                 .RegisterChannel(ChannelName)
                 .RegisterMessageType<SectionActionPacket>()
+                .RegisterMessageType<SwitchTogglePacket>()
                 .SetMessageHandler<SectionActionPacket>(OnSectionAction);
 
             // Гравець зламав або поставив блок: перевіряємо, чи не змінилося щось під секціями поруч
@@ -215,25 +237,21 @@ namespace RailWorld
         /// </summary>
         public IEnumerable<Vec3i> ClientChunkCoords => clientBoxes.Keys;
 
-        // Секції кожного чанка за номером: щоб швидко пройти по колії через зв'язки між секціями
-        private Dictionary<Vec3i, IDictionary<int, Section>> clientSections = new Dictionary<Vec3i, IDictionary<int, Section>>();
-        // Записи про стрілки кожного чанка за ключем RailSwitch.Key, якими їх прислав сервер
-        private Dictionary<Vec3i, IDictionary<int, RailSwitch>> clientSwitches = new Dictionary<Vec3i, IDictionary<int, RailSwitch>>();
-
         /// <summary>
         /// Секція, на яку вказує посилання, з того, що клієнт зараз знає про колію. null, якщо її чанку немає.
         /// </summary>
         public Section FindClientSection(SectionLink link)
         {
-            if (link == null || !clientSections.TryGetValue(link.Chunk, out IDictionary<int, Section> sections)) return null;
-            sections.TryGetValue(link.Index, out Section section);
+            DataInChunk data = link == null ? null : DataInChunk.GetClient(link.Chunk);
+            if (data == null) return null;
+            data.RailWaySections.TryGetValue(link.Index, out Section section);
             return section;
         }
 
         /// <summary>Секції колії, що зберігаються в чанку, якими їх знає клієнт; null, якщо колії там немає.</summary>
         public IEnumerable<Section> ClientSectionsIn(Vec3i chunkCoord)
         {
-            return clientSections.TryGetValue(chunkCoord, out IDictionary<int, Section> sections) ? sections.Values : null;
+            return DataInChunk.GetClient(chunkCoord)?.RailWaySections.Values;
         }
 
         public List<SectionBox> GetClientBoxes(Vec3i chunkCoord)
@@ -244,28 +262,34 @@ namespace RailWorld
 
         /// <summary>
         /// Замінює все, що клієнт знає про колію в чанку: бокси виділення, шпали і рейки.
+        /// Повертає false, якщо дані відкинуто, бо клієнт уже має новіші.
         /// </summary>
-        public void SetChunkData(Vec3i chunkCoord, DataInChunk data)
+        public bool SetChunkData(Vec3i chunkCoord, DataInChunk data)
         {
             // Колії в чанку більше немає: прибираємо все. Якщо ж дані просто замінюються новими, нічого наперед
             // не викидаємо: перебудова сама прибере зайве, а незмінні деталі стрілок лишить як є
             if (data == null)
             {
                 RemoveChunk(chunkCoord);
-                return;
+                return true;
             }
+
+            // Чанк гра розпаковує у фоні, а пакет зі зміною приходить одразу: дані чанка, відправленого
+            // до зміни, можуть дійти після неї
+            DataInChunk known = DataInChunk.GetClient(chunkCoord);
+            if (known != null && data.Revision < known.Revision) return false;
 
             Vec3i coord = chunkCoord.Clone();
             var boxes = new List<SectionBox>();
             foreach (var kvp in data.RailWaySections)
                 Handler.GetSelectionBoxes(boxes, coord, kvp.Key, kvp.Value);
             clientBoxes[coord] = boxes;
-            clientSections[coord] = data.RailWaySections;
-            clientSwitches[coord] = data.Switches;
+            DataInChunk.SetClient(coord, data);
             selectionRenderer?.MarkChunkDirty(coord);
 
             RebuildChunkRender(coord, data.RailWaySections);
             QueueNeighbourRender(coord);
+            return true;
         }
 
         // Чанки, вигляд колії в яких треба зібрати заново, бо змінилася колія в сусідньому
@@ -289,7 +313,7 @@ namespace RailWorld
                     {
                         if (dx == 0 && dy == 0 && dz == 0) continue;
                         Vec3i neighbour = new Vec3i(chunkCoord.X + dx, chunkCoord.Y + dy, chunkCoord.Z + dz);
-                        if (clientSections.ContainsKey(neighbour)) pendingRender.Add(neighbour);
+                        if (DataInChunk.GetClient(neighbour) != null) pendingRender.Add(neighbour);
                     }
                 }
             }
@@ -304,8 +328,8 @@ namespace RailWorld
 
                 foreach (Vec3i coord in coords)
                 {
-                    if (Renderer != null && clientSections.TryGetValue(coord, out IDictionary<int, Section> sections))
-                        RebuildChunkRender(coord, sections);
+                    DataInChunk data = DataInChunk.GetClient(coord);
+                    if (Renderer != null && data != null) RebuildChunkRender(coord, data.RailWaySections);
                 }
             }, 100);
         }
@@ -397,6 +421,37 @@ namespace RailWorld
             Renderer.AddLever(chunkCoord, SectionPicker.LeverPosition(section, atStart), new Vec3f(pitch, yaw, lean));
         }
 
+        /// <summary>Сервер: повідомляє клієнтам, що стрілку на кінці секції переведено.</summary>
+        public void SendSwitchToggled(Section trunk, bool atStart, int revision)
+        {
+            Vec3i chunk = trunk.ChunkAddres;
+            serverChannel?.BroadcastPacket(new SwitchTogglePacket
+            {
+                ChunkX = chunk.X,
+                ChunkY = chunk.Y,
+                ChunkZ = chunk.Z,
+                Index = trunk.IndexInChunk,
+                AtStart = atStart,
+                Position = trunk.GetSwitchPosition(atStart),
+                Revision = revision
+            });
+        }
+
+        // Клієнт: стрілку переведено. Решта чанка не змінилася, тому нічого не перебудовується:
+        // важіль і гостряки далі веде OnSwitchAnimationTick
+        private void OnSwitchToggled(SwitchTogglePacket packet)
+        {
+            Vec3i chunk = new Vec3i(packet.ChunkX, packet.ChunkY, packet.ChunkZ);
+            DataInChunk data = DataInChunk.GetClient(chunk);
+            // Чанка в клієнта немає: положення стрілки приїде разом із ним. Або клієнт уже має новіші дані
+            if (data == null || packet.Revision <= data.Revision) return;
+            if (!data.RailWaySections.TryGetValue(packet.Index, out Section trunk)) return;
+
+            trunk.SetSwitchPosition(packet.AtStart, packet.Position);
+            data.Revision = packet.Revision;
+            if (trunk.HasSwitch(packet.AtStart)) TrackSwitch(chunk, trunk, packet.AtStart);
+        }
+
         // Щокадру, поки котрась стрілка рухається: ставить її важіль і гостряки в нове проміжне положення.
         // Решту чанка не чіпає; хрестовина й контррейки не змінюються і лишаються з готовим мешем
         private void OnSwitchAnimationTick(float dt)
@@ -409,8 +464,8 @@ namespace RailWorld
                 // Останній раз деталі ставляться вже в кінцевому положенні
                 if (capi.ElapsedMilliseconds - state.ChangedAtMs >= SwitchAnimationMs) state.Moving = false;
 
-                if (!clientSections.TryGetValue(state.Chunk, out IDictionary<int, Section> sections)
-                    || !sections.TryGetValue(state.Index, out Section trunk) || !trunk.HasSwitch(state.AtStart)) continue;
+                DataInChunk data = DataInChunk.GetClient(state.Chunk);
+                if (data == null || !data.RailWaySections.TryGetValue(state.Index, out Section trunk) || !trunk.HasSwitch(state.AtStart)) continue;
 
                 AddLever(state.Chunk, trunk, state.AtStart);
                 foreach (SectionLink link in trunk.GetLinks(state.AtStart))
@@ -560,8 +615,8 @@ namespace RailWorld
             record = null;
             place = section.GetSwitchRef(atStart);
             if (place == null) return false;
-            if (!clientSwitches.TryGetValue(place.Chunk, out IDictionary<int, RailSwitch> switches)) return false;
-            return switches.TryGetValue(place.Key, out record) && record.BranchOf(place) != null;
+            DataInChunk data = DataInChunk.GetClient(place.Chunk);
+            return data != null && data.Switches.TryGetValue(place.Key, out record) && record.BranchOf(place) != null;
         }
 
         // Секція другої гілки тієї самої стрілки під тим самим номером, або null, якщо клієнт її не знає
@@ -650,8 +705,8 @@ namespace RailWorld
             if (!record.Complete) return;
 
             Vec3i switchChunk = place.Chunk;
-            if (!clientSections.TryGetValue(switchChunk, out IDictionary<int, Section> switchSections)
-                || !switchSections.TryGetValue(record.TrunkIndex, out Section trunk)) return;
+            DataInChunk switchData = DataInChunk.GetClient(switchChunk);
+            if (switchData == null || !switchData.RailWaySections.TryGetValue(record.TrunkIndex, out Section trunk)) return;
 
             bool left = SwitchGeometry.TowardPartner(section, partner) > 0;
             SectionPart part = left ? SectionPart.FirstRail : SectionPart.SecondRail;
@@ -1299,8 +1354,7 @@ namespace RailWorld
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            bool known = clientSections.Remove(chunkCoord);
-            clientSwitches.Remove(chunkCoord);
+            bool known = DataInChunk.RemoveClient(chunkCoord);
             clientBoxes.Remove(chunkCoord);
             foreach (string key in switchStates.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) switchStates.Remove(key);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
@@ -1319,7 +1373,8 @@ namespace RailWorld
             DataInChunk railData = chunk.GetModdata<DataInChunk>(DataInChunk.ModdataKey, null);
             if (railData == null) return;
 
-            SetChunkData(chunkCoord, railData);
+            // Чанк привіз старіші дані, ніж уже прийшли пакетом: у чанку мають лежати ті самі, що в клієнта
+            if (!SetChunkData(chunkCoord, railData)) chunk.SetModdata(DataInChunk.ModdataKey, DataInChunk.GetClient(chunkCoord));
         }
 
         private void OnChunkUnloaded(IClientChunk chunk)

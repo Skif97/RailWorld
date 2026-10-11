@@ -297,7 +297,10 @@ namespace RailWorld
             if (data == null) return;
 
             RailWaySystem renderSystem = _capi.ModLoader.GetModSystem<RailWaySystem>();
-            renderSystem?.SetChunkData(new Vec3i(packet.ChunkX, packet.ChunkY, packet.ChunkZ), data);
+            if (renderSystem == null || !renderSystem.SetChunkData(new Vec3i(packet.ChunkX, packet.ChunkY, packet.ChunkZ), data)) return;
+
+            // Як гра робить з укріпленнями блоків (ModSystemBlockReinforcement): прислані дані лягають і в чанк
+            _capi.World.BlockAccessor.GetChunk(packet.ChunkX, packet.ChunkY, packet.ChunkZ)?.SetModdata(DataInChunk.ModdataKey, packet.Data);
         }
 
         private bool ToggleGuiDialogRailMenu(KeyCombination keyCombination)

@@ -537,6 +537,15 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Ставить стрілку в положення, яке прислав сервер. Для клієнта: переводить стрілку лише сервер.
+        /// </summary>
+        public void SetSwitchPosition(bool atStart, int position)
+        {
+            if (atStart) _activeStartLink = position;
+            else _activeEndLink = position;
+        }
+
+        /// <summary>
         /// Переводить стрілку на іншу гілку і запам'ятовує, коли це почалося.
         /// </summary>
         public void ToggleSwitch(bool atStart, long nowMs)

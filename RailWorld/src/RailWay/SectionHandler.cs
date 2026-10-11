@@ -138,7 +138,8 @@ namespace RailWorld.src.RailWay
 
             section.ToggleSwitch(atStart, world.ElapsedMilliseconds);
             DataInChunk.Save(world, sel.Chunk, data);
-            RailWorld.SendChunkDataToClients(sel.Chunk, data);
+            // Змінилося одне число: клієнтам їде лише воно, а не весь чанк
+            world.Api.ModLoader.GetModSystem<RailWaySystem>().SendSwitchToggled(section, atStart, data.Revision);
 
             Vec3d lever = SectionPicker.LeverPosition(section, atStart);
             world.PlaySoundAt(new AssetLocation("game:sounds/toggleswitch"), lever.X, lever.Y, lever.Z, null, true, 16);
