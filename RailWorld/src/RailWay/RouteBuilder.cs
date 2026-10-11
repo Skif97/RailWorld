@@ -130,6 +130,11 @@ namespace RailWorld.src.RailWay
         /// На початку й у кінці маршруту напрямок заданий: поглядом або колією, з якою маршрут стикується.
         /// Там першим ділом ставиться дуга, якою маршрут плавно сходить із цього напрямку на пряму до першого
         /// кута (і так само заходить з останнього кута): це важливіше, ніж рівно поділити поворот між точками.
+        ///
+        /// Висота веде окремо від плану. Точки, які поставив гравець, це вузли: через їхні висоти проходить
+        /// одна гладка крива вздовж усього маршруту, і початок та кінець кожної дуги беруть висоту й ухил із неї.
+        /// Якби висота йшла прямими між точками, увесь перехід від рівного кінця маршруту до ухилу дістався б
+        /// короткому шматку прямої перед першою дугою: там виходив злам, а за ним горбок.
         /// </summary>
         private static List<RoutePoint> RoundCorners(List<RouteMarker> markers, List<RoutePoint> route)
         {
@@ -213,6 +218,59 @@ namespace RailWorld.src.RailWay
                 }
             }
 
+            // Висота вздовж маршруту. Вузли це всі точки, крім доданих кінців дуг сходу: ті самі лежать на кривій.
+            // Ухил у вузлі: на кінцях і в точних точках свій, з дотичної; у куті такий, як між його сусідами
+            double[] at = new double[n];
+            for (int i = 1; i < n; i++) at[i] = at[i - 1] + leg[i - 1];
+
+            var knots = new List<int>();
+            for (int i = 0; i < n; i++)
+            {
+                if (!nodes[i].Lead) knots.Add(i);
+            }
+            double[] knotSlope = new double[knots.Count];
+            for (int k = 0; k < knots.Count; k++)
+            {
+                Node node = nodes[knots[k]];
+                if (!node.Corner)
+                {
+                    knotSlope[k] = Slope(node.Tangent);
+                    continue;
+                }
+                int a = knots[k - 1], b = knots[k + 1];
+                double span = at[b] - at[a];
+                knotSlope[k] = span > 1e-6 ? (nodes[b].Position.Y - nodes[a].Position.Y) / span : 0;
+            }
+
+            // Висота й ухил кривої за run блоків від початку маршруту: кубічна крива між двома сусідніми вузлами
+            // із заданими висотою та ухилом на кінцях
+            double Height(double run, out double slope)
+            {
+                int k = 0;
+                while (k + 2 < knots.Count && run > at[knots[k + 1]]) k++;
+
+                double from = at[knots[k]], length = at[knots[k + 1]] - from;
+                double fromY = nodes[knots[k]].Position.Y, toY = nodes[knots[k + 1]].Position.Y;
+                slope = knotSlope[k];
+                if (length < 1e-6) return fromY;
+
+                double u = GameMath.Clamp((run - from) / length, 0, 1);
+                double u2 = u * u, u3 = u2 * u;
+                slope = ((6 * u2 - 6 * u) * fromY + (3 * u2 - 4 * u + 1) * length * knotSlope[k]
+                    + (-6 * u2 + 6 * u) * toY + (3 * u2 - 2 * u) * length * knotSlope[k + 1]) / length;
+                return (2 * u3 - 3 * u2 + 1) * fromY + (u3 - 2 * u2 + u) * length * knotSlope[k]
+                    + (-2 * u3 + 3 * u2) * toY + (u3 - u2) * length * knotSlope[k + 1];
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                Node node = nodes[i];
+                if (!node.Lead) continue;
+                double y = Height(at[i], out double slope);
+                node.Position = new Vec3d(node.Position.X, y, node.Position.Z);
+                node.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, slope);
+            }
+
             var result = new List<RoutePoint>();
             // Точки, через які маршрут має пройти точно: їх не можна ні зсувати, ні зливати з сусідами
             var keep = new HashSet<RoutePoint>();
@@ -244,15 +302,18 @@ namespace RailWorld.src.RailWay
                 double inLength = leg[i - 1], outLength = leg[i];
                 double inPart = cut / inLength, outPart = cut / outLength;
 
+                double inY = Height(at[i] - cut, out double inSlope);
+                double outY = Height(at[i] + cut, out double outSlope);
+
                 result.Add(new RoutePoint
                 {
-                    Position = new Vec3d(corner.X - inX * inPart, corner.Y - (corner.Y - before.Y) * inPart, corner.Z - inZ * inPart),
-                    Tangent = new Vec3d(inX / inLength, (corner.Y - before.Y) / inLength, inZ / inLength).Normalize()
+                    Position = new Vec3d(corner.X - inX * inPart, inY, corner.Z - inZ * inPart),
+                    Tangent = WithSlope(inX, inZ, inSlope)
                 });
                 result.Add(new RoutePoint
                 {
-                    Position = new Vec3d(corner.X + outX * outPart, corner.Y + (after.Y - corner.Y) * outPart, corner.Z + outZ * outPart),
-                    Tangent = new Vec3d(outX / outLength, (after.Y - corner.Y) / outLength, outZ / outLength).Normalize()
+                    Position = new Vec3d(corner.X + outX * outPart, outY, corner.Z + outZ * outPart),
+                    Tangent = WithSlope(outX, outZ, outSlope)
                 });
             }
 
@@ -355,6 +416,20 @@ namespace RailWorld.src.RailWay
                 }
             }
             return null;
+        }
+
+        // Ухил напрямку: на скільки блоків він піднімається на блок шляху в плані
+        private static double Slope(Vec3d tangent)
+        {
+            double flat = Math.Sqrt(tangent.X * tangent.X + tangent.Z * tangent.Z);
+            return flat < 1e-9 ? 0 : tangent.Y / flat;
+        }
+
+        // Одиничний напрямок, що в плані дивиться вздовж (x, z) і має заданий ухил
+        private static Vec3d WithSlope(double x, double z, double slope)
+        {
+            double flat = Math.Sqrt(x * x + z * z);
+            return flat < 1e-9 ? new Vec3d(x, 0, z) : new Vec3d(x / flat, slope, z / flat).Normalize();
         }
 
         // Сума одиничних напрямків «прийшли» і «підемо», менша за це, означає розворот більш як на 150°

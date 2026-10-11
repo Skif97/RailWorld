@@ -35,111 +35,6 @@ namespace RailWorld
 
 
 
-        public static CubicBezierCurve3d CotrolPointSercherForArc(Vec3d position, double yaw, double radius, double arcLenghtRad, bool left, double cur, int slope = 0)
-        {
-            Vec3d firstPoint;
-            Vec3d secondPoint;
-            Vec3d thirdPoint;
-            Vec3d fourthPoint;
-
-            Vec3d firstPointDirectVec;
-            Vec3d fourthPointDirectVec;
-
-
-            firstPoint = CorrectionPositionToCenterBlockXZ(position);
-            firstPointDirectVec = GetDirectionVectorXZ(yaw);
-
-            Vec3d radiusVec = firstPointDirectVec.Clone();
-
-
-            if (left)
-            {
-                radiusVec.RotateAroundY(-Math.PI / 2);
-            }
-            else
-            {
-                radiusVec.RotateAroundY(Math.PI / 2);
-            }
-
-
-            radiusVec.Mul(radius);
-
-            Vec3d arcCenter = firstPoint.Clone();
-
-            arcCenter.Sub(radiusVec.X, 0f, radiusVec.Z);
-
-            if (left)
-            {
-                radiusVec.RotateAroundY(arcLenghtRad);
-            }
-            else
-            {
-                radiusVec.RotateAroundY(-arcLenghtRad);
-            }
-
-            fourthPoint = arcCenter.Clone();
-            fourthPoint.Add(radiusVec);
-            fourthPoint = CorrectionPositionToCenterBlockXZ(fourthPoint);
-
-            fourthPointDirectVec = radiusVec.Clone();
-            fourthPointDirectVec.Normalize();
-
-            if (left)
-            {
-                fourthPointDirectVec.RotateAroundY(-Math.PI / 2);
-            }
-            else
-            {
-                fourthPointDirectVec.RotateAroundY(Math.PI / 2);
-            }
-
-            firstPoint = DirectionVectorPositionCorrection(firstPoint, firstPointDirectVec, true);
-
-            fourthPoint = DirectionVectorPositionCorrection(fourthPoint, fourthPointDirectVec, true);
-
-            secondPoint = firstPoint.Clone();
-            secondPoint.Add(firstPointDirectVec.Mul((arcLenghtRad * radius) / 2));
-
-            thirdPoint = fourthPoint.Clone();
-            thirdPoint.Add(fourthPointDirectVec.Mul((arcLenghtRad * radius) / 2));
-
-            // Позиція це блок над землею. Піднімаємо вісь колії на товщину шпали, щоб шпала лягла на землю
-            position.Y += 0.125f;
-
-            return new CubicBezierCurve3d(firstPoint.X, position.Y, firstPoint.Z,
-                                          secondPoint.X, position.Y, secondPoint.Z,
-                                          thirdPoint.X, position.Y + slope, thirdPoint.Z,
-                                          fourthPoint.X, position.Y + slope, fourthPoint.Z,
-                                          1f, cur, cur, 1f);
-
-        }
-
-        public static CubicBezierCurve3d CubicBezierCotrolPointSercher4P(Vec3d position, double yaw, double cur, double radius, int slope = 0, int type = 0)
-        {
-
-
-            if (type == 0)
-            {
-                return CotrolPointSercherForArc(position, yaw, radius, Math.PI / 2, false, cur, slope);
-            }
-            else if (type == 1)
-            {
-                return CotrolPointSercherForArc(position, yaw, radius, Math.PI / 2, true, cur, slope);
-            }
-            else if (type == 2)
-            {
-                return CotrolPointSercherForArc(position, yaw, radius, Math.PI / 4, false, cur, slope);
-            }
-            else //(type == 3)
-            {
-                return CotrolPointSercherForArc(position, yaw, radius, Math.PI / 4, true, cur, slope);
-            }
-
-
-
-
-        }
-
         public static Vec3d DirectionVectorPositionCorrection(Vec3d baseblock, Vec3d directionVector, bool ItIsStart)
         {
             directionVector.Normalize();
@@ -221,13 +116,6 @@ namespace RailWorld
 
             Vec3d final = new Vec3d(baseblock.X + xCorrection, baseblock.Y, baseblock.Z + zCorrection);
             return final;
-        }
-
-        public static Vec3d CorrectionPositionToCenterBlockXZ(Vec3d baseblock)
-        {
-
-
-            return new Vec3d(baseblock.XInt + 0.5f, baseblock.Y, baseblock.ZInt + 0.5f);
         }
 
         public static Vec3d YawToVec(double yaw)
@@ -387,45 +275,6 @@ namespace RailWorld
                 points[i] = p;
             }
         }
-
-        public static CubicBezierCurve3d CotrolPointSercherForStraight(Vec3d position, double yaw, double lenght, double cur, int slope = 0)
-        {
-            Vec3d firstPoint;
-            Vec3d secondPoint;
-            Vec3d thirdPoint;
-            Vec3d fourthPoint;
-
-            Vec3d firstPointDirectVec;
-            Vec3d fourthPointDirectVec;
-
-
-            firstPoint = CorrectionPositionToCenterBlockXZ(position);
-            firstPointDirectVec = GetDirectionVectorXZ(yaw).Normalize();
-
-            secondPoint = firstPoint.AddCopy(firstPointDirectVec.MulCopy(lenght / 2f * 0.8f));
-
-            fourthPoint = CorrectionPositionToCenterBlockXZ(firstPoint.AddCopy(firstPointDirectVec.MulCopy(lenght)));
-
-            fourthPointDirectVec = firstPointDirectVec.Clone().NegateVec();
-
-            thirdPoint = fourthPoint.AddCopy(fourthPointDirectVec.MulCopy(lenght / 2f * 0.8f));
-
-            firstPoint = DirectionVectorPositionCorrection(firstPoint, firstPointDirectVec, true);
-
-            fourthPoint = DirectionVectorPositionCorrection(fourthPoint, fourthPointDirectVec, true);
-
-            // Позиція це блок над землею. Піднімаємо вісь колії на товщину шпали, щоб шпала лягла на землю
-            position.Y += 0.125f;
-
-            return new CubicBezierCurve3d(firstPoint.X, position.Y, firstPoint.Z,
-                                          secondPoint.X, position.Y, secondPoint.Z,
-                                          thirdPoint.X, position.Y + slope, thirdPoint.Z,
-                                          fourthPoint.X, position.Y + slope, fourthPoint.Z,
-                                          1f, cur, cur, 1f);
-
-        }
-
-
     }
 
 

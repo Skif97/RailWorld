@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using RailWorld.src.RailWay;
 
@@ -11,6 +12,8 @@ namespace RailWorld
     /// Розмітка маршруту по точках, на клієнті. Гравець ставить точки, бачить майбутню колію двома лініями рейок,
     /// пофарбованими за ухилом, переглядає нарізані секції і лише тоді відправляє маршрут серверу на побудову.
     /// До підтвердження на сервер не йде нічого.
+    /// Готові форми з меню (RouteTemplate) ідуть тим самим шляхом: один клік ставить усі точки форми
+    /// й одразу відкриває перегляд.
     /// </summary>
     public class RoutePlanner : IRenderer, IDisposable
     {
@@ -62,6 +65,12 @@ namespace RailWorld
         private RouteMarker hover;
         private bool preview;
 
+        // Перша точка шаблону, якщо точки розмітки поставив він, а не гравець. Решта точок рахуються з неї
+        // і з параметрів меню наново, тож зміна параметрів одразу видна в перегляді
+        private RouteMarker templateAnchor;
+        // Шаблон під прицілом, поки його ще не поставлено
+        private List<RouteMarker> hoverTemplate;
+
         // Ліва кнопка скасовує один крок за один натиск, а не за кожен повтор, поки її тримають
         private bool undoArmed = true;
 
@@ -85,22 +94,63 @@ namespace RailWorld
             capi.Event.RegisterRenderer(this, EnumRenderStage.OIT, "railroute");
         }
 
-        private bool HoldingTool()
+        private ItemStack Tool()
         {
             ItemStack stack = capi.World.Player?.InventoryManager?.ActiveHotbarSlot?.Itemstack;
-            return stack?.Block is BlockRail && stack.Attributes.GetString("railMode") == ModeCode;
+            return stack?.Block is BlockRail ? stack : null;
+        }
+
+        private bool HoldingTool()
+        {
+            return Tool() != null;
+        }
+
+        // Чи в меню вибрано готову форму, а не розмітку по точках
+        private bool TemplateMode()
+        {
+            return RouteTemplate.IsTemplate(Tool()?.Attributes.GetString("railMode", RouteTemplate.SingleBlock));
+        }
+
+        // Точки шаблону від цієї першої точки з параметрами, які зараз стоять у меню
+        private List<RouteMarker> BuildTemplate(RouteMarker anchor)
+        {
+            ITreeAttribute attributes = Tool().Attributes;
+            return RouteTemplate.Build(anchor.Block, anchor.Yaw, attributes.GetString("railMode", RouteTemplate.SingleBlock),
+                attributes.GetInt("railLengRad", 30), attributes.GetInt("railClimDes", 0), attributes.GetString("railDirection", "Left") == "Left");
+        }
+
+        private void Cancel()
+        {
+            markers = new List<RouteMarker>();
+            templateAnchor = null;
+            preview = false;
+            serverRefusal = null;
         }
 
         // ── Кліки ────────────────────────────────────────────────────────────
 
         /// <summary>
         /// Правий клік: нова точка; по останній точці ще раз це перехід до перегляду; у перегляді це побудова.
+        /// З готовою формою клік ставить усі її точки й одразу відкриває перегляд.
         /// </summary>
         public void OnRightClick()
         {
             if (preview)
             {
                 Confirm();
+                return;
+            }
+
+            if (TemplateMode())
+            {
+                RouteMarker anchor = MakeMarker(true, false);
+                if (anchor == null) return;
+
+                templateAnchor = anchor;
+                markers = BuildTemplate(anchor);
+                preview = true;
+                serverRefusal = null;
+                capi.ShowChatMessage("Перегляд. Правий клік будує, лівий скасовує");
                 return;
             }
 
@@ -140,7 +190,13 @@ namespace RailWorld
             if (!undoArmed) return true;
             undoArmed = false;
 
-            if (preview)
+            if (preview && templateAnchor != null)
+            {
+                // Точок шаблону гравець сам не ставив, повертатися нема до чого
+                Cancel();
+                capi.ShowChatMessage("Скасовано");
+            }
+            else if (preview)
             {
                 preview = false;
                 capi.ShowChatMessage("Повернулися до точок");
@@ -194,8 +250,7 @@ namespace RailWorld
 
             if (built)
             {
-                markers.Clear();
-                preview = false;
+                Cancel();
                 return;
             }
 
@@ -207,14 +262,20 @@ namespace RailWorld
 
         // Точка під прицілом. Напрямок точки це куди дивиться гравець, тобто куди маршрут іде далі.
         // Він діє лише для першої і останньої точки маршруту: проміжні вирівнюються по сусідах
-        private RouteMarker MakeMarker(bool first)
+        // onTrack каже, чи точка може стати на покладену колію. Готова форма починається лише з блока:
+        // її напрямки кратні 45 градусам, а колія в стику може йти як завгодно
+        private RouteMarker MakeMarker(bool first, bool onTrack = true)
         {
             IClientPlayer player = capi.World.Player;
             if (player?.Entity == null) return null;
 
             // Уже покладена колія: точка стає на стик її секцій, положення і напрямок звідти
             SectionSelection sel = system.CurrentSelection;
-            if (sel != null && sel.Part == SectionPart.Whole) return SnapToTrack(sel, first, player.Entity.Pos.GetViewVector());
+            if (sel != null && sel.Part == SectionPart.Whole)
+            {
+                if (!onTrack) return null;
+                return SnapToTrack(sel, first, player.Entity.Pos.GetViewVector());
+            }
 
             snapRefusal = null;
             BlockSelection blockSel = PickBlock(player);
@@ -368,10 +429,31 @@ namespace RailWorld
                 return;
             }
 
-            hover = preview ? null : MakeMarker(markers.Count == 0);
-            // Повторне наведення на останню точку нічого не додає: там клік означає перехід до перегляду
-            if (hover != null && markers.Count > 0 && hover.Block.Equals(markers[markers.Count - 1].Block)) hover = null;
-            if (hover != null) hover.Exact = ExactKeyDown();
+            bool template = TemplateMode();
+            hover = null;
+            hoverTemplate = null;
+
+            // Поки сервер не відповів, відправлене не чіпаємо
+            if (awaitingId == 0)
+            {
+                // У меню вибрано інший режим: точки одного режиму іншому не годяться
+                if (markers.Count > 0 && template != (templateAnchor != null)) Cancel();
+                // Параметри в меню могли змінитися
+                if (templateAnchor != null) markers = BuildTemplate(templateAnchor);
+            }
+
+            if (template && !preview)
+            {
+                RouteMarker anchor = MakeMarker(true, false);
+                if (anchor != null) hoverTemplate = BuildTemplate(anchor);
+            }
+            else if (!template && !preview)
+            {
+                hover = MakeMarker(markers.Count == 0);
+                // Повторне наведення на останню точку нічого не додає: там клік означає перехід до перегляду
+                if (hover != null && markers.Count > 0 && hover.Block.Equals(markers[markers.Count - 1].Block)) hover = null;
+                if (hover != null) hover.Exact = ExactKeyDown();
+            }
 
             string key = BuildKey();
             if (key != meshKey)
@@ -407,6 +489,11 @@ namespace RailWorld
                 sb.Append('|');
                 AppendMarker(sb, hover);
             }
+            if (hoverTemplate != null)
+            {
+                sb.Append('|');
+                foreach (RouteMarker marker in hoverTemplate) AppendMarker(sb, marker);
+            }
             return sb.ToString();
         }
 
@@ -423,6 +510,7 @@ namespace RailWorld
 
             var shown = new List<RouteMarker>(markers);
             if (hover != null) shown.Add(hover);
+            if (hoverTemplate != null) shown.AddRange(hoverTemplate);
             if (shown.Count == 0)
             {
                 hud.Hide();
@@ -475,9 +563,11 @@ namespace RailWorld
             if (conflict != null) reasons.Add(conflict);
             routeProblem = reasons.Count == 0 ? null : string.Join(", ", reasons);
 
-            hud.Show(string.Format("{0}\nТочок: {1}\nНайбільший ухил: {2:0.0}°\nНайменший радіус: {3}, по висоті: {4}\nCtrl + клік: точка, через яку маршрут пройде точно{5}",
-                preview ? "Перегляд маршруту" : "Розмітка маршруту", markers.Count, maxSlope,
+            bool template = templateAnchor != null || hoverTemplate != null;
+            hud.Show(string.Format("{0}\nТочок: {1}\nНайбільший ухил: {2:0.0}°\nНайменший радіус: {3}, по висоті: {4}{5}{6}",
+                preview ? "Перегляд маршруту" : template ? "Готова форма: клік ставить її" : "Розмітка маршруту", shown.Count, maxSlope,
                 RadiusText(minRadius), RadiusText(minVerticalRadius),
+                template ? "" : "\nCtrl + клік: точка, через яку маршрут пройде точно",
                 (routeProblem == null ? "" : "\nНе можна будувати: " + routeProblem)
                 + (awaitingId != 0 ? "\nЧекаємо відповіді сервера" : serverRefusal != null ? "\nСервер відхилив: " + serverRefusal : "")));
         }

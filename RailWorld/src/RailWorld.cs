@@ -217,8 +217,7 @@ namespace RailWorld
         private string BuildRoute(IServerPlayer fromPlayer, RoutePacket packet)
         {
             ItemStack tool = fromPlayer.InventoryManager.ActiveHotbarSlot?.Itemstack;
-            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true
-                || tool.Attributes.GetString("railMode") != RoutePlanner.ModeCode) return "предмет для прокладання колії не в руці";
+            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true) return "предмет для прокладання колії не в руці";
 
             int count = packet.BlockX?.Length ?? 0;
             if (count < 2 || count > MaxRoutePoints) return "у маршруті має бути від 2 до " + MaxRoutePoints + " точок";
