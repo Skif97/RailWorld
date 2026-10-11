@@ -140,7 +140,11 @@ namespace RailWorld.src.RailWay
         [ProtoMember(3)]
         public List<SwitchBranch> Branches = new List<SwitchBranch>();
 
-        /// <summary>На обох гілках у зоні стрілки стоять обидві рейки: стрілку можна переводити і малювати стрілкою.</summary>
+        /// <summary>
+        /// Стрілку зібрано: на обох гілках у її зоні на кожній секції стоять обидві рейки і шпала. Лише тоді
+        /// її можна переводити і малювати стрілкою, з гостряками, хрестовиною і власними брусами. Доки бракує
+        /// хоч однієї деталі, це дві колії, покладені одна на одну: кожна секція малює свої рейки і свою шпалу.
+        /// </summary>
         [ProtoMember(4)]
         public bool Complete;
 
@@ -229,22 +233,22 @@ namespace RailWorld.src.RailWay
         /// Рахує стрілку заново, маючи її попередній запис. Якщо всю стрілку прочитати не вдалося (чанк гілки
         /// не завантажений), а попередній запис описує ту саму колію і знає про неї більше, його дані
         /// лишаються: колія в незавантаженому чанку змінитися не могла. Запис при цьому позначений як
-        /// недорахований, а стрілка стає незібраною, лише якщо рейки бракує в прочитаній частині.
+        /// недорахований, а стрілка стає незібраною, лише якщо деталі бракує в прочитаній частині.
         /// </summary>
         public static RailSwitch Rebuild(RailSwitch previous, Section trunk, bool atStart, Func<SectionLink, Section> resolve)
         {
-            RailSwitch built = Build(trunk, atStart, resolve, out bool railsInPlace);
+            RailSwitch built = Build(trunk, atStart, resolve, out bool partsInPlace);
             if (built == null || built.Resolved || previous == null || !previous.Covers(built)) return built;
 
             built.Branches = previous.Branches;
-            built.Complete = previous.Complete && railsInPlace;
+            built.Complete = previous.Complete && partsInPlace;
             return built;
         }
 
-        // railsInPlace: у прочитаній частині зони стрілки обидві рейки стоять на кожній секції
-        private static RailSwitch Build(Section trunk, bool atStart, Func<SectionLink, Section> resolve, out bool railsInPlace)
+        // partsInPlace: у прочитаній частині зони стрілки на кожній секції стоять обидві рейки і шпала
+        private static RailSwitch Build(Section trunk, bool atStart, Func<SectionLink, Section> resolve, out bool partsInPlace)
         {
-            railsInPlace = true;
+            partsInPlace = true;
             List<SectionLink> links = trunk.GetLinks(atStart);
             if (links.Count != 2) return null;
 
@@ -286,7 +290,7 @@ namespace RailWorld.src.RailWay
                 for (int number = 1; number <= length; number++)
                 {
                     branch.Members.Add(new SectionLink(current, entered));
-                    if (number <= zone && !current.RailsInstalled) railsInPlace = false;
+                    if (number <= zone && (!current.RailsInstalled || !current.SleeperInstalled)) partsInPlace = false;
 
                     List<SectionLink> ahead = current.GetLinks(!entered);
                     // Гілка скінчилася або сама розходиться: далі це вже не ця стрілка
@@ -306,7 +310,7 @@ namespace RailWorld.src.RailWay
                 result.Branches.Add(branch);
             }
 
-            result.Complete = railsInPlace && result.Resolved;
+            result.Complete = partsInPlace && result.Resolved;
             return result;
         }
     }

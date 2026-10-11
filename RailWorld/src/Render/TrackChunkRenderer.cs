@@ -46,22 +46,23 @@ namespace RailWorld
 
             var railSections = new List<Section>();
             var bladeSections = new List<Section>();
+            // Розкладки брусів стрілок, які знадобилися цій перебудові: стрілка може лежати і в сусідньому чанку
+            var layouts = new Dictionary<string, TimberLayout>();
 
             foreach (var kvp in sections)
             {
                 Section section = kvp.Value;
 
-                // У стрілці шпали двох гілок перетинаються, тому замість двох малюється одна спільна.
-                // Малює її секція першої гілки; секція другої свою шпалу пропускає
-                bool sharedSleeper = false;
-                if (section.SleeperInstalled && track.FindSleeperPair(section, out Section partner, out bool primary, out int fromEnd, out int pairs)
-                    && partner.SleeperInstalled)
+                // У стрілці шпали двох гілок перетиналися б, тому власні шпали секцій там не кладуться:
+                // стрілка розкладає свої бруси сама
+                bool inNode = false;
+                for (int e = 0; e < 2 && !inNode; e++)
                 {
-                    sharedSleeper = true;
-                    if (primary) AddSharedSleeper(chunkCoord, section, partner, pairs < StaggerMinPairs ? 2 : Math.Min(fromEnd, 2));
+                    if (track.FindSwitch(section, e == 0, out RailSwitch record, out SwitchRef place))
+                        inNode = Layout(layouts, place.Chunk, record).Hidden.Contains(section);
                 }
 
-                if (section.SleeperInstalled && !sharedSleeper)
+                if (section.SleeperInstalled && !inNode)
                 {
                     // Шпала лежить посередині секції, під серединою рейок, і повернута так само, як вони:
                     // поворот і ухил з хорди секції, крен середній між початком і кінцем
@@ -90,6 +91,16 @@ namespace RailWorld
                 {
                     railSections.Add(section);
                     bladeSections.Add(section);
+                }
+            }
+
+            // Бруси стрілок, записи яких лежать у цьому чанку
+            DataInChunk data = DataInChunk.GetClient(chunkCoord);
+            if (data != null)
+            {
+                foreach (RailSwitch record in data.Switches.Values)
+                {
+                    foreach (Timber timber in Layout(layouts, chunkCoord, record).Timbers) AddTimber(chunkCoord, timber);
                 }
             }
 
@@ -179,64 +190,62 @@ namespace RailWorld
             });
         }
 
-        // У стрілці, де спільних шпал менше за це, дві останні не робляться коротшими в шаховому порядку:
-        // на короткій стрілці вони займали б половину її довжини
-        private const int StaggerMinPairs = 6;
-
-        /// <summary>
-        /// Спільна шпала двох секцій у стрілці: одна суцільна на обидві колії.
-        /// Лежить упоперек середнього напрямку двох колій, серединою між ними, тож сусідні спільні шпали
-        /// майже паралельні й ідуть рівним кроком, навіть коли колії розходяться круто. Завдовжки вона така,
-        /// щоб дістати до зовнішніх кінців власних шпал обох колій: за рейки виступає так само, як звичайна.
-        /// Дві останні шпали стрілки коротші і лежать у шаховому порядку: передостання тримає три рейки
-        /// з боку першої колії (обидві її рейки і ближню рейку другої), остання три рейки з боку другої,
-        /// і за третьою рейкою виступає на звичайний хвостик. fromEnd це номер пари від краю стрілки.
-        /// </summary>
-        private void AddSharedSleeper(Vec3i chunkCoord, Section a, Section b, int fromEnd)
+        // Розкладка брусів стрілки із записом record, що лежить у чанку chunk. known це вже пораховані
+        // за цю перебудову. У незібраної стрілки, і якщо стрілку прочитати не вдається, розкладка порожня:
+        // кожна секція лишається зі своєю шпалою
+        private TimberLayout Layout(Dictionary<string, TimberLayout> known, Vec3i chunk, RailSwitch record)
         {
-            Vec3d centerA = Middle(a), centerB = Middle(b);
-            Vec3d sideA = new Vec3d(a.CenterNormal.X, a.CenterNormal.Y, a.CenterNormal.Z).Normalize();
-            Vec3d sideB = new Vec3d(b.CenterNormal.X, b.CenterNormal.Y, b.CenterNormal.Z).Normalize();
+            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            if (known.TryGetValue(key, out TimberLayout layout)) return layout;
+            known[key] = layout = new TimberLayout();
 
-            // З якого боку від кожної колії лежить сусідня: зовнішній край шпали з протилежного
-            Vec3d between = centerB - centerA;
-            double towardB = between.X * sideA.X + between.Z * sideA.Z >= 0 ? 1 : -1;
-            double towardA = between.X * sideB.X + between.Z * sideB.Z >= 0 ? -1 : 1;
+            DataInChunk data = DataInChunk.GetClient(chunk);
+            if (data == null || !record.Complete || record.Branches.Count != 2 || !data.RailWaySections.TryGetValue(record.TrunkIndex, out Section trunk)) return layout;
 
-            // Точки, до яких шпала має дістати з кожного боку
-            Vec3d from = centerA - sideA * (towardB * a.SleeperLength / 2);
-            Vec3d to = centerB - sideB * (towardA * b.SleeperLength / 2);
+            var branches = new List<Section>[2];
+            for (int k = 0; k < 2; k++)
+            {
+                SwitchBranch branch = record.Branches[k];
+                branches[k] = new List<Section>();
+                // Гілка вся, скільки її знає запис: тіло стрілки і кілька секцій за ним. Шпала одразу за тілом
+                // теж може тягнутися під сусідню гілку. Далі першої секції без шпали розкладка не йде
+                foreach (SectionLink member in branch.Members)
+                {
+                    Section section = track.FindSection(member);
+                    if (section == null || !section.SleeperInstalled) break;
+                    branches[k].Add(section);
+                }
+                if (branches[k].Count == 0) return layout;
+            }
 
-            // Край за третьою рейкою: ближня до сусіда рейка лежить за пів ширини колії від осі в його бік,
-            // а хвостик це те, на скільки звичайна шпала виступає за рейку. Разом це зсув від осі колії
-            if (fromEnd == 1) to = centerB + sideB * (towardA * (b.TrackWidth - b.SleeperLength / 2));
-            else if (fromEnd == 0) from = centerA + sideA * (towardB * (a.TrackWidth - a.SleeperLength / 2));
+            layout = NodeTimbers.Lay(branches[0], branches[1], SectionPicker.LeverPosition(trunk, record.AtStart));
+            known[key] = layout;
+            return layout;
+        }
 
-            // Напрямок шпали: середній між нормалями двох колій, тобто впоперек середнього напрямку самих колій.
-            // Нормаль другої секції може дивитися в інший бік, тоді береться з протилежним знаком
-            Vec3d sameB = sideA.X * sideB.X + sideA.Z * sideB.Z >= 0 ? sideB : sideB * -1;
-            Vec3d across = sideA + sameB;
-            if (across.Length() < 1e-6) return;
-            across.Normalize();
+        // Кладе брус стрілки: з того самого дерева, що й шпала секції, на місці якої він лежить
+        private void AddTimber(Vec3i chunkCoord, Timber timber)
+        {
+            if (timber.Length < 1e-6) return;
 
-            // Шпала лежить на прямій через середину між коліями. Її кінці це проєкції потрібних точок на цю пряму
-            Vec3d middle = new Vec3d((centerA.X + centerB.X) / 2, (centerA.Y + centerB.Y) / 2, (centerA.Z + centerB.Z) / 2);
-            double first = (from.X - middle.X) * across.X + (from.Y - middle.Y) * across.Y + (from.Z - middle.Z) * across.Z;
-            double second = (to.X - middle.X) * across.X + (to.Y - middle.Y) * across.Y + (to.Z - middle.Z) * across.Z;
-            double low = Math.Min(first, second), high = Math.Max(first, second);
-            double length = high - low;
-            if (length < 1e-6) return;
-
-            // Уздовж колії: нормаль секції лежить ліворуч від її напрямку, тож напрямок відновлюється з неї
+            // Брус лежить уздовж across: шпала лежить уздовж нормалі колії, ліворуч від її напрямку, тож поворот
+            // відновлюється з неї так само
+            Vec3d across = timber.Across;
             float yaw = (float)Math.Atan2(across.Z, -across.X);
             float roll = (float)Math.Asin(GameMath.Clamp(across.Y, -1, 1));
 
-            Vec3d start = a.FullStartPosition, end = a.FullEndPosition;
-            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
-            float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
+            // Ухил як у колії на цьому місці: дві гілки лежать в одній площині
+            float pitch = Pitch(timber.Owner);
 
-            Vec3d position = middle + across * ((low + high) / 2);
-            renderer.AddSleeper(chunkCoord, a.SleeperMaterial ?? "oak", position, new Vec3f(pitch, yaw, roll), (float)length);
+            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", timber.Position, new Vec3f(pitch, yaw, roll), (float)timber.Length);
+        }
+
+        // Ухил секції: підйом її хорди
+        private static float Pitch(Section section)
+        {
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
+            return (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
         }
 
         /// <summary>
@@ -259,12 +268,6 @@ namespace RailWorld
                 if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return new RailShape { Hidden = true };
             }
             return null;
-        }
-
-        private static Vec3d Middle(Section section)
-        {
-            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
-            return new Vec3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2);
         }
     }
 }

@@ -85,36 +85,5 @@ namespace RailWorld
             SectionLink link = record.Opposite(place);
             return link == null ? null : FindSection(link);
         }
-
-        /// <summary>
-        /// Чи шпала секції спільна з секцією сусідньої гілки стрілки. primary каже, котра з двох її малює:
-        /// та, що на першій гілці. fromEnd це скільки спільних шпал іще лежить між цією і краєм стрілки,
-        /// pairs скільки їх у стрілці всього.
-        /// </summary>
-        public bool FindSleeperPair(Section section, out Section partner, out bool primary, out int fromEnd, out int pairs)
-        {
-            partner = null;
-            primary = false;
-            fromEnd = 0;
-            pairs = 0;
-
-            // Стрілка може бути з будь-якого боку секції
-            for (int end = 0; end < 2; end++)
-            {
-                if (!FindSwitch(section, end == 0, out RailSwitch record, out SwitchRef place)) continue;
-
-                SwitchBranch branch = record.BranchOf(place);
-                if (!branch.SharesSleeper(place.Number)) continue;
-
-                partner = Opposite(record, place);
-                if (partner == null) continue;
-
-                primary = place.Branch == 0;
-                pairs = branch.PairSections;
-                fromEnd = pairs - place.Number;
-                return true;
-            }
-            return false;
-        }
     }
 }
