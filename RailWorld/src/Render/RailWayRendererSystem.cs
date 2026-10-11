@@ -14,7 +14,7 @@ namespace RailWorld
     public class RailWayRendererSystem : IRenderer, IDisposable
     {
         private ICoreClientAPI capi;
-        // Стандартний шейдер інстансів гри: ним малюються рейки й деталі стрілок, чиї матриці задані відносно камери
+        // Стандартний шейдер інстансів гри: ним малюються деталі стрілок, чиї матриці задані відносно камери
         private IShaderProgram prog;
         // Свій шейдер інстансів: копія ігрового з параметром origin. Ним малюються пачки по чанках, чиї матриці
         // задані відносно кута чанка. Ігровий для цього не годиться: він рахує туман, тіні й згасання на межі
@@ -226,7 +226,7 @@ void main()
         // Як часто перевіряється світло і скільки деталей кожного рендера за один раз
         private const int LightTickMs = 100;
         private const int LightBudget = 2000;
-        // Рендери, які ще перечитують усе світло разом, роблять це раз на стільки тактів: двічі на секунду
+        // Деталі стрілок перечитують усе світло разом, раз на стільки тактів: двічі на секунду. Їх небагато
         private const int FullLightTicks = 5;
         private int lightTick;
 
@@ -234,11 +234,11 @@ void main()
         {
             foreach (var renderer in sleeperRenderers.Values)
                 renderer.UpdateLights(LightBudget);
+            foreach (var renderer in railRenderers.Values)
+                renderer.UpdateLights(LightBudget);
 
             if (++lightTick < FullLightTicks) return;
             lightTick = 0;
-            foreach (var renderer in railRenderers.Values)
-                renderer.UpdateLights();
             bladeRenderer?.UpdateLights();
         }
 
@@ -307,17 +307,16 @@ void main()
                     chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
                     renderer.Draw(chunkProg, cameraPos);
                 }
+                foreach (var renderer in railRenderers.Values)
+                {
+                    chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
+                    renderer.Draw(chunkProg, cameraPos);
+                }
                 chunkProg.Stop();
             }
 
             prog.Use();
             SetFrameUniforms(prog);
-
-            foreach (var renderer in railRenderers.Values)
-            {
-                prog.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.Draw();
-            }
 
             bladeRenderer?.Draw(textureId => prog.BindTexture2D("tex", textureId, 0));
 
@@ -352,9 +351,9 @@ void main()
 
             capi.Render.GlDisableCullFace();
             foreach (var renderer in sleeperRenderers.Values) renderer.Draw(shadowProg, cameraPos);
-            // Далі деталі, чиї матриці вже відносно камери
+            foreach (var renderer in railRenderers.Values) renderer.Draw(shadowProg, cameraPos);
+            // Далі деталі стрілок: їхні матриці вже відносно камери
             shadowProg.Uniform("origin", noOrigin);
-            foreach (var renderer in railRenderers.Values) renderer.Draw();
             bladeRenderer?.Draw(null);
             capi.Render.GlEnableCullFace();
 

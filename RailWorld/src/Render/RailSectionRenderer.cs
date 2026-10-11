@@ -16,6 +16,8 @@ namespace RailWorld
         public float Pitch;
         public float Roll;
         public Vec4f Light;
+        // Те саме світло одним числом: за ним видно, чи воно змінилося
+        public int LightKey;
         public float ScaleZ;
         // Ширина шматка відносно звичайної рейки: гостряк стрілки до вістря звужується
         public float ScaleX = 1f;
@@ -40,22 +42,40 @@ namespace RailWorld
     /// Рейка секції малюється двома прямими шматками, від початку секції до середини і від середини до кінця:
     /// так вона ближче до кривої, і злам на стиках удвічі менший. Один інстанс на шматок.
     /// Меш рейки масштабується по Z матрицею трансформації.
+    /// Шматки зібрані пачками по чанках своїх секцій, так само як гра малює чанки: матриця кожного задана
+    /// відносно кута його чанка і лежить у відеокарті незмінною, а щокадру шейдерові передається лише одне
+    /// зміщення на пачку, кут чанка відносно камери.
     /// </summary>
     internal class RailSectionRenderer
     {
+        // На інстанс: світло (4 числа) і матриця (16 чисел)
+        private const int FloatsPerInstance = 20;
+        // Найменший буфер пачки, в інстансах: щоб чанк із парою рейок не перезавантажував меш на кожну нову
+        private const int MinCapacity = 128;
+
         private ICoreClientAPI capi;
         private MeshData itemMesh;
-        // Щокадру у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
+        // При оновленні у відеопам'ять дописуються лише дані інстансів: у цьому меші крім них нічого немає
         private MeshData updateMesh = new MeshData(false);
-        private MeshRef meshref;
         public int TextureId { get; private set; }
-        private CustomMeshDataPartFloat matrixAndLightFloats;
 
-        // Шматки рейок по чанках своїх секцій: чанк перебудовується цілком, і прибрати його рейки
-        // це викинути один список, а не шукати їх серед рейок усього світу
-        private Dictionary<Vec3i, List<RailInstanceData>> instances = new Dictionary<Vec3i, List<RailInstanceData>>();
-        // Скільки шматків у всіх чанках разом
-        private int instanceCount;
+        // Шматки рейок одного чанка: чанк перебудовується цілком, і прибрати його рейки це викинути пачку
+        private class Batch
+        {
+            public Vec3i Chunk;
+            public List<RailInstanceData> Pieces = new List<RailInstanceData>();
+            public CustomMeshDataPartFloat Floats;
+            public MeshRef Mesh;
+            // Скільки шматків лежить у буфері
+            public int Drawn;
+            public bool Dirty = true;
+        }
+
+        private Dictionary<Vec3i, Batch> batches = new Dictionary<Vec3i, Batch>();
+        // Пачки по порядку, для обходу світла по колу
+        private List<Batch> order = new List<Batch>();
+        private int lightCursor;
+        private Vec3f origin = new Vec3f();
 
         // Габарити перерізу рейки, беруться з меша: висота над підошвою і півширина від осі
         private double railHeight;
@@ -96,20 +116,6 @@ namespace RailWorld
                 railHalfWidth = Math.Max(railHalfWidth, Math.Abs(itemMesh.xyz[v * 3] - 0.5));
                 railHeight    = Math.Max(railHeight, itemMesh.xyz[v * 3 + 1]);
             }
-
-            int bufferSize = 20000 * 20;
-            matrixAndLightFloats = new CustomMeshDataPartFloat(bufferSize)
-            {
-                Instanced = true,
-                InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
-                InterleaveSizes   = new int[] { 4, 4, 4, 4, 4 },
-                InterleaveStride  = 80,
-                StaticDraw        = false
-            };
-            matrixAndLightFloats.Values = new float[bufferSize];
-            matrixAndLightFloats.SetAllocationSize(bufferSize);
-            itemMesh.CustomFloats = matrixAndLightFloats;
-            meshref = capi.Render.UploadMesh(itemMesh);
         }
 
         public void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape = null)
@@ -137,35 +143,27 @@ namespace RailWorld
         private void AddPiece(Vec3i chunkCoord, RailInstanceData piece)
         {
             // Шматок нульової довжини: середина секції збіглася з її краєм
-            if (piece == null) return;
+            if (piece == null || itemMesh == null) return;
 
-            if (!instances.TryGetValue(chunkCoord, out List<RailInstanceData> pieces))
+            if (!batches.TryGetValue(chunkCoord, out Batch batch))
             {
-                pieces = new List<RailInstanceData>();
-                instances[chunkCoord.Clone()] = pieces;
+                batch = new Batch { Chunk = chunkCoord.Clone() };
+                batches[batch.Chunk] = batch;
+                order.Add(batch);
             }
-            pieces.Add(piece);
-            instanceCount++;
-            layoutDirty = true;
+            batch.Pieces.Add(piece);
+            batch.Dirty = true;
         }
 
-        // Матриця шматка складається з повороту з розтягом, які не міняються, і положення відносно камери,
-        // яке міняється щокадру. Перше рахується один раз, коли набір шматків чи їхнє світло змінилися,
-        // і лежить у буфері; щокадру переписуються лише три числа положення на шматок.
-        // layoutDirty каже, що нерухому частину треба порахувати заново
-        private bool layoutDirty = true;
-        // Положення кожного шматка у світі, разом зі зсувом, який дає сама матриця: по три числа на шматок,
-        // у тому самому порядку, що й у буфері
-        private double[] basePositions = new double[0];
         private float[] scale = new float[] { 1f, 1f, 1f };
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            if (!instances.TryGetValue(chunkCoord, out List<RailInstanceData> pieces)) return;
+            if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
 
-            instanceCount -= pieces.Count;
-            instances.Remove(chunkCoord);
-            layoutDirty = true;
+            batch.Mesh?.Dispose();
+            batches.Remove(chunkCoord);
+            order.Remove(batch);
         }
 
         // Шматок рейки між двома точками осі колії. fromOffset і toOffset це зсув рейки вбік від осі на кінцях
@@ -212,6 +210,7 @@ namespace RailWorld
                 Pitch    = (float)pitch,
                 Roll     = (float)roll,
                 Light    = GetLight(pos),
+                LightKey = LightKey(pos),
                 ScaleZ   = (float)(length + startExt + endExt),
                 ScaleX   = width
             };
@@ -230,125 +229,159 @@ namespace RailWorld
             return railHeight * Math.Tan(Math.Max(0, pitchDiff)) + railHalfWidth * Math.Tan(yawDiff);
         }
 
+        // Світло блока, де лежить шматок: rgb це світло від джерел, a сонячне
         private Vec4f GetLight(Vec3d pos)
         {
             return capi.World.BlockAccessor.GetLightRGBs((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
         }
 
-        public void UpdateLights()
+        // Те саме світло одним числом: щоб перевірити, чи воно змінилося, не створюючи об'єкта
+        private int LightKey(Vec3d pos)
         {
-            foreach (List<RailInstanceData> pieces in instances.Values)
-            {
-                foreach (RailInstanceData d in pieces) d.Light = GetLight(d.Position);
-            }
-            layoutDirty = true;
-        }
-
-        // Скільки інстансів лежить у буфері після останнього PrepareFrame
-        private int preparedCount;
-
-        // Буфер матриць у відеокарті має розмір, заданий при завантаженні меша, і сам не росте.
-        // Якщо інстансів стало більше, ніж у нього вміщається, оновлення мовчки відкидається відеокартою,
-        // у буфері лишаються старі матриці, пораховані відносно старого положення камери, і вся колія
-        // починає їздити за камерою. Тому меш завантажується заново з більшим буфером, із запасом удвічі
-        private void Grow(int instancesNeeded)
-        {
-            int size = Math.Max(instancesNeeded * 2, 1024) * 20;
-            matrixAndLightFloats = new CustomMeshDataPartFloat(size)
-            {
-                Instanced = true,
-                InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
-                InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
-                InterleaveStride = 80,
-                StaticDraw = false
-            };
-            matrixAndLightFloats.Values = new float[size];
-            matrixAndLightFloats.SetAllocationSize(size);
-            itemMesh.CustomFloats = matrixAndLightFloats;
-
-            meshref?.Dispose();
-            meshref = capi.Render.UploadMesh(itemMesh);
-            layoutDirty = true;
+            return capi.World.BlockAccessor.GetLightRGBsAsInt((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
         }
 
         /// <summary>
-        /// Раз на кадр: рахує матриці всіх рейок відносно камери і заливає їх у відеокарту.
+        /// Перевіряє, чи змінилося світло шматків, не більш як у budget шматків за раз, по колу: гра не повідомляє
+        /// моди про зміну освітлення, тому його доводиться опитувати. Шматкові, чиє світло змінилося, у буфері
+        /// переписуються лише чотири числа світла. Повертає, скільки шматків перевірено.
+        /// </summary>
+        public int UpdateLights(int budget)
+        {
+            int checkedCount = 0;
+            for (int n = 0; n < order.Count && checkedCount < budget; n++)
+            {
+                if (lightCursor >= order.Count) lightCursor = 0;
+                Batch batch = order[lightCursor++];
+                checkedCount += batch.Drawn;
+                // Пачку однаково буде зібрано заново
+                if (batch.Dirty || batch.Mesh == null) continue;
+
+                bool changed = false;
+                float[] values = batch.Floats.Values;
+                for (int i = 0; i < batch.Drawn; i++)
+                {
+                    RailInstanceData piece = batch.Pieces[i];
+                    int key = LightKey(piece.Position);
+                    if (key == piece.LightKey) continue;
+
+                    piece.LightKey = key;
+                    piece.Light = GetLight(piece.Position);
+                    int j = i * FloatsPerInstance;
+                    values[j] = piece.Light.R;
+                    values[j + 1] = piece.Light.G;
+                    values[j + 2] = piece.Light.B;
+                    values[j + 3] = piece.Light.A;
+                    changed = true;
+                }
+
+                if (!changed) continue;
+                updateMesh.CustomFloats = batch.Floats;
+                capi.Render.UpdateMesh(batch.Mesh, updateMesh);
+            }
+            return checkedCount;
+        }
+
+        /// <summary>
+        /// Раз на кадр: збирає заново пачки, в яких щось змінилося. Якщо нічого не змінилося, не робить нічого.
         /// </summary>
         public void PrepareFrame()
         {
-            preparedCount = 0;
-            if (meshref == null || instanceCount == 0) return;
-
-            int count      = instanceCount;
-            int floatCount = count * 20;
-
-            if (matrixAndLightFloats.Values == null || matrixAndLightFloats.Values.Length < floatCount) Grow(count);
-            if (meshref == null) return;
-
-            float[] values = matrixAndLightFloats.Values;
-
-            if (layoutDirty)
+            foreach (Batch batch in order)
             {
-                // Нерухома частина матриць і світло всіх шматків
-                if (basePositions.Length < count * 3) basePositions = new double[count * 3 * 2];
+                if (batch.Dirty) Rebuild(batch);
+            }
+        }
 
-                int n = 0;
-                foreach (List<RailInstanceData> pieces in instances.Values)
-                foreach (RailInstanceData d in pieces)
+        // Рахує матриці шматків пачки відносно кута її чанка і кладе їх у відеокарту
+        private void Rebuild(Batch batch)
+        {
+            batch.Dirty = false;
+            batch.Drawn = 0;
+            int count = batch.Pieces.Count;
+            if (count == 0) return;
+
+            // Буфер у відеокарті має розмір, заданий при завантаженні меша, і сам не росте: якщо шматків стало
+            // більше, меш завантажується заново з більшим буфером, із запасом удвічі
+            bool upload = batch.Mesh == null || batch.Floats.Values.Length < count * FloatsPerInstance;
+            if (upload)
+            {
+                int size = Math.Max(count * 2, MinCapacity) * FloatsPerInstance;
+                batch.Floats = new CustomMeshDataPartFloat(size)
                 {
-                    Mat4f.Identity(tmpMat);
-                    Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
-                    Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
-                    Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
-                    scale[0] = d.ScaleX;
-                    scale[2] = d.ScaleZ;
-                    Mat4f.Scale(tmpMat, tmpMat, scale);
-                    // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
-                    Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, 0f);
-
-                    int j = n * 20;
-                    values[j] = d.Light.R; values[j+1] = d.Light.G; values[j+2] = d.Light.B; values[j+3] = d.Light.A;
-                    for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
-
-                    // Зсув, який дала сама матриця, додається до положення шматка
-                    basePositions[n * 3] = d.Position.X + tmpMat[12];
-                    basePositions[n * 3 + 1] = d.Position.Y + tmpMat[13];
-                    basePositions[n * 3 + 2] = d.Position.Z + tmpMat[14];
-                    n++;
-                }
-                layoutDirty = false;
+                    Instanced = true,
+                    InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
+                    InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
+                    InterleaveStride = 80,
+                    StaticDraw = false
+                };
+                batch.Floats.Values = new float[size];
+                batch.Floats.SetAllocationSize(size);
             }
 
-            // Щокадру міняється лише положення відносно камери: три числа в кожній матриці
-            Vec3d camPos = capi.World.Player.Entity.CameraPos;
-            for (int i = 0; i < count; i++)
+            float[] values = batch.Floats.Values;
+            double originX = batch.Chunk.X * 32.0, originY = batch.Chunk.Y * 32.0, originZ = batch.Chunk.Z * 32.0;
+
+            for (int n = 0; n < count; n++)
             {
-                int j = i * 20 + 16;
-                int b = i * 3;
-                values[j] = (float)(basePositions[b] - camPos.X);
-                values[j + 1] = (float)(basePositions[b + 1] - camPos.Y);
-                values[j + 2] = (float)(basePositions[b + 2] - camPos.Z);
+                RailInstanceData d = batch.Pieces[n];
+
+                Mat4f.Identity(tmpMat);
+                Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
+                Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
+                Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
+                scale[0] = d.ScaleX;
+                scale[2] = d.ScaleZ;
+                Mat4f.Scale(tmpMat, tmpMat, scale);
+                // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
+                Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, 0f);
+
+                // Положення шматка відносно кута чанка, разом зі зсувом, який дала сама матриця
+                tmpMat[12] += (float)(d.Position.X - originX);
+                tmpMat[13] += (float)(d.Position.Y - originY);
+                tmpMat[14] += (float)(d.Position.Z - originZ);
+
+                int j = n * FloatsPerInstance;
+                values[j] = d.Light.R; values[j + 1] = d.Light.G; values[j + 2] = d.Light.B; values[j + 3] = d.Light.A;
+                for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
             }
 
-            matrixAndLightFloats.Count = floatCount;
-            itemMesh.CustomFloats = matrixAndLightFloats;
-            updateMesh.CustomFloats = matrixAndLightFloats;
-            capi.Render.UpdateMesh(meshref, updateMesh);
-            preparedCount = count;
+            batch.Drawn = count;
+            batch.Floats.Count = count * FloatsPerInstance;
+            if (upload)
+            {
+                batch.Mesh?.Dispose();
+                itemMesh.CustomFloats = batch.Floats;
+                batch.Mesh = capi.Render.UploadMesh(itemMesh);
+            }
+            else
+            {
+                updateMesh.CustomFloats = batch.Floats;
+                capi.Render.UpdateMesh(batch.Mesh, updateMesh);
+            }
         }
 
         /// <summary>
-        /// Малює підготовлені рейки поточним шейдером. Викликається і для основного проходу, і для тіней.
+        /// Малює рейки поточним шейдером, пачку за пачкою. Перед кожною передає шейдерові origin: кут чанка
+        /// пачки відносно камери. Викликається і для основного проходу, і для тіней.
         /// </summary>
-        public void Draw()
+        public void Draw(IShaderProgram prog, Vec3d cameraPos)
         {
-            if (meshref == null || preparedCount == 0) return;
-            capi.Render.RenderMeshInstanced(meshref, preparedCount);
+            foreach (Batch batch in order)
+            {
+                if (batch.Mesh == null || batch.Drawn == 0) continue;
+
+                origin.Set((float)(batch.Chunk.X * 32.0 - cameraPos.X), (float)(batch.Chunk.Y * 32.0 - cameraPos.Y), (float)(batch.Chunk.Z * 32.0 - cameraPos.Z));
+                prog.Uniform("origin", origin);
+                capi.Render.RenderMeshInstanced(batch.Mesh, batch.Drawn);
+            }
         }
 
         public void Dispose()
         {
-            meshref?.Dispose();
+            foreach (Batch batch in order) batch.Mesh?.Dispose();
+            batches.Clear();
+            order.Clear();
         }
     }
 }
