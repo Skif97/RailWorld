@@ -428,16 +428,10 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            // Чи секція лежить у стрілці колії, якою вона стане після побудови. Край тіла стрілки і край
-            // перекриття шпал рахуються трохи по-різному, тому дивимося і на сусідні секції
-            bool InSwitch(int index)
+            // Чи секція лежить у стрілці колії, якою вона стане після побудови
+            bool InSwitch(Section section)
             {
-                for (int i = index - 1; i <= index + 1; i++)
-                {
-                    if (i < 0 || i >= planned.Count) continue;
-                    if (SwitchZone.JointInBody(planned[i], true, Find) || SwitchZone.JointInBody(planned[i], false, Find)) return true;
-                }
-                return false;
+                return SwitchZone.JointInBody(section, true, Find) || SwitchZone.JointInBody(section, false, Find);
             }
 
             for (int i = 0; i < planned.Count; i++)
@@ -446,12 +440,12 @@ namespace RailWorld.src.RailWay
                 if (other == null) continue;
 
                 Section laid = Find(new SectionLink(other, true));
-                if (InSwitch(i) && (SwitchZone.JointInBody(laid, true, Find) || SwitchZone.JointInBody(laid, false, Find))) continue;
+                if (InSwitch(planned[i]) && InSwitch(laid)) continue;
 
                 bool atCrossing = false;
                 foreach (KeyValuePair<int, double> crossing in crossings)
                 {
-                    double room = RouteCurve.CrossingHalf(planned[i].SleeperLength, other.SleeperLength, crossing.Value) + 1;
+                    double room = RouteCurve.CrossingHalf(Footprint.Width(planned[i]), Footprint.Width(other), crossing.Value) + 1;
                     if (Math.Abs(i - crossing.Key) * 0.5 <= room) atCrossing = true;
                 }
                 if (atCrossing) continue;
@@ -464,24 +458,33 @@ namespace RailWorld.src.RailWay
             return null;
         }
 
-        // Покладена секція, на шпали якої лягає шпала цієї секції в тій самій площині, або null.
-        // counts каже, які секції брати до уваги
+        // Покладена секція, на габарит якої лягає габарит цієї секції в тій самій площині, або null.
+        // counts каже, які секції брати до уваги. Секція, з якою ця стикується кінцем, не рахується:
+        // це продовження тієї самої колії
         private static Section LiesInPlaneOf(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<Section, bool> counts)
         {
-            Vec3d p = section.GetGlobalPos();
-            Vec3f normal = section.CenterNormal;
-
-            foreach (Section other in Around(p, sectionsIn))
+            foreach (Section other in Around(section.GetGlobalPos(), sectionsIn))
             {
                 if (other == section || !counts(other)) continue;
                 if (other.IndexInChunk == section.IndexInChunk && other.ChunkAddres.Equals(section.ChunkAddres)) continue;
-                if (!SleeperReaches(p, normal, section.SleeperLength / 2, other, out double offset)) continue;
+                if (Footprint.Joined(section, other)) continue;
 
-                Vec3d q = new Vec3d(p.X + normal.X * offset, p.Y + normal.Y * offset, p.Z + normal.Z * offset);
-                if (!RouteCurve.CrossPlane(other, q, 0, 0, out double planeY, out _)) continue;
-                if (Math.Abs(q.Y - planeY) <= SamePlane) return other;
+                if (HeightGap(section, other, out double gap) && gap <= SamePlane) return other;
             }
             return null;
+        }
+
+        // Наскільки розходяться по висоті дві секції там, де перекриваються їхні габарити.
+        // false, якщо габарити не перекриваються
+        private static bool HeightGap(Section a, Section b, out double gap)
+        {
+            gap = 0;
+            if (!Footprint.Overlap(a, b, out double x, out double z)) return false;
+
+            Vec3d where = new Vec3d(x, 0, z);
+            if (!RouteCurve.CrossPlane(a, where, 0, 0, out double aY, out _) || !RouteCurve.CrossPlane(b, where, 0, 0, out double bY, out _)) return false;
+            gap = Math.Abs(aY - bY);
+            return true;
         }
 
         /// <summary>
@@ -492,7 +495,7 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Чи нова ділянка лежить на вже покладеній колії довше, ніж дозволено. Лежить на ній та секція,
-        /// чия шпала перекривається зі шпалою покладеної: так само рахується зона стрілки. Коротке накладання
+        /// чий габарит перекривається з габаритом покладеної: так само рахується тіло стрілки. Коротке накладання
         /// буває на стрілці й на перетині; довге означає, що дві колії йдуть одна поверх одної і не розходяться.
         /// Колія вище чи нижче на RouteCurve.CrossingClearance і більше не рахується: це міст або тунель.
         /// Рахується колія, яка вийде, а не лише шматок, який кладуть зараз: якщо накладання своїм краєм
@@ -555,21 +558,17 @@ namespace RailWorld.src.RailWay
             return best;
         }
 
-        // Чи шпала нової секції перекривається зі шпалою якоїсь покладеної секції
+        // Чи габарит секції перекривається з габаритом якоїсь покладеної секції іншої колії.
+        // Секція, з якою ця стикується кінцем, це та сама колія
         private static bool LiesOnTrack(Section section, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
         {
             Vec3d p = section.GetGlobalPos();
 
             foreach (Section other in Around(p, sectionsIn))
             {
-                if (other == section) continue;
-
-                Vec3d q = other.GetGlobalPos();
-                if (Math.Abs(q.X - p.X) > 2 || Math.Abs(q.Z - p.Z) > 2 || Math.Abs(q.Y - p.Y) >= RouteCurve.CrossingClearance) continue;
-
-                double along = RouteCurve.Along(other, true, p, out double length, out double sideways);
-                if (along < 0 || along > length) continue;
-                if (sideways < (section.SleeperLength + other.SleeperLength) / 2) return true;
+                if (other == section || Footprint.Joined(section, other)) continue;
+                if (Math.Abs(other.GetGlobalPos().Y - p.Y) >= RouteCurve.CrossingClearance) continue;
+                if (Footprint.Overlap(section, other)) return true;
             }
             return false;
         }
@@ -627,7 +626,7 @@ namespace RailWorld.src.RailWay
             System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
         {
             // Далі за найдовший можливий вузол шукати нема чого
-            double reach = RouteCurve.CrossingHalf(trunk.SleeperLength, trunk.SleeperLength, RouteCurve.MinCrossingAngleDeg * Math.PI / 180);
+            double reach = RouteCurve.CrossingHalf(Footprint.Width(trunk), Footprint.Width(trunk), RouteCurve.MinCrossingAngleDeg * Math.PI / 180);
             var steps = new List<BodyStep>();
             var own = new HashSet<string>();
             string Key(Section section) => section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
@@ -673,20 +672,20 @@ namespace RailWorld.src.RailWay
                     if (!RouteCurve.Crosses(from, to, other, out double t, out double angle)) continue;
 
                     if (step.InBody) return true;
-                    if (step.At + length * t < RouteCurve.CrossingHalf(step.Section.SleeperLength, other.SleeperLength, angle)) return true;
+                    if (step.At + length * t < RouteCurve.CrossingHalf(Footprint.Width(step.Section), Footprint.Width(other), angle)) return true;
                 }
             }
             return false;
         }
 
         /// <summary>
-        /// Наскільки висоти двох колій можуть розходитися там, де їхні шпали перекриваються, щоб це ще
+        /// Наскільки висоти двох колій можуть розходитися там, де їхні габарити перекриваються, щоб це ще
         /// вважалося однією площиною: перетином або стрілкою.
         /// </summary>
         private const double SamePlane = 0.15;
 
         /// <summary>
-        /// Чи нова ділянка проходить над чи під покладеною колією надто близько. Там, де шпали двох колій
+        /// Чи нова ділянка проходить над чи під покладеною колією надто близько. Там, де габарити двох колій
         /// перекриваються, нова або лежить у площині покладеної (це перетин чи стрілка), або вища чи нижча
         /// щонайменше на RouteCurve.CrossingClearance (це міст чи тунель). Проміжного не буває: інакше шпала
         /// однієї колії стояла б у рейках другої. Правило не залежить від того, чи перетинаються осі колій:
@@ -699,20 +698,11 @@ namespace RailWorld.src.RailWay
             for (int i = 0; i < planned.Count; i++)
             {
                 Section section = planned[i];
-                Vec3d p = section.GetGlobalPos();
-                Vec3f normal = section.CenterNormal;
-                double half = section.SleeperLength / 2;
 
-                foreach (Section other in Around(p, sectionsIn, RouteCurve.CrossingClearance))
+                foreach (Section other in Around(section.GetGlobalPos(), sectionsIn, RouteCurve.CrossingClearance))
                 {
                     if (other == section) continue;
-                    if (!SleeperReaches(p, normal, half, other, out double offset)) continue;
-
-                    // Висоти порівнюються в тому місці, де шпала нової секції лягає на покладену колію
-                    Vec3d q = new Vec3d(p.X + normal.X * offset, p.Y + normal.Y * offset, p.Z + normal.Z * offset);
-                    if (!RouteCurve.CrossPlane(other, q, 0, 0, out double planeY, out _)) continue;
-
-                    double gap = Math.Abs(q.Y - planeY);
+                    if (!HeightGap(section, other, out double gap)) continue;
                     if (gap <= SamePlane || gap >= RouteCurve.CrossingClearance) continue;
 
                     found.Add(i);
@@ -720,43 +710,6 @@ namespace RailWorld.src.RailWay
                 }
             }
             return found;
-        }
-
-        // Чи шпала, що лежить упоперек колії через точку p (уздовж normal, на half в кожен бік), дістає в плані
-        // до шпал секції other. offset це місце на шпалі, найближче до осі other: відстань від p уздовж normal
-        private static bool SleeperReaches(Vec3d p, Vec3f normal, double half, Section other, out double offset)
-        {
-            offset = 0;
-            Vec3d c = other.FullStartPosition, d = other.FullEndPosition;
-            double ux = d.X - c.X, uz = d.Z - c.Z;
-            double length = Math.Sqrt(ux * ux + uz * uz);
-            if (length < 1e-9) return false;
-            ux /= length;
-            uz /= length;
-
-            // Де два кінці шпали відносно осі other: уздовж неї і вбік від неї
-            double ax = p.X - normal.X * half - c.X, az = p.Z - normal.Z * half - c.Z;
-            double bx = p.X + normal.X * half - c.X, bz = p.Z + normal.Z * half - c.Z;
-            double alongA = ax * ux + az * uz, sideA = ax * uz - az * ux;
-            double alongB = bx * ux + bz * uz, sideB = bx * uz - bz * ux;
-
-            double along;
-            if (sideA * sideB <= 0)
-            {
-                // Шпала перетинає вісь other
-                double t = Math.Abs(sideA - sideB) < 1e-12 ? 0.5 : sideA / (sideA - sideB);
-                offset = -half + 2 * half * t;
-                along = alongA + (alongB - alongA) * t;
-            }
-            else
-            {
-                // Не перетинає: дістає, якщо ближчий кінець лежить у межах шпали other
-                bool nearA = Math.Abs(sideA) < Math.Abs(sideB);
-                if (Math.Min(Math.Abs(sideA), Math.Abs(sideB)) >= other.SleeperLength / 2) return false;
-                offset = nearA ? -half : half;
-                along = nearA ? alongA : alongB;
-            }
-            return along >= 0 && along <= length;
         }
 
         // Покладені секції поблизу точки: з чанків, куди може потрапити центр секції, не дальшої за два блоки

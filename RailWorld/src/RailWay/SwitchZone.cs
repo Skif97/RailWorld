@@ -7,7 +7,7 @@ namespace RailWorld.src.RailWay
     /// <summary>
     /// Тіло стрілки: ділянка колії, яку стрілка займає своїми деталями. Починається на стику, з якого колія
     /// розходиться (там вістря гостряків), і тягнеться по обох гілках, поки вони лежать одна на одній:
-    /// шпали двох гілок перекриваються, і під ними спільна шпала. Спільна колія перед стиком до тіла
+    /// їхні габарити перекриваються (Footprint). Спільна колія перед стиком до тіла
     /// не належить: там звичайна колія.
     /// На тіло стрілки не може накластися ні тіло іншої стрілки, ні вузол перетину з іншою колією.
     /// Працює і на клієнті, і на сервері: секції сусідів дістає через resolve.
@@ -189,32 +189,24 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Скільки перших секцій двох гілок стоять у парі: шпали секцій з однаковим номером від стрілки
-        /// перетинаються, і замість двох малюється одна спільна. first і second це перші секції гілок.
+        /// Скільки перших секцій двох гілок стоять у парі: габарити секцій з однаковим номером від стрілки
+        /// перекриваються, і замість двох шпал малюється одна спільна. first і second це перші секції гілок.
         /// </summary>
         internal static int PairSections(Section first, bool firstEntered, Section second, bool secondEntered, Func<SectionLink, Section> resolve)
         {
             int pairs = 0;
             for (int number = 1; number <= MaxPairWalk; number++)
             {
-                if (!SleepersOverlap(Nth(first, firstEntered, number, resolve), Nth(second, secondEntered, number, resolve))) break;
+                Section a = Nth(first, firstEntered, number, resolve), b = Nth(second, secondEntered, number, resolve);
+                if (a == null || b == null || !Footprint.Overlap(a, b)) break;
                 pairs = number;
             }
             return pairs;
         }
 
-        // Чи перетинаються шпали двох секцій: їхні середини ближчі, ніж пів шпали однієї плюс пів шпали іншої
-        private static bool SleepersOverlap(Section a, Section b)
-        {
-            if (a == null || b == null) return false;
-            Vec3d p = a.GetGlobalPos(), q = b.GetGlobalPos();
-            double apart = Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Z - q.Z) * (p.Z - q.Z));
-            return apart < (a.SleeperLength + b.SleeperLength) / 2;
-        }
-
         /// <summary>
-        /// Скільки секцій гілки, рахуючи від стрілки, лежить на сусідній гілці: поки вісь однієї ближча до осі
-        /// іншої, ніж довжина шпали, шпали двох гілок перетинаються, і це ще стрілка.
+        /// Скільки секцій гілки, рахуючи від стрілки, лежить на сусідній гілці: поки габарити двох гілок
+        /// перекриваються, це ще стрілка.
         /// trunk і trunkAtStart це кінець, з якого колії розходяться, branch це перша секція потрібної гілки.
         /// </summary>
         internal static int OverlapSections(Section trunk, bool trunkAtStart, Section branch, Func<SectionLink, Section> resolve)
@@ -234,40 +226,40 @@ namespace RailWorld.src.RailWay
             Section current = branch;
             bool entered = mine.AtStart;
             int count = 0;
+            Section behind = null;
 
             for (int guard = 0; guard < MaxWalk; guard++)
             {
-                // Дальній кінець чергової секції гілки: де він відносно сусідньої гілки
+                // Сусідню гілку ведемо поруч: до секції, навпроти якої лежить дальній кінець чергової секції цієї
                 Vec3d p = current.GetEndPosition(!entered);
-
-                bool otherEnded = false;
                 for (int hop = 0; hop < 8; hop++)
                 {
                     if (RouteCurve.Along(other, otherEntered, p, out double length, out _) <= length + 1e-6) break;
 
                     SectionLink link = other.GetActiveLink(!otherEntered);
                     Section next = link == null ? null : resolve(link);
-                    if (next == null)
-                    {
-                        otherEnded = true;
-                        break;
-                    }
+                    if (next == null) break;
+                    behind = other;
                     other = next;
                     otherEntered = link.AtStart;
                 }
-                if (otherEnded) break;
 
-                RouteCurve.Along(other, otherEntered, p, out _, out double sideways);
-                if (sideways >= other.SleeperLength) break;
+                // Габарит секції може зачепити й сусідів тієї, що навпроти: гілки йдуть під кутом
+                SectionLink aheadLink = other.GetActiveLink(!otherEntered);
+                Section ahead = aheadLink == null ? null : resolve(aheadLink);
+                bool lies = Footprint.Overlap(current, other)
+                    || (behind != null && Footprint.Overlap(current, behind))
+                    || (ahead != null && Footprint.Overlap(current, ahead));
+                if (!lies) break;
                 count++;
 
                 // Далі по своїй гілці. Якщо вона сама розходиться, рахувати далі нема чого
-                List<SectionLink> ahead = current.GetLinks(!entered);
-                if (ahead.Count != 1) break;
-                Section following = resolve(ahead[0]);
+                List<SectionLink> onward = current.GetLinks(!entered);
+                if (onward.Count != 1) break;
+                Section following = resolve(onward[0]);
                 if (following == null) break;
                 current = following;
-                entered = ahead[0].AtStart;
+                entered = onward[0].AtStart;
             }
 
             return count;

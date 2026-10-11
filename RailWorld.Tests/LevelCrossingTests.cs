@@ -70,8 +70,8 @@ namespace RailWorld.Tests
             Lay(Point(10, -10, 0, 1), Point(10, 10, 0, 1));
             Lay(Point(8.5, -1.5, 1, 1), Point(11.5, 1.5, 1, 1));
 
-            // Вузол це місце, де колії перекриваються шпалами. Прямий перетин займає 0.875 блока в кожен бік,
-            // косий під 45 градусів 2.11, разом 2.99: ближче вузли наклалися б
+            // Вузол це місце, де перекриваються габарити колій. Прямий перетин займає 0.975 блока в кожен бік,
+            // косий під 45 градусів 2.35, разом 3.33: ближче вузли наклалися б
             Assert.NotNull(ConflictOf(2.5));
             // Трохи далі за цю суму вже можна
             Assert.Null(ConflictOf(3.5));
@@ -97,8 +97,9 @@ namespace RailWorld.Tests
         }
 
         [Theory]
-        [InlineData(4.0, true)]
-        [InlineData(4.5, false)]
+        // Вузол під 45 градусів тягнеться на 2.35 блока в кожен бік, два таких поруч це 4.71
+        [InlineData(4.5, true)]
+        [InlineData(5.0, false)]
         public void SpacingBetweenCrossingsIsTheSameInEitherBuildOrder(double apart, bool refused)
         {
             double k = Math.Sqrt(0.5);
@@ -110,8 +111,9 @@ namespace RailWorld.Tests
         }
 
         [Theory]
-        [InlineData(4.0, true)]
-        [InlineData(4.5, false)]
+        // Вузол під 45 градусів тягнеться на 2.35 блока в кожен бік, два таких поруч це 4.71
+        [InlineData(4.5, true)]
+        [InlineData(5.0, false)]
         public void SpacingBetweenCrossingsIsTheSameInTheOtherBuildOrder(double apart, bool refused)
         {
             double k = Math.Sqrt(0.5);
@@ -153,7 +155,7 @@ namespace RailWorld.Tests
         {
             LaySwitchAtOrigin();
 
-            // Тіло стрілки починається на її стику, в нулі. Косий вузол під 20 градусів тягнеться на 4.96 блока
+            // Тіло стрілки починається на її стику, в нулі. Косий вузол під 20 градусів тягнеться на 5.53 блока
             // вздовж колії. Перетин за 4 блоки до стрілки накладається на тіло краєм вузла, хоча сама
             // перетнута секція до тіла не належить
             string problem = ConflictOf(Shallow(-4));
@@ -329,12 +331,12 @@ namespace RailWorld.Tests
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, Resolve, out string conflict, SectionsIn);
             Assert.Null(conflict);
 
-            // Дві смуги завширшки зі шпалу, 1.75 блока, під кутом 30 градусів перекриваються на 3.27 блока
+            // Дві смуги завширшки з габарит колії, 1.95 блока, під кутом 30 градусів перекриваються на 3.64 блока
             // вздовж маршруту в кожен бік від перетину осей. Доти маршрут мусить лежати рівно в площині колії.
             // Якби вузол рахувався по рейках, він кінчався б уже за 1.96 блока, і шпала маршруту
             // піднімалася б, ще лежачи під рейкою колії
-            double overlap = TrackGauge.StandardSleeperLength / 2 * (1 / Math.Sin(Math.PI / 6) + 1 / Math.Tan(Math.PI / 6));
-            Assert.Equal(3.27, overlap, 2);
+            double overlap = Footprint.StandardWidth / 2 * (1 / Math.Sin(Math.PI / 6) + 1 / Math.Tan(Math.PI / 6));
+            Assert.Equal(3.64, overlap, 2);
 
             int checkedPoints = 0;
             foreach (PointOnBezierCurve point in points)

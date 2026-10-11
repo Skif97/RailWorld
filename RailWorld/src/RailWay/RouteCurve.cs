@@ -246,9 +246,9 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Пів довжини вузла перетину вздовж однієї з двох колій: поки колії перекриваються. Колія це смуга
-        /// завширшки зі свою шпалу, а не лише її рейки: рейки двох колій розходяться раніше, ніж шпали,
-        /// і якби вузол кінчався по рейках, шпала однієї колії лишалася б під рейкою другої.
-        /// own це довжина шпали колії, вздовж якої міряємо, other тієї, що її перетинає.
+        /// завширшки зі свій габарит (Footprint), а не лише її рейки: рейки двох колій розходяться раніше,
+        /// ніж шпали, і якби вузол кінчався по рейках, шпала однієї колії лишалася б під рейкою другої.
+        /// own це ширина габариту колії, вздовж якої міряємо, other тієї, що її перетинає.
         /// Що гостріший кут, то довший вузол.
         /// </summary>
         internal static double CrossingHalf(double own, double other, double angle)
@@ -377,7 +377,7 @@ namespace RailWorld.src.RailWay
 
                     // Вузол перетину тягнеться вздовж колії в обидва боки від місця, де перетнулися осі: на косому
                     // перетині на кілька блоків. На тіло стрілки він не накладається ніде, а не лише в цій секції
-                    if (SwitchBodyWithin(section, where, CrossingHalf(section.SleeperLength, TrackGauge.StandardSleeperLength, angle), resolve))
+                    if (SwitchBodyWithin(section, where, CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle), resolve))
                     {
                         conflict = conflict ?? "перетин надто близько до стрілки";
                         Mark(k);
@@ -385,8 +385,8 @@ namespace RailWorld.src.RailWay
                     }
 
                     crossings.Add(new Crossing { At = at, Section = section, Angle = angle, Where = where, Index = k,
-                        Half = CrossingHalf(TrackGauge.StandardSleeperLength, section.SleeperLength, angle),
-                        HalfOnTrack = CrossingHalf(section.SleeperLength, TrackGauge.StandardSleeperLength, angle) });
+                        Half = CrossingHalf(Footprint.StandardWidth, Footprint.Width(section), angle),
+                        HalfOnTrack = CrossingHalf(Footprint.Width(section), Footprint.StandardWidth, angle) });
                 }
             }
             if (crossings.Count == 0) return false;
@@ -578,7 +578,7 @@ namespace RailWorld.src.RailWay
         private static bool NearLaidCrossing(Crossing crossing, List<Section> candidates, Func<SectionLink, Section> resolve)
         {
             // Найдовший вузол, який може лежати на цій колії: під найгострішим дозволеним кутом
-            double length = crossing.Section.SleeperLength;
+            double length = Footprint.Width(crossing.Section);
             double reach = crossing.HalfOnTrack + CrossingHalf(length, length, MinCrossingAngleDeg * Math.PI / 180);
 
             for (int end = 0; end < 2; end++)
@@ -602,7 +602,7 @@ namespace RailWorld.src.RailWay
                         // Сам маршрут перетинає колію в нулі; до нього вузол не рахується, лише від нього
                         if (away <= 1e-6) continue;
                         if (Math.Abs(other.GetGlobalPos().Y - current.GetGlobalPos().Y) >= CrossingClearance) continue;
-                        if (away < crossing.HalfOnTrack + CrossingHalf(current.SleeperLength, other.SleeperLength, angle)) return true;
+                        if (away < crossing.HalfOnTrack + CrossingHalf(Footprint.Width(current), Footprint.Width(other), angle)) return true;
                     }
 
                     passed += PlanLength(from, exit);
@@ -762,7 +762,7 @@ namespace RailWorld.src.RailWay
         /// Веде кінці маршруту, що стоять на стрілках, поверх уже покладеної колії. Куди маршрут іде в плані,
         /// тут не міняється: кут розходження вибирає гравець. Міняються висота і нахил полотна, у три кроки.
         /// 1. Від стрілки точка за точкою і паралельно секція за секцією по основній колії. Поки вісь маршруту
-        ///    ближча до осі основної колії, ніж довжина шпали, шпали двох колій перетинаються, і це ще стрілка;
+        ///    лежить у габариті основної колії (Footprint), це ще стрілка;
         ///    точка бере висоту з площини тієї секції, над якою вона опинилася, і її нахил полотна.
         /// 2. Зійшовши, маршрут іще HoldSections секцій іде площиною останньої секції основної колії.
         ///    У кінці цієї ділянки стоїть невидима опорна точка.
@@ -908,6 +908,7 @@ namespace RailWorld.src.RailWay
             Follow follow = new Follow { Virtual = anchor, Plane = track };
             Section current = track;
             bool enteredAtStart = jointAtStart;
+            Section behind = null;
 
             for (int i = anchor, guard = 0; i >= 0 && i < count; i += step, guard++)
             {
@@ -932,13 +933,20 @@ namespace RailWorld.src.RailWay
                         ended = true;
                         break;
                     }
+                    behind = current;
                     current = next;
                     enteredAtStart = link.AtStart;
                 }
 
-                Along(current, enteredAtStart, p, out _, out double sideways);
-                // Край стрілки там, де шпали двох колій перестають перетинатися: до того під ними спільна шпала
-                if (ended || sideways >= current.SleeperLength)
+                // Край стрілки там, де габарити двох колій перестають перекриватися. Маршрут тут це шматок
+                // від цієї точки нарізки до сусідньої; основна колія це секція навпроти і її сусіди
+                int neighbour = i + step >= 0 && i + step < count ? i + step : i - step;
+                Vec3d q = points[neighbour].position;
+                SectionLink aheadLink = current.GetActiveLink(!enteredAtStart);
+                Section ahead = aheadLink == null || resolve == null ? null : resolve(aheadLink);
+                bool lies = OnFootprint(p, q, current) || (behind != null && OnFootprint(p, q, behind)) || (ahead != null && OnFootprint(p, q, ahead));
+
+                if (ended || !lies)
                 {
                     follow.Exit = i;
                     break;
@@ -950,6 +958,12 @@ namespace RailWorld.src.RailWay
             }
 
             return follow;
+        }
+
+        // Чи шматок маршруту між двома точками нарізки лежить у габариті секції покладеної колії
+        private static bool OnFootprint(Vec3d from, Vec3d to, Section section)
+        {
+            return Footprint.Overlap(from, to, Footprint.StandardWidth, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _);
         }
 
         // Крок 2: ще трохи площиною останньої секції основної колії. step це напрямок від стрілки,

@@ -155,7 +155,7 @@ namespace RailWorld.src.RailWay
                 list.Add(i);
             }
 
-            double reach = TrackGauge.StandardSleeperLength;
+            double reach = Footprint.StandardWidth;
             int around = (int)Math.Ceiling(reach);
 
             for (int i = 0; i < count; i++)
