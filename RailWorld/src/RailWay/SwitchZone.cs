@@ -5,26 +5,34 @@ using Vintagestory.API.MathTools;
 namespace RailWorld.src.RailWay
 {
     /// <summary>
-    /// Зона стрілки: ділянка колії навколо неї, де нову стрілку ставити не можна.
-    /// Це частина спільної колії перед стрілкою, уся ділянка, де дві гілки ще лежать одна на одній
-    /// (рейка однієї між рейками іншої), і ще трохи кожної гілки після того, як вони розійшлися.
+    /// Тіло стрілки: ділянка колії, яку стрілка займає своїми деталями. Починається на стику, з якого колія
+    /// розходиться (там вістря гостряків), і тягнеться по обох гілках, поки вони лежать одна на одній:
+    /// шпали двох гілок перекриваються, і під ними спільна шпала. Спільна колія перед стиком до тіла
+    /// не належить: там звичайна колія.
+    /// На тіло стрілки не може накластися ні тіло іншої стрілки, ні вузол перетину з іншою колією.
     /// Працює і на клієнті, і на сервері: секції сусідів дістає через resolve.
     /// </summary>
     public static class SwitchZone
     {
         /// <summary>
-        /// Скільки секцій спільної колії перед стрілкою і скільки секцій кожної гілки після розходження
-        /// закриті для нових стрілок.
+        /// На скільки секцій далі за тіло стрілки запис про неї стежить за кожною гілкою: зміна колії
+        /// одразу за тілом може зсунути його край, і стрілку треба перерахувати.
         /// </summary>
         public const int ClearSections = 5;
+
+        /// <summary>
+        /// Не далі ніж за стільки секцій від відкритого краю колії точка маршруту стає на сам край.
+        /// </summary>
+        public const int OpenEndSections = 3;
 
         // Як далеко від стику шукати стрілку, в секціях. Гілки пологої стрілки лежать одна на одній довго
         private const int MaxWalk = 96;
 
         /// <summary>
-        /// Чи лежить стик на цьому кінці секції в зоні якоїсь стрілки.
+        /// Чи лежить стик на цьому кінці секції в тілі якоїсь стрілки: це сам стик, з якого вона розходиться,
+        /// або стик на її гілці, поки гілки лежать одна на одній.
         /// </summary>
-        public static bool IsBlocked(Section section, bool atStart, Func<SectionLink, Section> resolve)
+        public static bool JointInBody(Section section, bool atStart, Func<SectionLink, Section> resolve)
         {
             if (section == null || resolve == null) return false;
 
@@ -33,7 +41,16 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Відкритий край колії, якщо він не далі ніж за ClearSections секцій від цієї секції, рахуючи її саму:
+        /// Чи секція лежить у тілі якоїсь стрілки: обидва її стики в ньому. Остання секція спільної колії
+        /// перед стрілкою торкається тіла лише одним стиком і до нього не належить.
+        /// </summary>
+        public static bool InBody(Section section, Func<SectionLink, Section> resolve)
+        {
+            return JointInBody(section, true, resolve) && JointInBody(section, false, resolve);
+        }
+
+        /// <summary>
+        /// Відкритий край колії, якщо він не далі ніж за OpenEndSections секцій від цієї секції, рахуючи її саму:
         /// кінець секції, з якого колія нікуди не йде. Відгалуження так близько до краю дало б стрілку з куцим
         /// хвостиком, тому маршрут, причеплений тут, стає на сам край. near це місце, куди цілився гравець:
         /// якщо країв поруч два, береться ближчий до нього. false, якщо краю поруч немає або до нього стрілка.
@@ -49,7 +66,7 @@ namespace RailWorld.src.RailWay
                 Section current = section;
                 bool exitAtStart = side == 0;
 
-                for (int passed = 0; passed < ClearSections; passed++)
+                for (int passed = 0; passed < OpenEndSections; passed++)
                 {
                     List<SectionLink> links = current.GetLinks(exitAtStart);
                     if (links.Count == 0)
@@ -84,17 +101,18 @@ namespace RailWorld.src.RailWay
                 List<SectionLink> links = section.GetLinks(exitAtStart);
                 if (links.Count == 0) return false;
 
-                // Попереду колія розходиться: ми на спільній колії перед стрілкою
-                if (links.Count >= 2) return passed <= ClearSections;
+                // Попереду колія розходиться: ми на спільній колії перед стрілкою. Тіло починається на самому
+                // стику, тож у ньому лише той стик, з якого й почали
+                if (links.Count >= 2) return passed == 0;
 
                 Section next = resolve(links[0]);
                 if (next == null) return false;
 
                 // Зайшли в секцію через кінець, з якого виходять дві колії: ми на гілці, а це її стрілка.
-                // Гілка закрита, поки лежить на сусідній, і ще кілька секцій після
+                // Гілка в тілі стрілки, поки лежить на сусідній
                 if (next.HasSwitch(links[0].AtStart))
                 {
-                    return passed <= OverlapSections(next, links[0].AtStart, section, resolve) + ClearSections;
+                    return passed <= OverlapSections(next, links[0].AtStart, section, resolve);
                 }
 
                 section = next;

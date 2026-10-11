@@ -179,6 +179,30 @@ namespace RailWorld.src.RailWay
                 }
             }
 
+            List<int> close = SectionLinker.FindTooCloseAbove(planned, sectionsIn);
+            if (close.Count > 0)
+            {
+                conflict = conflict ?? "колія проходить надто близько над чи під іншою: потрібно " + CrossingClearance.ToString("0") + " блоки просвіту";
+                if (conflictAt != null)
+                {
+                    // Підсвічується кожна така секція: її три точки нарізки
+                    foreach (int section in close)
+                    {
+                        for (int i = plannedAt[section]; i <= Math.Min(plannedAt[section] + 2, points.Count - 1); i++) conflictAt.Add(i);
+                    }
+                }
+            }
+
+            int lever = SectionLinker.FindLeverInTrack(planned, sectionsIn);
+            if (lever >= 0)
+            {
+                conflict = conflict ?? "колія проходить по важелю стрілки";
+                if (conflictAt != null)
+                {
+                    for (int i = Math.Max(plannedAt[lever] - 2, 0); i <= Math.Min(plannedAt[lever] + 4, points.Count - 1); i++) conflictAt.Add(i);
+                }
+            }
+
             string switchProblem = SectionLinker.FindSwitchProblem(planned, sectionsIn, resolve, out int found);
             if (switchProblem == null) return;
 
@@ -212,6 +236,24 @@ namespace RailWorld.src.RailWay
             public double At;
             public Section Section;
             public double Angle;
+            // Місце перетину осей і номер точки нарізки перед ним
+            public Vec3d Where;
+            public int Index;
+            // Пів довжини вузла вздовж маршруту і вздовж колії, яку він перетинає
+            public double Half;
+            public double HalfOnTrack;
+        }
+
+        /// <summary>
+        /// Пів довжини вузла перетину вздовж однієї з двох колій: поки колії перекриваються. Колія це смуга
+        /// завширшки зі свою шпалу, а не лише її рейки: рейки двох колій розходяться раніше, ніж шпали,
+        /// і якби вузол кінчався по рейках, шпала однієї колії лишалася б під рейкою другої.
+        /// own це довжина шпали колії, вздовж якої міряємо, other тієї, що її перетинає.
+        /// Що гостріший кут, то довший вузол.
+        /// </summary>
+        internal static double CrossingHalf(double own, double other, double angle)
+        {
+            return other / 2 / Math.Sin(angle) + own / 2 / Math.Tan(angle);
         }
 
         /// <summary>
@@ -319,8 +361,7 @@ namespace RailWorld.src.RailWay
                         Mark(k);
                         continue;
                     }
-                    if (section.HasSwitch(true) || section.HasSwitch(false)
-                        || SwitchZone.IsBlocked(section, true, resolve) || SwitchZone.IsBlocked(section, false, resolve))
+                    if (SwitchZone.InBody(section, resolve))
                     {
                         conflict = conflict ?? "маршрут перетинає стрілку";
                         Mark(k);
@@ -334,11 +375,43 @@ namespace RailWorld.src.RailWay
                         continue;
                     }
 
-                    crossings.Add(new Crossing { At = at, Section = section, Angle = angle });
+                    // Вузол перетину тягнеться вздовж колії в обидва боки від місця, де перетнулися осі: на косому
+                    // перетині на кілька блоків. На тіло стрілки він не накладається ніде, а не лише в цій секції
+                    if (SwitchBodyWithin(section, where, CrossingHalf(section.SleeperLength, TrackGauge.StandardSleeperLength, angle), resolve))
+                    {
+                        conflict = conflict ?? "перетин надто близько до стрілки";
+                        Mark(k);
+                        continue;
+                    }
+
+                    crossings.Add(new Crossing { At = at, Section = section, Angle = angle, Where = where, Index = k,
+                        Half = CrossingHalf(TrackGauge.StandardSleeperLength, section.SleeperLength, angle),
+                        HalfOnTrack = CrossingHalf(section.SleeperLength, TrackGauge.StandardSleeperLength, angle) });
                 }
             }
             if (crossings.Count == 0) return false;
             crossings.Sort((x, y) => x.At.CompareTo(y.At));
+
+            // Вузол одного перетину не накладається на вузол іншого: кожен це вузол рівно двох колій.
+            // Спершу два перетини самого маршруту, що стоять надто близько вздовж нього: сюди ж потрапляє
+            // прохід крізь місце, де дві колії вже перетинаються
+            for (int i = 0; i + 1 < crossings.Count; i++)
+            {
+                Crossing near = crossings[i], far = crossings[i + 1];
+                if (far.At - near.At >= near.Half + far.Half) continue;
+
+                conflict = conflict ?? "два перетини надто близько один до одного";
+                Mark(near.Index);
+                Mark(far.Index);
+            }
+            // Потім перетин, поруч з яким на тій самій колії вже є перетин з іншою, якої маршрут не зачіпає
+            foreach (Crossing crossing in crossings)
+            {
+                if (!NearLaidCrossing(crossing, candidates, resolve)) continue;
+
+                conflict = conflict ?? "перетин надто близько до іншого перетину";
+                Mark(crossing.Index);
+            }
 
             // Власні висоти маршруту, якими вони були до вирівнювання
             double[] original = new double[count];
@@ -348,9 +421,8 @@ namespace RailWorld.src.RailWay
             var zones = new List<int[]>();
             foreach (Crossing crossing in crossings)
             {
-                // Поки рейки двох колій перетинаються: далі від точки перетину осей, якщо кут гостріший
-                double width = crossing.Section.TrackWidth;
-                double half = width / 2 * (1 / Math.Sin(crossing.Angle) + 1 / Math.Tan(crossing.Angle)) + CrossingMargin;
+                // Поки колії перекриваються, і ще трохи: далі від точки перетину осей, якщо кут гостріший
+                double half = crossing.Half + CrossingMargin;
 
                 int from = -1, to = -1;
                 for (int i = 0; i < count; i++)
@@ -402,6 +474,16 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Скільки блоків уздовж колії потрібно, щоб плавно змінити висоту на lift блоків і не зламати колію
+        /// крутіше за найменший радіус. Плавний перехід між двома рівними ділянками найкрутіший на своїх
+        /// кінцях, і радіус там дорівнює квадрату довжини, поділеному на шість різниць висот.
+        /// </summary>
+        internal static double RampRoom(double lift)
+        {
+            return Math.Sqrt(6 * lift * RoutePlanner.MinRadius);
+        }
+
+        /// <summary>
         /// Перехід по висоті від краю перетину edge; direction це куди від перетину, 1 або -1.
         /// Веде він до найближчої в цей бік точки маршруту (routePoints це їхні місця в нарізці), одним плавним
         /// відрізком: так, ніби край перетину сам був точкою, через яку маршрут проходить. Якби натомість
@@ -414,7 +496,8 @@ namespace RailWorld.src.RailWay
             double[] weight, double[] trackCant, HashSet<int> routePoints, ref string conflict)
         {
             int count = points.Count;
-            double want = GameMath.Clamp(Math.Abs(points[edge].position.Y - original[edge]) * CrossingRampPerBlock, CrossingRampMin, CrossingRampMax);
+            double lift = Math.Abs(points[edge].position.Y - original[edge]);
+            double want = Math.Max(GameMath.Clamp(lift * CrossingRampPerBlock, CrossingRampMin, CrossingRampMax), RampRoom(lift));
 
             // Якщо раніше за точку маршруту трапиться ділянка з власною жорсткою висотою (стрілка,
             // інший перетин), перехід веде до неї
@@ -439,6 +522,15 @@ namespace RailWorld.src.RailWay
                         conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
                     return;
                 }
+                // Перехід між двома жорсткими висотами займає стільки місця, скільки є. Якщо його замало,
+                // колія зламається по висоті: кажемо про це тут, де відома причина
+                // Рейка проходить більшу різницю висот, ніж вісь, якщо полотна двох колій нахилені по-різному:
+                // до різниці висот осі додається те, на скільки рейку піднімає чи опускає перекіс
+                double step = Math.Abs(points[hit].position.Y - points[edge].position.Y)
+                    + TrackGauge.StandardWidth / 2 * Math.Abs(Math.Sin(trackCant[hit]) - Math.Sin(trackCant[edge]));
+                if (step > HeightTolerance && Math.Abs(run[hit] - run[edge]) < RampRoom(step))
+                    conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
+
                 int low = Math.Min(edge, hit), high = Math.Max(edge, hit);
                 Transition(points, low, high, VirtualSlope(points, run, low, 1), VirtualSlope(points, run, high, -1), run, weight, trackCant, 2);
                 return;
@@ -453,6 +545,108 @@ namespace RailWorld.src.RailWay
             {
                 Transition(points, target, edge, SlopeAlong(points[target].tangent, 1), VirtualSlope(points, run, edge, -1), run, weight, trackCant, 1);
             }
+        }
+
+        // Чи вздовж колії, не далі ніж за reach блоків від точки where на секції section, починається тіло стрілки
+        private static bool SwitchBodyWithin(Section section, Vec3d where, double reach, Func<SectionLink, Section> resolve)
+        {
+            for (int end = 0; end < 2; end++)
+            {
+                Section current = section;
+                bool exitAtStart = end == 0;
+                // Скільки пройдено вздовж колії до початку поточної секції, якщо йти від where
+                double passed = -PlanLength(where, current.GetEndPosition(!exitAtStart));
+
+                for (int hop = 0; hop < 64 && current != null && passed <= reach; hop++)
+                {
+                    if (SwitchZone.InBody(current, resolve)) return true;
+                    passed += PlanLength(current.GetEndPosition(!exitAtStart), current.GetEndPosition(exitAtStart));
+
+                    List<SectionLink> links = current.GetLinks(exitAtStart);
+                    // Колія розходиться: це стик стрілки, і її тіло починається просто за ним
+                    if (links.Count >= 2) return passed <= reach;
+                    if (links.Count != 1 || resolve == null) break;
+                    exitAtStart = !links[0].AtStart;
+                    current = resolve(links[0]);
+                }
+            }
+            return false;
+        }
+
+        // Чи на колії, яку маршрут перетинає, поруч уже є перетин з іншою колією: так близько, що два вузли
+        // наклалися б. Іде по колії від місця перетину в обидва боки і шукає, що її перетинає
+        private static bool NearLaidCrossing(Crossing crossing, List<Section> candidates, Func<SectionLink, Section> resolve)
+        {
+            // Найдовший вузол, який може лежати на цій колії: під найгострішим дозволеним кутом
+            double length = crossing.Section.SleeperLength;
+            double reach = crossing.HalfOnTrack + CrossingHalf(length, length, MinCrossingAngleDeg * Math.PI / 180);
+
+            for (int end = 0; end < 2; end++)
+            {
+                Section current = crossing.Section;
+                bool exitAtStart = end == 0;
+                // Скільки пройдено вздовж колії до початку поточної секції, якщо йти від місця перетину
+                Vec3d exit = current.GetEndPosition(exitAtStart);
+                double passed = -PlanLength(crossing.Where, current.GetEndPosition(!exitAtStart));
+
+                for (int hop = 0; hop < 64 && current != null; hop++)
+                {
+                    Vec3d from = current.GetEndPosition(!exitAtStart);
+                    exit = current.GetEndPosition(exitAtStart);
+
+                    foreach (Section other in candidates)
+                    {
+                        if (other == current || !Crosses(from, exit, other, out double t, out double angle)) continue;
+
+                        double away = passed + PlanLength(from, exit) * t;
+                        // Сам маршрут перетинає колію в нулі; до нього вузол не рахується, лише від нього
+                        if (away <= 1e-6) continue;
+                        if (Math.Abs(other.GetGlobalPos().Y - current.GetGlobalPos().Y) >= CrossingClearance) continue;
+                        if (away < crossing.HalfOnTrack + CrossingHalf(current.SleeperLength, other.SleeperLength, angle)) return true;
+                    }
+
+                    passed += PlanLength(from, exit);
+                    if (passed > reach) break;
+
+                    List<SectionLink> links = current.GetLinks(exitAtStart);
+                    if (links.Count != 1 || resolve == null) break;
+                    Section next = resolve(links[0]);
+                    exitAtStart = !links[0].AtStart;
+                    current = next;
+                }
+            }
+            return false;
+        }
+
+        // Чи відрізок від from до to перетинає в плані вісь секції, і де: t це частка відрізка, angle кут між ними.
+        // Спільний кінець двох секцій однієї колії і спільний початок двох гілок стрілки це не перетин
+        internal static bool Crosses(Vec3d from, Vec3d to, Section other, out double t, out double angle)
+        {
+            t = 0;
+            angle = 0;
+            Vec3d c = other.FullStartPosition, d = other.FullEndPosition;
+            double rx = to.X - from.X, rz = to.Z - from.Z, sx = d.X - c.X, sz = d.Z - c.Z;
+            double denominator = rx * sz - rz * sx;
+            if (Math.Abs(denominator) < 1e-12) return false;
+
+            t = ((c.X - from.X) * sz - (c.Z - from.Z) * sx) / denominator;
+            double u = ((c.X - from.X) * rz - (c.Z - from.Z) * rx) / denominator;
+            const double edge = 1e-4;
+            if (t <= edge || t >= 1 - edge || u <= edge || u >= 1 - edge)
+            {
+                // На самому стику секцій перетин належить рівно одній з них: тій, де він на початку
+                bool onJoint = (t > -edge && t <= edge && u > edge && u < 1 - edge) || (u > -edge && u <= edge && t > edge && t < 1 - edge);
+                if (!onJoint) return false;
+            }
+
+            double cos = Math.Abs(rx * sx + rz * sz) / Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
+            angle = Math.Acos(GameMath.Clamp(cos, -1, 1));
+            return true;
+        }
+
+        private static double PlanLength(Vec3d a, Vec3d b)
+        {
+            return Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
         }
 
         // Секція тієї самої колії, що й section, найближча в плані до точки: площина колії міняється вздовж неї
@@ -498,7 +692,7 @@ namespace RailWorld.src.RailWay
         // Висота площини секції над точкою і нахил цієї площини для маршруту, що перетинає її в напрямку
         // (travelX, travelZ): наскільки вона піднімається ліворуч від руху. На відміну від TrackPlane,
         // маршрут тут іде не вздовж колії, а навскоси, тож нахил полотна в нього виходить свій
-        private static bool CrossPlane(Section section, Vec3d p, double travelX, double travelZ, out double planeY, out double cant)
+        internal static bool CrossPlane(Section section, Vec3d p, double travelX, double travelZ, out double planeY, out double cant)
         {
             planeY = p.Y;
             cant = 0;

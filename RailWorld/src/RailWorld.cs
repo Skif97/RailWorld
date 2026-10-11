@@ -241,7 +241,7 @@ namespace RailWorld
                     marker = RouteMarker.OnJoint(joint, atStart, packet.Sign[i] < 0 ? -1 : 1, i == 0, lookup.GetSection);
 
                     // Тут маршрут дасть нову стрілку. Клієнт це вже перевірив, але його дані могли застаріти
-                    if (marker.Track != null && SwitchZone.IsBlocked(joint, atStart, lookup.GetSection)) return "надто близько до іншої стрілки";
+                    if (marker.Track != null && SwitchZone.JointInBody(joint, atStart, lookup.GetSection)) return "надто близько до іншої стрілки";
                 }
                 else
                 {

@@ -361,20 +361,40 @@ namespace RailWorld.src.RailWay
                 if (!join.MakesSwitch) continue;
                 Section mine = planned[join.Index];
 
-                // Саме це з'єднання знімаємо: перевіряється місце під стрілку, а не вже готова стрілка.
-                // Дивимося з обох боків: і вздовж покладеної колії, і вздовж нової ділянки
+                at = join.Index;
+
+                // Та сама стрілка, якою її порахує сервер після побудови, і секції її тіла
+                RailSwitch built = SwitchBuilder.Build(join.Copy, join.Other.AtStart, Find);
+                var body = new List<Section>();
+                if (built != null)
+                {
+                    foreach (SwitchBranch branch in built.Branches)
+                    {
+                        for (int n = 1; n <= branch.ZoneSections; n++)
+                        {
+                            SectionLink member = branch.Member(n);
+                            Section section = member == null ? null : Find(member);
+                            if (section != null) body.Add(section);
+                        }
+                    }
+                }
+
+                // Тіло нової стрілки не накладається на тіло іншої: ні тієї, що вже лежить, ні тієї, яку дасть
+                // другий кінець цього ж маршруту. Саме це з'єднання на час перевірки знімаємо: інакше кожна
+                // секція нового тіла знайшла б у ньому саму себе
                 mine.RemoveLink(join.AtStart, join.Copy);
                 join.Copy.RemoveLink(join.Other.AtStart, mine);
-                bool blocked = SwitchZone.IsBlocked(join.Copy, join.Other.AtStart, Find) || SwitchZone.IsBlocked(mine, join.AtStart, Find);
+                bool blocked = SwitchZone.JointInBody(join.Copy, join.Other.AtStart, Find) || body.Exists(section => SwitchZone.InBody(section, Find));
                 Connect(mine, join.AtStart, join.Copy, join.Other.AtStart);
-
-                at = join.Index;
                 if (blocked) return "надто близько до іншої стрілки";
 
-                // Та сама стрілка, якою її порахує сервер після побудови. Якщо частина гілки в незавантаженому
-                // чанку, сказати про хрестовину нічого не можна, і тоді не відмовляємо
-                RailSwitch built = SwitchBuilder.Build(join.Copy, join.Other.AtStart, Find);
+                // Якщо частина гілки в незавантаженому чанку, сказати про хрестовину нічого не можна,
+                // і тоді не відмовляємо
                 if (built != null && built.Resolved && built.Branches[0].FrogFrom == 0) return "стрілка без хрестовини: гілки розходяться надто полого або гілка закоротка";
+
+                // Стрілку не перетинає інша колія: це правило діє в обидва боки. Маршрут не може перетнути
+                // стрілку, що вже лежить, і так само не може поставити стрілку там, де колію вже перетинає інша
+                if (built != null && CrossedNearBody(join.Copy, join.Other.AtStart, built, Find, sectionsIn)) return "стрілка надто близько до перетину з іншою колією";
             }
             at = -1;
             return null;
@@ -456,31 +476,218 @@ namespace RailWorld.src.RailWay
         {
             Vec3d p = section.GetGlobalPos();
 
-            // Покладена секція зберігається в чанку свого центру, а центр не далі ніж за два блоки звідси
+            foreach (Section other in Around(p, sectionsIn))
+            {
+                if (other == section) continue;
+
+                Vec3d q = other.GetGlobalPos();
+                if (Math.Abs(q.X - p.X) > 2 || Math.Abs(q.Z - p.Z) > 2 || Math.Abs(q.Y - p.Y) >= RouteCurve.CrossingClearance) continue;
+
+                double along = RouteCurve.Along(other, true, p, out double length, out double sideways);
+                if (along < 0 || along > length) continue;
+                if (sideways < (section.SleeperLength + other.SleeperLength) / 2) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Чи нова ділянка проходить по важелю стрілки, що вже стоїть. Важіль стоїть збоку від колії, поза
+        /// її шпалами, тож зона стрілки його не захищає: чужа колія може пройти поруч і накрити його.
+        /// Повертає номер секції в planned, під якою опинився б важіль, або -1.
+        /// </summary>
+        public static int FindLeverInTrack(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            for (int i = 0; i < planned.Count; i++)
+            {
+                Section section = planned[i];
+                Vec3d middle = section.GetGlobalPos();
+
+                foreach (Section other in Around(middle, sectionsIn))
+                {
+                    for (int end = 0; end < 2; end++)
+                    {
+                        bool atStart = end == 0;
+                        if (!other.HasSwitch(atStart)) continue;
+
+                        Vec3d lever = SectionPicker.LeverPosition(other, atStart);
+                        if (Math.Abs(lever.Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+
+                        // Важіль під колією, якщо він ближче до її осі, ніж край шпали
+                        double along = RouteCurve.Along(section, true, lever, out double length, out double sideways);
+                        if (along < 0 || along > length) continue;
+                        if (sideways < section.SleeperLength / 2 + SectionBox.LeverHalfWidth) return i;
+                    }
+                }
+            }
+            return -1;
+        }
+
+        // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
+        // і якщо ні, скільки блоків від краю тіла до її початку
+        private class BodyStep
+        {
+            public Section Section;
+            public bool Entered;
+            public bool InBody;
+            public double At;
+        }
+
+        // Чи вузол перетину з чужою колією накладається на тіло стрілки. Вузол тягнеться вздовж колії в обидва
+        // боки від місця, де перетнулися осі, тож шукати перетини треба не лише в самому тілі, а й далі від
+        // нього: на спільній колії перед стиком і на гілках за тілом
+        private static bool CrossedNearBody(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve,
+            System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            // Далі за найдовший можливий вузол шукати нема чого
+            double reach = RouteCurve.CrossingHalf(trunk.SleeperLength, trunk.SleeperLength, RouteCurve.MinCrossingAngleDeg * Math.PI / 180);
+            var steps = new List<BodyStep>();
+            var own = new HashSet<string>();
+            string Key(Section section) => section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
+
+            // Іде по колії від first, у яку зайшли кінцем entered; перші bodySections секцій це тіло стрілки
+            void Walk(Section first, bool entered, int bodySections)
+            {
+                Section current = first;
+                double at = 0;
+                for (int n = 0; n < 128 && current != null && at <= reach; n++)
+                {
+                    bool inBody = n < bodySections;
+                    steps.Add(new BodyStep { Section = current, Entered = entered, InBody = inBody, At = at });
+                    own.Add(Key(current));
+                    if (!inBody) at += current.GetEndPosition(entered).DistanceTo(current.GetEndPosition(!entered));
+
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    entered = ahead[0].AtStart;
+                    current = resolve(ahead[0]);
+                }
+            }
+
+            Walk(trunk, atStart, 0);
+            foreach (SwitchBranch branch in built.Branches)
+            {
+                SectionLink first = branch.Member(1);
+                Section section = first == null ? null : resolve(first);
+                if (section != null) Walk(section, first.AtStart, branch.ZoneSections);
+            }
+
+            foreach (BodyStep step in steps)
+            {
+                Vec3d from = step.Section.GetEndPosition(step.Entered), to = step.Section.GetEndPosition(!step.Entered);
+                Vec3d middle = step.Section.GetGlobalPos();
+                double length = from.DistanceTo(to);
+
+                foreach (Section other in Around(middle, sectionsIn))
+                {
+                    // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
+                    if (own.Contains(Key(other))) continue;
+                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+                    if (!RouteCurve.Crosses(from, to, other, out double t, out double angle)) continue;
+
+                    if (step.InBody) return true;
+                    if (step.At + length * t < RouteCurve.CrossingHalf(step.Section.SleeperLength, other.SleeperLength, angle)) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Наскільки висоти двох колій можуть розходитися там, де їхні шпали перекриваються, щоб це ще
+        /// вважалося однією площиною: перетином або стрілкою.
+        /// </summary>
+        private const double SamePlane = 0.15;
+
+        /// <summary>
+        /// Чи нова ділянка проходить над чи під покладеною колією надто близько. Там, де шпали двох колій
+        /// перекриваються, нова або лежить у площині покладеної (це перетин чи стрілка), або вища чи нижча
+        /// щонайменше на RouteCurve.CrossingClearance (це міст чи тунель). Проміжного не буває: інакше шпала
+        /// однієї колії стояла б у рейках другої. Правило не залежить від того, чи перетинаються осі колій:
+        /// колія може пройти над самим краєм чи боком іншої.
+        /// Повертає номери всіх секцій у planned, де це сталося б: показ підсвічує кожну.
+        /// </summary>
+        public static List<int> FindTooCloseAbove(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            var found = new List<int>();
+            for (int i = 0; i < planned.Count; i++)
+            {
+                Section section = planned[i];
+                Vec3d p = section.GetGlobalPos();
+                Vec3f normal = section.CenterNormal;
+                double half = section.SleeperLength / 2;
+
+                foreach (Section other in Around(p, sectionsIn, RouteCurve.CrossingClearance))
+                {
+                    if (other == section) continue;
+                    if (!SleeperReaches(p, normal, half, other, out double offset)) continue;
+
+                    // Висоти порівнюються в тому місці, де шпала нової секції лягає на покладену колію
+                    Vec3d q = new Vec3d(p.X + normal.X * offset, p.Y + normal.Y * offset, p.Z + normal.Z * offset);
+                    if (!RouteCurve.CrossPlane(other, q, 0, 0, out double planeY, out _)) continue;
+
+                    double gap = Math.Abs(q.Y - planeY);
+                    if (gap <= SamePlane || gap >= RouteCurve.CrossingClearance) continue;
+
+                    found.Add(i);
+                    break;
+                }
+            }
+            return found;
+        }
+
+        // Чи шпала, що лежить упоперек колії через точку p (уздовж normal, на half в кожен бік), дістає в плані
+        // до шпал секції other. offset це місце на шпалі, найближче до осі other: відстань від p уздовж normal
+        private static bool SleeperReaches(Vec3d p, Vec3f normal, double half, Section other, out double offset)
+        {
+            offset = 0;
+            Vec3d c = other.FullStartPosition, d = other.FullEndPosition;
+            double ux = d.X - c.X, uz = d.Z - c.Z;
+            double length = Math.Sqrt(ux * ux + uz * uz);
+            if (length < 1e-9) return false;
+            ux /= length;
+            uz /= length;
+
+            // Де два кінці шпали відносно осі other: уздовж неї і вбік від неї
+            double ax = p.X - normal.X * half - c.X, az = p.Z - normal.Z * half - c.Z;
+            double bx = p.X + normal.X * half - c.X, bz = p.Z + normal.Z * half - c.Z;
+            double alongA = ax * ux + az * uz, sideA = ax * uz - az * ux;
+            double alongB = bx * ux + bz * uz, sideB = bx * uz - bz * ux;
+
+            double along;
+            if (sideA * sideB <= 0)
+            {
+                // Шпала перетинає вісь other
+                double t = Math.Abs(sideA - sideB) < 1e-12 ? 0.5 : sideA / (sideA - sideB);
+                offset = -half + 2 * half * t;
+                along = alongA + (alongB - alongA) * t;
+            }
+            else
+            {
+                // Не перетинає: дістає, якщо ближчий кінець лежить у межах шпали other
+                bool nearA = Math.Abs(sideA) < Math.Abs(sideB);
+                if (Math.Min(Math.Abs(sideA), Math.Abs(sideB)) >= other.SleeperLength / 2) return false;
+                offset = nearA ? -half : half;
+                along = nearA ? alongA : alongB;
+            }
+            return along >= 0 && along <= length;
+        }
+
+        // Покладені секції поблизу точки: з чанків, куди може потрапити центр секції, не дальшої за два блоки
+        // в плані й за vertical блоків по висоті
+        private static List<Section> Around(Vec3d p, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, double vertical = 2)
+        {
             var chunks = new HashSet<Vec3i>();
             for (int dx = -1; dx <= 1; dx += 2)
                 for (int dy = -1; dy <= 1; dy += 2)
                     for (int dz = -1; dz <= 1; dz += 2)
-                        chunks.Add(ModMath.FindChunk(p.X + dx * 2, p.Y + dy * 2, p.Z + dz * 2));
+                        chunks.Add(ModMath.FindChunk(p.X + dx * 2, p.Y + dy * vertical, p.Z + dz * 2));
 
+            var found = new List<Section>();
             foreach (Vec3i chunkCoord in chunks)
             {
                 IEnumerable<Section> sections = sectionsIn(chunkCoord);
-                if (sections == null) continue;
-
-                foreach (Section other in sections)
-                {
-                    if (other == section) continue;
-
-                    Vec3d q = other.GetGlobalPos();
-                    if (Math.Abs(q.X - p.X) > 2 || Math.Abs(q.Z - p.Z) > 2 || Math.Abs(q.Y - p.Y) >= RouteCurve.CrossingClearance) continue;
-
-                    double along = RouteCurve.Along(other, true, p, out double length, out double sideways);
-                    if (along < 0 || along > length) continue;
-                    if (sideways < (section.SleeperLength + other.SleeperLength) / 2) return true;
-                }
+                if (sections != null) found.AddRange(sections);
             }
-            return false;
+            return found;
         }
 
         private static void Connect(Section a, bool aAtStart, Section b, bool bAtStart)

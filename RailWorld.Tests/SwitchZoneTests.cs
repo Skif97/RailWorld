@@ -54,6 +54,39 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void SwitchRightBehindTheBodyOfAnotherFacingAwayIsAllowed()
+        {
+            LaySwitch();
+            RailSwitch built = SwitchBuilder.Build(trunk[trunk.Count - 1], false, Resolve);
+
+            // Одразу за тілом першої стрілки, і розходиться далі від неї: тіла не накладаються,
+            // запасу між ними не потрібно
+            int behind = built.Branches[0].ZoneSections + 1;
+            Assert.Null(SectionLinker.FindSwitchProblem(BranchAfter(behind), SectionsIn, Resolve, out _));
+        }
+
+        [Fact]
+        public void SwitchFacingBackIntoTheBodyOfAnotherIsRefused()
+        {
+            LaySwitch();
+            RailSwitch built = SwitchBuilder.Build(trunk[trunk.Count - 1], false, Resolve);
+
+            // Колія приходить ззаду збоку і вливається в пряму гілку за вісім секцій після тіла першої стрілки.
+            // Стрілка там дивиться назад, і її тіло тягнеться назустріч першій: вони накладаються,
+            // хоча сам стик далеко за тілом
+            int index = built.Branches[0].ZoneSections + 8;
+            Vec3d joint = straight[index].FullEndPosition;
+            double angle = Math.PI / 3;
+            List<Section> merging = Plan(
+                Point(joint.X - ArcRadius * Math.Sin(angle), joint.Z - ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)),
+                Point(joint.X, joint.Z, 1, 0));
+
+            string problem = SectionLinker.FindSwitchProblem(merging, SectionsIn, Resolve, out _);
+            Assert.NotNull(problem);
+            Assert.Contains("стрілки", problem);
+        }
+
+        [Fact]
         public void ContinuingATrackFromItsOpenEndIsNotASwitch()
         {
             // Колія з відкритим кінцем одразу біля стрілки не буває; беремо просто пряму
@@ -161,6 +194,41 @@ namespace RailWorld.Tests
             Assert.True(SectionLinker.FindLongOverlap(before, SectionsIn, Resolve, out _, out _));
         }
 
+        [Theory]
+        [InlineData(1.0, true)]    // блок над колією: шпали однієї в рейках другої
+        [InlineData(2.5, true)]    // трохи менше за просвіт
+        [InlineData(3.5, false)]   // міст
+        [InlineData(0.0, false)]   // у тій самій площині: це вже не «над», а поруч
+        public void TrackCloselyAboveAnotherIsRefused(double height, bool refused)
+        {
+            // Коротка ділянка вздовж покладеної колії, за пів блока вбік і на заданій висоті.
+            // Осі не перетинаються, і накладання коротке: інші правила тут мовчать
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> above = Plan(High(10, height, 0.5, 1, 0), High(15, height, 0.5, 1, 0));
+
+            Assert.False(SectionLinker.FindLongOverlap(above, SectionsIn, Resolve, out _, out _));
+            List<int> close = SectionLinker.FindTooCloseAbove(above, SectionsIn);
+            // Уся ділянка лежить над колією, тож порушує кожна її секція, а не лише перша
+            Assert.Equal(refused ? above.Count : 0, close.Count);
+        }
+
+        [Fact]
+        public void TrackOverTheVeryEndOfAnotherIsRefused()
+        {
+            // Покладена колія закінчується в точці (20, 0). Нова проходить упоперек над самим її краєм,
+            // на блок вище: осі не перетинаються, бо колія під нею вже скінчилась
+            Lay(Point(0, 0, 1, 0), Point(20, 0, 1, 0));
+            List<Section> over = Plan(High(20.5, 1, -6, 0, 1), High(20.5, 1, 6, 0, 1));
+
+            List<int> close = SectionLinker.FindTooCloseAbove(over, SectionsIn);
+            // Порушують лише ті секції, чиї шпали дістають до покладеної колії, а не вся ділянка
+            Assert.True(close.Count > 0 && close.Count < over.Count);
+
+            // Та сама колія на два блоки далі за край уже нічого не зачіпає
+            List<Section> clear = Plan(High(22.5, 1, -6, 0, 1), High(22.5, 1, 6, 0, 1));
+            Assert.Empty(SectionLinker.FindTooCloseAbove(clear, SectionsIn));
+        }
+
         [Fact]
         public void BridgeRightOverATrackIsNotAnOverlap()
         {
@@ -193,6 +261,28 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void SwitchOnACrossingIsRefused()
+        {
+            // Довга колія на схід, і друга перетинає її навскіс у точці (30, 0)
+            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            double k = Math.Sqrt(0.5);
+            Lay(Point(30 - 8 * k, -8 * k, 1, 1), Point(30 + 8 * k, 8 * k, 1, 1));
+
+            // Відгалуження від першої за два блоки до перетину: стрілка стала б просто на ньому
+            double angle = Math.PI / 3;
+            List<Section> near = Plan(Point(28, 0, 1, 0),
+                Point(28 + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
+            string problem = SectionLinker.FindSwitchProblem(near, SectionsIn, Resolve, out _);
+            Assert.NotNull(problem);
+            Assert.Contains("перетину", problem);
+
+            // Те саме відгалуження далеко від перетину будується
+            List<Section> far = Plan(Point(5, 0, 1, 0),
+                Point(5 + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
+            Assert.Null(SectionLinker.FindSwitchProblem(far, SectionsIn, Resolve, out _));
+        }
+
+        [Fact]
         public void OpenEndIsFoundWithinAFewSections()
         {
             straight = Straight();
@@ -202,6 +292,9 @@ namespace RailWorld.Tests
             Assert.True(SwitchZone.FindOpenEnd(straight[last - 2], straight[last - 2].GetGlobalPos(), Resolve, out Section found, out bool atStart));
             Assert.Same(straight[last], found);
             Assert.False(atStart);
+
+            // Четверта секція від краю: вже ні
+            Assert.False(SwitchZone.FindOpenEnd(straight[last - 3], straight[last - 3].GetGlobalPos(), Resolve, out _, out _));
 
             // Далеко від обох країв: прив'язки немає
             Assert.False(SwitchZone.FindOpenEnd(straight[straight.Count / 2], straight[straight.Count / 2].GetGlobalPos(), Resolve, out _, out _));

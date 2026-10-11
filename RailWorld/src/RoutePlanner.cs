@@ -279,7 +279,7 @@ namespace RailWorld
 
             // Маршрут чіпляється до кінця, з якого колія вже йде далі: тут виникне стрілка.
             // Поруч з іншою стрілкою її ставити не можна
-            if (marker.Track != null && SwitchZone.IsBlocked(section, atStart, FindClientSection))
+            if (marker.Track != null && SwitchZone.JointInBody(section, atStart, FindClientSection))
             {
                 snapRefusal = "Надто близько до іншої стрілки";
                 return null;
@@ -550,6 +550,31 @@ namespace RailWorld
                 if (radius < MinRadius - RadiusTolerance || verticalRadius < MinRadius - RadiusTolerance) problems[i] = true;
             }
 
+            // Злам по висоті між сусідніми секціями. Попередня перевірка порівнює нахил на кінцях відрізка
+            // у два блоки і не бачить сходинки, що вміщається всередину нього: колія пірнає і вирівнюється,
+            // а нахил на обох кінцях той самий. Колія ж малюється секціями по дві точки нарізки, і злам це
+            // кут між двома сусідніми: його і міряємо
+            // Міряється по осі колії і по кожній рейці окремо. Там, де різко міняється нахил полотна, вісь
+            // лишається на місці, а рейки розходяться: одна йде вгору, друга вниз, і ламаються обидві
+            double halfGauge = TrackGauge.StandardWidth / 2;
+            for (int i = 2; i + 2 < count; i++)
+            {
+                for (int side = -1; side <= 1; side++)
+                {
+                    double offset = side * halfGauge;
+                    if (side != 0 && (points[i - 2].normal == null || points[i].normal == null || points[i + 2].normal == null)) continue;
+
+                    double bend = Math.Abs(ChordPitch(RailPoint(points[i], offset), RailPoint(points[i + 2], offset))
+                        - ChordPitch(RailPoint(points[i - 2], offset), RailPoint(points[i], offset)));
+                    if (bend < 1e-6) continue;
+
+                    // Від середини однієї секції до середини наступної
+                    double verticalRadius = (run[i + 2] - run[i - 2]) / 2 / bend;
+                    if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
+                    if (verticalRadius < MinRadius - RadiusTolerance) problems[i] = true;
+                }
+            }
+
             // Перетин із собою. Точки розкладені по клітинках світу, щоб не порівнювати кожну з кожною
             var cells = new Dictionary<long, List<int>>();
             for (int i = 0; i < count; i++)
@@ -591,6 +616,20 @@ namespace RailWorld
             }
 
             return problems;
+        }
+
+        // Точка на рейці: за offset блоків убік від осі колії вздовж нормалі полотна. Нуль це сама вісь
+        private static Vec3d RailPoint(PointOnBezierCurve point, double offset)
+        {
+            if (offset == 0 || point.normal == null) return point.position;
+            return new Vec3d(point.position.X + point.normal.X * offset, point.position.Y + point.normal.Y * offset, point.position.Z + point.normal.Z * offset);
+        }
+
+        // Нахил відрізка між двома точками, радіани
+        private static double ChordPitch(Vec3d from, Vec3d to)
+        {
+            double dx = to.X - from.X, dz = to.Z - from.Z;
+            return Math.Atan2(to.Y - from.Y, Math.Sqrt(dx * dx + dz * dz));
         }
 
         private static double Pitch(Vec3f tangent)
