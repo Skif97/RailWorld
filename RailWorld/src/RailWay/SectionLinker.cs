@@ -168,10 +168,16 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static bool HasSameSection(DataInChunk data, Section section)
         {
+            return HasSameSection(data.RailWaySections.Values, section);
+        }
+
+        public static bool HasSameSection(IEnumerable<Section> sections, Section section)
+        {
+            if (sections == null) return false;
             Vec3d start = section.FullStartPosition;
             Vec3d end = section.FullEndPosition;
 
-            foreach (Section other in data.RailWaySections.Values)
+            foreach (Section other in sections)
             {
                 Vec3d otherStart = other.FullStartPosition;
                 Vec3d otherEnd = other.FullEndPosition;
@@ -209,6 +215,27 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void LinkToNeighbours(RailDataSession session, Section section, bool atStart)
         {
+            foreach (SectionLink meeting in Meeting(section, atStart, chunk => session.Get(chunk)?.RailWaySections.Values))
+            {
+                Section other = session.GetSection(meeting);
+                if (other == null) continue;
+
+                // До стрілки третю гілку не приєднуємо. Зв'язок, який уже є, це не зачіпає
+                bool known = other.GetLinks(meeting.AtStart).Exists(link => link.PointsTo(section));
+                if (!known && (other.GetLinks(meeting.AtStart).Count >= MaxLinksPerEnd
+                    || section.GetLinks(atStart).Count >= MaxLinksPerEnd)) continue;
+
+                Link(session, section, atStart, other, meeting.AtStart);
+            }
+        }
+
+        /// <summary>
+        /// Кінці вже покладених секцій, які сходяться з цим кінцем секції: лежать у тій самій точці й дивляться
+        /// назустріч. Саме з ними кінець буде з'єднано. sectionsIn каже, які секції зберігаються в чанку.
+        /// </summary>
+        public static List<SectionLink> Meeting(Section section, bool atStart, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        {
+            var found = new List<SectionLink>();
             Vec3d pos = section.GetEndPosition(atStart);
             Vec3f dir = section.GetOutwardDirection(atStart);
 
@@ -221,10 +248,10 @@ namespace RailWorld.src.RailWay
 
             foreach (Vec3i chunkCoord in chunks)
             {
-                DataInChunk data = session.Get(chunkCoord);
-                if (data == null) continue;
+                IEnumerable<Section> sections = sectionsIn(chunkCoord);
+                if (sections == null) continue;
 
-                foreach (Section other in data.RailWaySections.Values)
+                foreach (Section other in sections)
                 {
                     if (other == section) continue;
 
@@ -236,15 +263,43 @@ namespace RailWorld.src.RailWay
                         Vec3f otherDir = other.GetOutwardDirection(otherAtStart);
                         if (dir.X * otherDir.X + dir.Y * otherDir.Y + dir.Z * otherDir.Z > DirectionTolerance) continue;
 
-                        // До стрілки третю гілку не приєднуємо. Зв'язок, який уже є, це не зачіпає
-                        bool known = other.GetLinks(otherAtStart).Exists(link => link.PointsTo(section));
-                        if (!known && (other.GetLinks(otherAtStart).Count >= MaxLinksPerEnd
-                            || section.GetLinks(atStart).Count >= MaxLinksPerEnd)) continue;
-
-                        Link(session, section, atStart, other, otherAtStart);
+                        found.Add(new SectionLink(other, otherAtStart));
                     }
                 }
             }
+            return found;
+        }
+
+        /// <summary>
+        /// Чи ділянка нових секцій, покладена поруч із колією, що вже лежить, дала б стрілку в зоні іншої
+        /// стрілки. Стрілка виникає не лише там, де маршрут навмисно причепили до колії: кінець нової ділянки
+        /// з'єднується з усім, що лежить у тій самій точці, і якщо колія звідти вже йде далі, це стрілка.
+        /// planned це нові секції по порядку, ще не записані. Повертає номер секції в planned, біля якої
+        /// це сталося б, або -1.
+        /// </summary>
+        public static int FindSwitchInZone(IList<Section> planned, System.Func<Vec3i, IEnumerable<Section>> sectionsIn, System.Func<SectionLink, Section> resolve)
+        {
+            for (int i = 0; i < planned.Count; i++)
+            {
+                for (int end = 0; end < 2; end++)
+                {
+                    bool atStart = end == 0;
+
+                    // Цим кінцем секція з'єднується з сусідньою секцією тієї ж ділянки, а не з покладеною колією
+                    int neighbour = atStart ? i - 1 : i + 1;
+                    if (neighbour >= 0 && neighbour < planned.Count
+                        && planned[neighbour].GetEndPosition(!atStart).DistanceTo(planned[i].GetEndPosition(atStart)) <= PositionTolerance) continue;
+
+                    foreach (SectionLink meeting in Meeting(planned[i], atStart, sectionsIn))
+                    {
+                        Section other = resolve(meeting);
+                        // З вільного кінця колія просто продовжується; стрілка там, де вона вже йде далі
+                        if (other == null || other.GetLinks(meeting.AtStart).Count != 1) continue;
+                        if (SwitchZone.IsBlocked(other, meeting.AtStart, resolve)) return i;
+                    }
+                }
+            }
+            return -1;
         }
 
         private static void Link(RailDataSession session, Section a, bool aAtStart, Section b, bool bAtStart)

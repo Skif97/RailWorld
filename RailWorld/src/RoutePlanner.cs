@@ -235,6 +235,14 @@ namespace RailWorld
             Section section = sel.Section;
             bool atStart = sel.HitPosition.SquareDistanceTo(section.FullStartPosition) < sel.HitPosition.SquareDistanceTo(section.FullEndPosition);
 
+            // Біля відкритого краю колії точка стає на сам край, а не на стик, у який влучив приціл:
+            // промах на секцію-другу дав би стрілку з куцим хвостиком замість продовження колії
+            if (SwitchZone.FindOpenEnd(section, sel.HitPosition, FindClientSection, out Section endSection, out bool endAtStart))
+            {
+                section = endSection;
+                atStart = endAtStart;
+            }
+
             Vec3d position = section.GetEndPosition(atStart);
             Vec3f o = section.GetOutwardDirection(atStart);
             Vec3d outward = new Vec3d(o.X, o.Y, o.Z).Normalize();

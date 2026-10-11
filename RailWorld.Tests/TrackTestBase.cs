@@ -53,6 +53,29 @@ namespace RailWorld.Tests
             return track;
         }
 
+        /// <summary>Секції, що зберігаються в чанку: те саме, що гра дістає з даних чанка.</summary>
+        protected IEnumerable<Section> SectionsIn(Vec3i chunk)
+        {
+            var found = new List<Section>();
+            foreach (Section section in sections.Values)
+            {
+                if (section.ChunkAddres.Equals(chunk)) found.Add(section);
+            }
+            return found;
+        }
+
+        /// <summary>Секції маршруту, який лише задумано: нарізані так само, але ще не покладені.</summary>
+        protected static List<Section> Plan(params RoutePoint[] route)
+        {
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(new List<RoutePoint>(route));
+            var planned = new List<Section>();
+            for (int i = 0; i + 2 < points.Count; i += 2)
+            {
+                planned.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+            }
+            return planned;
+        }
+
         // Зв'язує кінець однієї секції з початком наступної в обидва боки
         protected static void Join(Section from, Section to)
         {

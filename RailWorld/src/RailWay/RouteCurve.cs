@@ -147,7 +147,33 @@ namespace RailWorld.src.RailWay
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
             if (followed) BlendCant(all, weight, trackCant);
+            if (sectionsIn != null) SwitchesInZone(all, resolve, sectionsIn, conflictAt, ref conflict);
             return all;
+        }
+
+        // Маршрут не можна будувати, якщо його секції, з'єднавшись із покладеною колією, дали б стрілку в зоні
+        // іншої стрілки. Це буває і без прив'язки точки до колії: досить, щоб кінець ділянки ліг на чужий стик
+        private static void SwitchesInZone(List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve,
+            Func<Vec3i, IEnumerable<Section>> sectionsIn, List<int> conflictAt, ref string conflict)
+        {
+            // Секції, які маршрут справді покладе: така сама, що вже лежить, удруге не кладеться
+            var planned = new List<Section>();
+            var plannedAt = new List<int>();
+            for (int i = 0; i + 2 < points.Count; i += 2)
+            {
+                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                if (SectionLinker.HasSameSection(sectionsIn(section.ChunkAddres), section)) continue;
+
+                planned.Add(section);
+                plannedAt.Add(i);
+            }
+
+            int found = SectionLinker.FindSwitchInZone(planned, sectionsIn, resolve);
+            if (found < 0) return;
+
+            conflict = conflict ?? "стрілка маршруту надто близько до іншої стрілки";
+            if (conflictAt == null) return;
+            for (int i = Math.Max(plannedAt[found] - 3, 0); i <= Math.Min(plannedAt[found] + 5, points.Count - 1); i++) conflictAt.Add(i);
         }
 
         // ── Перетини з уже покладеними коліями ──

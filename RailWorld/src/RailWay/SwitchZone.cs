@@ -32,6 +32,50 @@ namespace RailWorld.src.RailWay
             return FindsSwitch(section, !atStart, 1, resolve) || FindsSwitch(section, atStart, 0, resolve);
         }
 
+        /// <summary>
+        /// Відкритий край колії, якщо він не далі ніж за ClearSections секцій від цієї секції, рахуючи її саму:
+        /// кінець секції, з якого колія нікуди не йде. Відгалуження так близько до краю дало б стрілку з куцим
+        /// хвостиком, тому маршрут, причеплений тут, стає на сам край. near це місце, куди цілився гравець:
+        /// якщо країв поруч два, береться ближчий до нього. false, якщо краю поруч немає або до нього стрілка.
+        /// </summary>
+        public static bool FindOpenEnd(Section section, Vec3d near, Func<SectionLink, Section> resolve, out Section endSection, out bool endAtStart)
+        {
+            endSection = null;
+            endAtStart = false;
+            double best = double.MaxValue;
+
+            for (int side = 0; side < 2; side++)
+            {
+                Section current = section;
+                bool exitAtStart = side == 0;
+
+                for (int passed = 0; passed < ClearSections; passed++)
+                {
+                    List<SectionLink> links = current.GetLinks(exitAtStart);
+                    if (links.Count == 0)
+                    {
+                        double away = current.GetEndPosition(exitAtStart).SquareDistanceTo(near);
+                        if (away < best)
+                        {
+                            best = away;
+                            endSection = current;
+                            endAtStart = exitAtStart;
+                        }
+                        break;
+                    }
+
+                    // Попереду стрілка, з будь-якого її боку: це вже не край колії
+                    if (links.Count != 1) break;
+                    Section next = resolve(links[0]);
+                    if (next == null || next.HasSwitch(links[0].AtStart)) break;
+
+                    current = next;
+                    exitAtStart = !links[0].AtStart;
+                }
+            }
+            return endSection != null;
+        }
+
         // Іде по колії, виходячи із секції через кінець exitAtStart. passed це скільки секцій уже пройдено від стику
         private static bool FindsSwitch(Section section, bool exitAtStart, int passed, Func<SectionLink, Section> resolve)
         {

@@ -23,6 +23,25 @@ namespace RailWorld.src.RailWay
             bool replaceBlocks = tool.Attributes.GetBool("replaceBlocks");
 
             RailDataSession session = new RailDataSession(world);
+
+            // Нова колія не може дати стрілку в зоні іншої стрілки. Маршрут по точках це вже перевірив,
+            // але колію кладуть і іншими способами, а правило одне на всі. Перевіряємо до того,
+            // як щось зміниться у світі
+            var planned = new List<Section>();
+            for (int i = 0; i < pointList.Count - 2; i += 2)
+            {
+                var section = new Section(
+                    pointList[i], pointList[i + 1], pointList[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                DataInChunk data = session.Get(section.ChunkAddres);
+                if (!session.IsChunkLoaded(section.ChunkAddres) || (data != null && SectionLinker.HasSameSection(data, section))) continue;
+                planned.Add(section);
+            }
+            if (SectionLinker.FindSwitchInZone(planned, chunk => session.Get(chunk)?.RailWaySections.Values, session.GetSection) >= 0)
+            {
+                (byPlayer as IServerPlayer)?.SendIngameError("railswitchzone", "Надто близько до іншої стрілки");
+                return;
+            }
+
             List<Section> stretch = new List<Section>();
             int existing = 0, blocked = 0, unloaded = 0;
 
