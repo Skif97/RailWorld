@@ -64,7 +64,20 @@ namespace RailWorld
         private readonly RouteCache cache = new RouteCache();
         private int cacheRevision = -1;
 
-        private MeshRef mesh;
+        // Маршрут малюється частинами по PartPoints точок нарізки. Поки гравець веде останню точку, міняється
+        // лише хвіст маршруту, і наново збираються й завантажуються лише ті частини, що справді змінилися
+        private const int PartPoints = 64;
+
+        private class MeshPart
+        {
+            // Усе, від чого залежить вигляд частини: якщо воно те саме, меш лишається
+            public double[] Signature;
+            public MeshRef Mesh;
+        }
+
+        private readonly List<MeshPart> parts = new List<MeshPart>();
+        // Стовпчики на точках розмітки: їх небагато, збираються щоразу
+        private MeshRef markerMesh;
         private Vec3d meshOrigin = new Vec3d();
         private string meshKey = "";
         private Matrixf mat = new Matrixf();
@@ -447,7 +460,7 @@ namespace RailWorld
                 RebuildMesh();
             }
 
-            if (mesh == null) return;
+            if (parts.Count == 0 && markerMesh == null) return;
 
             Vec3d cam = capi.World.Player.Entity.CameraPos;
             IShaderProgram prog = capi.Shader.GetProgram((int)EnumShaderProgram.Blockhighlights);
@@ -458,7 +471,8 @@ namespace RailWorld
             prog.UniformMatrix("modelViewMatrix", mat.Values);
 
             capi.Render.GlDisableCullFace();
-            capi.Render.RenderMesh(mesh);
+            foreach (MeshPart part in parts) capi.Render.RenderMesh(part.Mesh);
+            if (markerMesh != null) capi.Render.RenderMesh(markerMesh);
             capi.Render.GlEnableCullFace();
             prog.Stop();
         }
@@ -488,16 +502,22 @@ namespace RailWorld
               .Append(Math.Round(marker.Heading.X, 2)).Append(',').Append(Math.Round(marker.Heading.Z, 2)).Append(';');
         }
 
+        private void DisposeMesh()
+        {
+            foreach (MeshPart part in parts) part.Mesh.Dispose();
+            parts.Clear();
+            markerMesh?.Dispose();
+            markerMesh = null;
+        }
+
         private void RebuildMesh()
         {
-            mesh?.Dispose();
-            mesh = null;
-
             var shown = new List<RouteMarker>(markers);
             if (hover != null) shown.Add(hover);
             if (hoverTemplate != null) shown.AddRange(hoverTemplate);
             if (shown.Count == 0)
             {
+                DisposeMesh();
                 hud.Hide();
                 return;
             }
@@ -513,9 +533,6 @@ namespace RailWorld
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(shown), FindClientSection, out string conflict,
                 new TrackIndex(system.ClientSectionsIn), conflictAt, cache);
 
-            int boxes = shown.Count + (preview ? points.Count / 2 * 5 : Math.Max(0, points.Count - 1) * 2);
-            MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
-
             RouteCheck check = RouteRules.Check(points);
             bool[] problems = check.Problems;
 
@@ -529,13 +546,11 @@ namespace RailWorld
                 for (int i = 0; i < problems.Length; i++) problems[i] = true;
             }
 
-            double maxSlope = 0;
-            if (preview) AddPreviewSections(data, points, problems);
-            else maxSlope = AddRailLines(data, points, problems);
-
-            if (preview) maxSlope = MaxSlope(points);
+            double maxSlope = MaxSlope(points);
+            UpdateParts(points, problems);
 
             // Мітки точок: стовпчик у кожній, у тієї, що під прицілом, іншого кольору
+            MeshData data = new MeshData(24 * shown.Count, 36 * shown.Count, false, false, true, false);
             Vec3d unitX = new Vec3d(1, 0, 0), unitY = new Vec3d(0, 1, 0), unitZ = new Vec3d(0, 0, 1);
             for (int i = 0; i < shown.Count; i++)
             {
@@ -545,7 +560,8 @@ namespace RailWorld
                     p.X - meshOrigin.X, p.Y - meshOrigin.Y, p.Z - meshOrigin.Z, unitX, unitY, unitZ, 0.08, 0, 0.6, 0.08);
             }
 
-            mesh = capi.Render.UploadMesh(data);
+            markerMesh?.Dispose();
+            markerMesh = capi.Render.UploadMesh(data);
 
             // Що саме не так, одним рядком: він іде і в куток екрана, і у відмову будувати
             List<string> reasons = check.Reasons();
@@ -566,16 +582,80 @@ namespace RailWorld
             return radius > 999 ? "прямо" : radius.ToString("0.0");
         }
 
-        // Дві лінії на місці рейок, кожен відрізок пофарбований за своїм ухилом. Повертає найбільший ухил у градусах
-        private double AddRailLines(MeshData data, List<PointOnBezierCurve> points, bool[] problems)
+        // Приводить частини меша у відповідність до маршруту: незмінні лишає, змінені збирає наново, зайві прибирає
+        private void UpdateParts(List<PointOnBezierCurve> points, bool[] problems)
         {
-            double maxSlope = 0;
+            int count = 0;
+            for (int from = 0; from + 1 < points.Count; from += PartPoints, count++)
+            {
+                int to = Math.Min(from + PartPoints, points.Count - 1);
+                double[] signature = Signature(points, problems, from, to);
+
+                MeshPart part = count < parts.Count ? parts[count] : null;
+                if (part != null && Same(part.Signature, signature)) continue;
+
+                // У перегляді секція це шпала і чотири шматки рейок, у розмітці на кожен відрізок два шматки
+                int boxes = preview ? (to - from) / 2 * 5 + 5 : (to - from) * 2;
+                MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
+                if (preview) AddPreviewSections(data, points, problems, from, to);
+                else AddRailLines(data, points, problems, from, to);
+
+                part?.Mesh.Dispose();
+                var built = new MeshPart { Signature = signature, Mesh = capi.Render.UploadMesh(data) };
+                if (part != null) parts[count] = built;
+                else parts.Add(built);
+            }
+
+            for (int i = parts.Count - 1; i >= count; i--)
+            {
+                parts[i].Mesh.Dispose();
+                parts.RemoveAt(i);
+            }
+        }
+
+        // Усе, від чого залежить вигляд частини маршруту між точками from і to: режим показу, початок відліку
+        // меша, а для кожної точки положення, нахил полотна і чи є в ній порушення
+        private double[] Signature(List<PointOnBezierCurve> points, bool[] problems, int from, int to)
+        {
+            double[] signature = new double[4 + (to - from + 1) * 7];
+            signature[0] = preview ? 1 : 0;
+            signature[1] = meshOrigin.X;
+            signature[2] = meshOrigin.Y;
+            signature[3] = meshOrigin.Z;
+
+            int at = 4;
+            for (int i = from; i <= to; i++)
+            {
+                PointOnBezierCurve point = points[i];
+                signature[at++] = point.position.X;
+                signature[at++] = point.position.Y;
+                signature[at++] = point.position.Z;
+                signature[at++] = point.normal.X;
+                signature[at++] = point.normal.Y;
+                signature[at++] = point.normal.Z;
+                signature[at++] = problems[i] ? 1 : 0;
+            }
+            return signature;
+        }
+
+        private static bool Same(double[] a, double[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
+        }
+
+        // Дві лінії на місці рейок між точками from і to, кожен відрізок пофарбований за своїм ухилом
+        private void AddRailLines(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to)
+        {
             double offset = TrackGauge.StandardWidth / 2;
 
-            for (int i = 0; i + 1 < points.Count; i++)
+            for (int i = from; i < to; i++)
             {
                 double slope = RouteRules.SlopeDeg(points[i].position, points[i + 1].position);
-                if (slope > maxSlope) maxSlope = slope;
 
                 double t = GameMath.Clamp(slope / RedSlopeDeg, 0, 1);
                 int[] rgba = { (int)(255 * t), (int)(255 * (1 - t)), 40, 230 };
@@ -587,15 +667,15 @@ namespace RailWorld
                     AddSegment(data, rgba, points[i], points[i + 1], offset * side, 0.04, 0, SectionBox.RailHeight);
                 }
             }
-            return maxSlope;
         }
 
-        // Нарізані секції жовтим: шпала і дві рейки кожної, як вони ляжуть у світ
-        private void AddPreviewSections(MeshData data, List<PointOnBezierCurve> points, bool[] problems)
+        // Нарізані секції між точками from і to жовтим: шпала і дві рейки кожної, як вони ляжуть у світ.
+        // Секція це три точки поспіль, починаючи з парної: частини меша починаються з парних точок
+        private void AddPreviewSections(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to)
         {
             double offset = TrackGauge.StandardWidth / 2;
 
-            for (int i = 0; i + 2 < points.Count; i += 2)
+            for (int i = from; i + 2 <= to; i += 2)
             {
                 PointOnBezierCurve start = points[i], middle = points[i + 1], end = points[i + 2];
                 int[] rgba = problems[i] || problems[i + 1] || problems[i + 2] ? ProblemRgba : PreviewRgba;
@@ -663,7 +743,7 @@ namespace RailWorld
         public void Dispose()
         {
             capi.Event.UnregisterRenderer(this, EnumRenderStage.OIT);
-            mesh?.Dispose();
+            DisposeMesh();
             hud?.Hide();
             hud?.Dispose();
             if (Instance == this) Instance = null;

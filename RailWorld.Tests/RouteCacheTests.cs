@@ -108,6 +108,27 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void LongSessionNeverRecomputesTheWholeRoute()
+        {
+            LayWorld();
+            var cache = new RouteCache();
+
+            RouteCurve.BuildPoints(Zigzag(10, 0, 0), Resolve, out _, SectionsIn, new List<int>(), cache);
+            int whole = cache.Misses;
+
+            // Гравець довго водить останню точку. Пам'ять за цей час кілька разів переповнюється і чиститься,
+            // але маршрут, що на екрані, в ній лишається: жоден рух не коштує як перший розрахунок
+            int worst = 0;
+            for (int i = 1; i <= 400; i++)
+            {
+                int before = cache.Misses;
+                RouteCurve.BuildPoints(Zigzag(10, i % 23 - 11, i % 17 - 8), Resolve, out _, SectionsIn, new List<int>(), cache);
+                worst = Math.Max(worst, cache.Misses - before);
+            }
+            Assert.True(worst < whole / 2, "один із рухів перерахував " + worst + " при " + whole + " на весь маршрут");
+        }
+
+        [Fact]
         public void ClearedCacheForgetsTheTrackItSaw()
         {
             var cache = new RouteCache();

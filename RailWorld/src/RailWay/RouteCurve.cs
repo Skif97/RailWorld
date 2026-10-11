@@ -114,6 +114,7 @@ namespace RailWorld.src.RailWay
             conflict = null;
             var all = new List<PointOnBezierCurve>();
             if (route == null) return all;
+            cache?.Begin();
 
             // На яких місцях у нарізці стоять точки маршруту
             var joints = new List<int>();

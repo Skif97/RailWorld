@@ -82,7 +82,12 @@ namespace RailWorld.src.RailWay
 
             // Відстань уздовж колії від початку маршруту
             double[] run = new double[count];
-            for (int i = 1; i < count; i++) run[i] = run[i - 1] + (points[i].position - points[i - 1].position).Length();
+            for (int i = 1; i < count; i++)
+            {
+                Vec3d from = points[i - 1].position, to = points[i].position;
+                double dx = to.X - from.X, dy = to.Y - from.Y, dz = to.Z - from.Z;
+                run[i] = run[i - 1] + Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            }
 
             // Радіус це довжина відрізка колії, поділена на кут, на який на ньому повернула дотична:
             // окремо в плані і окремо по висоті
@@ -135,8 +140,7 @@ namespace RailWorld.src.RailWay
                     double offset = side * halfGauge;
                     if (side != 0 && (points[i - 2].normal == null || points[i].normal == null || points[i + 2].normal == null)) continue;
 
-                    double bend = Math.Abs(ChordPitch(RailPoint(points[i], offset), RailPoint(points[i + 2], offset))
-                        - ChordPitch(RailPoint(points[i - 2], offset), RailPoint(points[i], offset)));
+                    double bend = Math.Abs(ChordPitch(points[i], points[i + 2], offset) - ChordPitch(points[i - 2], points[i], offset));
                     if (bend < 1e-6) continue;
 
                     // Від середини однієї секції до середини наступної
@@ -146,26 +150,27 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            // Перетин із собою. Точки розкладені по клітинках світу, щоб не порівнювати кожну з кожною
+            // Перетин із собою. Точки розкладені по клітинках, щоб не порівнювати кожну з кожною. Клітинка
+            // не менша за відстань, на якій шукаємо: тоді все, що може бути поруч, лежить у сусідніх клітинках
+            double reach = Footprint.StandardWidth;
+            int cellSize = (int)Math.Ceiling(reach);
+
             var cells = new Dictionary<long, List<int>>();
             for (int i = 0; i < count; i++)
             {
-                long cell = CellKey((int)Math.Floor(points[i].position.X), (int)Math.Floor(points[i].position.Z));
+                long cell = CellKey((int)Math.Floor(points[i].position.X / cellSize), (int)Math.Floor(points[i].position.Z / cellSize));
                 if (!cells.TryGetValue(cell, out List<int> list)) cells[cell] = list = new List<int>();
                 list.Add(i);
             }
 
-            double reach = Footprint.StandardWidth;
-            int around = (int)Math.Ceiling(reach);
-
             for (int i = 0; i < count; i++)
             {
                 Vec3d p = points[i].position;
-                int cx = (int)Math.Floor(p.X), cz = (int)Math.Floor(p.Z);
+                int cx = (int)Math.Floor(p.X / cellSize), cz = (int)Math.Floor(p.Z / cellSize);
 
-                for (int dx = -around; dx <= around; dx++)
+                for (int dx = -1; dx <= 1; dx++)
                 {
-                    for (int dz = -around; dz <= around; dz++)
+                    for (int dz = -1; dz <= 1; dz++)
                     {
                         if (!cells.TryGetValue(CellKey(cx + dx, cz + dz), out List<int> list)) continue;
 
@@ -193,18 +198,27 @@ namespace RailWorld.src.RailWay
             return check;
         }
 
-        // Точка на рейці: за offset блоків убік від осі колії вздовж нормалі полотна. Нуль це сама вісь
-        private static Vec3d RailPoint(PointOnBezierCurve point, double offset)
+        // Нахил відрізка між двома точками на рейці, радіани. Точка на рейці лежить за offset блоків убік
+        // від осі колії вздовж нормалі полотна; нуль це сама вісь
+        private static double ChordPitch(PointOnBezierCurve from, PointOnBezierCurve to, double offset)
         {
-            if (offset == 0 || point.normal == null) return point.position;
-            return new Vec3d(point.position.X + point.normal.X * offset, point.position.Y + point.normal.Y * offset, point.position.Z + point.normal.Z * offset);
-        }
+            double fromX = from.position.X, fromY = from.position.Y, fromZ = from.position.Z;
+            double toX = to.position.X, toY = to.position.Y, toZ = to.position.Z;
+            if (offset != 0 && from.normal != null)
+            {
+                fromX += from.normal.X * offset;
+                fromY += from.normal.Y * offset;
+                fromZ += from.normal.Z * offset;
+            }
+            if (offset != 0 && to.normal != null)
+            {
+                toX += to.normal.X * offset;
+                toY += to.normal.Y * offset;
+                toZ += to.normal.Z * offset;
+            }
 
-        // Нахил відрізка між двома точками, радіани
-        private static double ChordPitch(Vec3d from, Vec3d to)
-        {
-            double dx = to.X - from.X, dz = to.Z - from.Z;
-            return Math.Atan2(to.Y - from.Y, Math.Sqrt(dx * dx + dz * dz));
+            double dx = toX - fromX, dz = toZ - fromZ;
+            return Math.Atan2(toY - fromY, Math.Sqrt(dx * dx + dz * dz));
         }
 
         private static double Pitch(Vec3f tangent)

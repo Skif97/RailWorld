@@ -16,15 +16,24 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public class RouteCache
     {
-        // Більше за це пам'ять не росте: довгий сеанс розмітки не має збирати все, що колись показав
+        // Коли запам'ятованого стає більше за це, викидається те, що останньому перерахунку не знадобилося
         private const int MaxEntries = 40000;
 
-        private readonly Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), List<PointOnBezierCurve>> legs
-            = new Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), List<PointOnBezierCurve>>();
-        private readonly Dictionary<((double, double, double), (double, double, double)), List<SegmentHit>> hits
-            = new Dictionary<((double, double, double), (double, double, double)), List<SegmentHit>>();
-        private readonly Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), SectionFacts> facts
-            = new Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), SectionFacts>();
+        // Запам'ятоване і номер перерахунку, якому воно востаннє знадобилося
+        private class Entry<T>
+        {
+            public T Value;
+            public int UsedAt;
+        }
+
+        private readonly Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), Entry<List<PointOnBezierCurve>>> legs
+            = new Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), Entry<List<PointOnBezierCurve>>>();
+        private readonly Dictionary<((double, double, double), (double, double, double)), Entry<List<SegmentHit>>> hits
+            = new Dictionary<((double, double, double), (double, double, double)), Entry<List<SegmentHit>>>();
+        private readonly Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), Entry<SectionFacts>> facts
+            = new Dictionary<((double, double, double), (double, double, double), (double, double, double), (double, double, double)), Entry<SectionFacts>>();
+
+        private int rebuild;
 
         /// <summary>Скільки разів довелося рахувати, бо готового не було: для перевірки, що пам'ять працює.</summary>
         public int Misses { get; private set; }
@@ -36,21 +45,37 @@ namespace RailWorld.src.RailWay
             facts.Clear();
         }
 
+        /// <summary>
+        /// Починається новий перерахунок маршруту. Якщо запам'ятованого назбиралося забагато, лишається тільки
+        /// те, що знадобилося попередньому перерахунку: це і є маршрут, який зараз на екрані. Викидати все
+        /// не можна: наступний перерахунок довгого маршруту знову рахував би його цілком.
+        /// </summary>
+        public void Begin()
+        {
+            if (legs.Count + hits.Count + facts.Count > MaxEntries)
+            {
+                Keep(legs, rebuild);
+                Keep(hits, rebuild);
+                Keep(facts, rebuild);
+            }
+            rebuild++;
+        }
+
         /// <summary>Крива між двома точками маршруту, нарізана на точки; null, якщо точки надто близько.</summary>
         public List<PointOnBezierCurve> Leg(RoutePoint a, RoutePoint b)
         {
             var key = (Key(a.Position), Key(a.Tangent), Key(b.Position), Key(b.Tangent));
-            if (!legs.TryGetValue(key, out List<PointOnBezierCurve> cut))
+            if (!legs.TryGetValue(key, out Entry<List<PointOnBezierCurve>> entry))
             {
                 Misses++;
-                Trim();
-                legs[key] = cut = RouteCurve.Leg(a, b);
+                legs[key] = entry = new Entry<List<PointOnBezierCurve>> { Value = RouteCurve.Leg(a, b) };
             }
-            if (cut == null) return null;
+            entry.UsedAt = rebuild;
+            if (entry.Value == null) return null;
 
             // Той, хто питає, далі міняє точки: віддаємо копію, запам'ятоване лишається як було
-            var copy = new List<PointOnBezierCurve>(cut.Count);
-            foreach (PointOnBezierCurve point in cut)
+            var copy = new List<PointOnBezierCurve>(entry.Value.Count);
+            foreach (PointOnBezierCurve point in entry.Value)
             {
                 copy.Add(new PointOnBezierCurve { position = point.position.Clone(), tangent = point.tangent.Clone(), normal = point.normal.Clone() });
             }
@@ -61,13 +86,13 @@ namespace RailWorld.src.RailWay
         public List<SegmentHit> Hits(Vec3d a, Vec3d b, TrackIndex track)
         {
             var key = (Key(a), Key(b));
-            if (!hits.TryGetValue(key, out List<SegmentHit> found))
+            if (!hits.TryGetValue(key, out Entry<List<SegmentHit>> entry))
             {
                 Misses++;
-                Trim();
-                hits[key] = found = TrackSurvey.Hits(a, b, track);
+                hits[key] = entry = new Entry<List<SegmentHit>> { Value = TrackSurvey.Hits(a, b, track) };
             }
-            return found;
+            entry.UsedAt = rebuild;
+            return entry.Value;
         }
 
         /// <summary>Факти про нову секцію, нарізану з цих трьох точок.</summary>
@@ -75,13 +100,13 @@ namespace RailWorld.src.RailWay
         {
             // Усе, від чого залежать факти: три точки осі й нахил полотна посередині
             var key = (Key(start.position), Key(center.position), Key(end.position), ((double)center.normal.X, (double)center.normal.Y, (double)center.normal.Z));
-            if (!facts.TryGetValue(key, out SectionFacts found))
+            if (!facts.TryGetValue(key, out Entry<SectionFacts> entry))
             {
                 Misses++;
-                Trim();
-                facts[key] = found = TrackSurvey.Examine(section, track);
+                facts[key] = entry = new Entry<SectionFacts> { Value = TrackSurvey.Examine(section, track) };
             }
-            return found;
+            entry.UsedAt = rebuild;
+            return entry.Value;
         }
 
         private static (double, double, double) Key(Vec3d v)
@@ -89,9 +114,15 @@ namespace RailWorld.src.RailWay
             return (v.X, v.Y, v.Z);
         }
 
-        private void Trim()
+        // Лишає тільки те, що знадобилося перерахунку з таким номером
+        private static void Keep<TKey, TValue>(Dictionary<TKey, Entry<TValue>> entries, int usedAt)
         {
-            if (legs.Count + hits.Count + facts.Count > MaxEntries) Clear();
+            var stale = new List<TKey>();
+            foreach (KeyValuePair<TKey, Entry<TValue>> pair in entries)
+            {
+                if (pair.Value.UsedAt != usedAt) stale.Add(pair.Key);
+            }
+            foreach (TKey key in stale) entries.Remove(key);
         }
     }
 }
