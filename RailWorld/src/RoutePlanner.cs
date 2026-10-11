@@ -559,7 +559,6 @@ namespace RailWorld
                 template ? "" : "\nCtrl + клік: точка, через яку маршрут пройде точно",
                 (routeProblem == null ? "" : "\nНе можна будувати: " + routeProblem)
                 + (awaitingId != 0 ? "\nЧекаємо відповіді сервера" : serverRefusal != null ? "\nСервер відхилив: " + serverRefusal : "")));
-
         }
 
         private static string RadiusText(double radius)
