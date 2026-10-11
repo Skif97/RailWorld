@@ -142,7 +142,7 @@ namespace RailWorld.src.RailWay
 
             bool followed = FollowTracks(all, first, last, resolve, weight, trackCant, joints, ref conflict);
             // Де маршрут перетинає вже покладену колію на близькій висоті, він лягає в її площину
-            if (sectionsIn != null && LevelCrossings(all, first, last, resolve, sectionsIn, weight, trackCant, conflictAt, ref conflict)) followed = true;
+            if (sectionsIn != null && LevelCrossings(all, first, last, resolve, sectionsIn, weight, trackCant, conflictAt, joints, ref conflict)) followed = true;
             if (followed) RecomputeSlopes(all);
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
@@ -226,7 +226,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         private static bool LevelCrossings(List<PointOnBezierCurve> points, RoutePoint first, RoutePoint last,
             Func<SectionLink, Section> resolve, Func<Vec3i, IEnumerable<Section>> sectionsIn, double[] weight, double[] trackCant,
-            List<int> conflictAt, ref string conflict)
+            List<int> conflictAt, List<int> joints, ref string conflict)
         {
             int count = points.Count;
             // Позначає місце порушення, з кількома точками по боках, щоб його було видно
@@ -386,11 +386,12 @@ namespace RailWorld.src.RailWay
                 if (from >= 0) zones.Add(new[] { from, to });
             }
 
+            var routePoints = new HashSet<int>(joints);
             foreach (int[] zone in zones)
             {
                 string before = conflict;
-                Ramp(points, zone[0], -1, original, run, weight, trackCant, ref conflict);
-                Ramp(points, zone[1], 1, original, run, weight, trackCant, ref conflict);
+                Ramp(points, zone[0], -1, original, run, weight, trackCant, routePoints, ref conflict);
+                Ramp(points, zone[1], 1, original, run, weight, trackCant, routePoints, ref conflict);
                 if (conflict != before)
                 {
                     Mark(zone[0]);
@@ -400,26 +401,33 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
-        // Перехід від краю перетину edge до власної висоти маршруту; direction це куди від перетину, 1 або -1
+        /// <summary>
+        /// Перехід по висоті від краю перетину edge; direction це куди від перетину, 1 або -1.
+        /// Веде він до найближчої в цей бік точки маршруту (routePoints це їхні місця в нарізці), одним плавним
+        /// відрізком: так, ніби край перетину сам був точкою, через яку маршрут проходить. Якби натомість
+        /// повертати маршрут до його власної висоти за кілька блоків, він пірнав би до чужої колії і одразу
+        /// ліз назад: власна висота нічого не знає про перетин.
+        /// Точка маршруту, ближча за довжину, потрібну на таку різницю висот, не зупиняє перехід: він іде
+        /// крізь неї до наступної.
+        /// </summary>
         private static void Ramp(List<PointOnBezierCurve> points, int edge, int direction, double[] original, double[] run,
-            double[] weight, double[] trackCant, ref string conflict)
+            double[] weight, double[] trackCant, HashSet<int> routePoints, ref string conflict)
         {
             int count = points.Count;
             double want = GameMath.Clamp(Math.Abs(points[edge].position.Y - original[edge]) * CrossingRampPerBlock, CrossingRampMin, CrossingRampMax);
 
-            // Іде від перетину, поки не набереться довжина переходу. Якщо раніше або одразу за нею трапиться
-            // ділянка з власною жорсткою висотою (стрілка, інший перетин), перехід веде просто до неї
+            // Якщо раніше за точку маршруту трапиться ділянка з власною жорсткою висотою (стрілка,
+            // інший перетин), перехід веде до неї
             int target = edge, hit = -1;
             for (int i = edge + direction; i >= 0 && i < count; i += direction)
             {
-                double gone = Math.Abs(run[i] - run[edge]);
                 if (weight[i] > 0)
                 {
                     hit = i;
                     break;
                 }
-                if (gone <= want) target = i;
-                else if (gone > want + CrossingRampMax) break;
+                target = i;
+                if (routePoints.Contains(i) && Math.Abs(run[i] - run[edge]) >= want) break;
             }
 
             if (hit >= 0)
