@@ -79,6 +79,19 @@ namespace RailWorld
             return data != null && data.Switches.TryGetValue(place.Key, out record) && record.BranchOf(place) != null;
         }
 
+        /// <summary>
+        /// Запис про перетин, у вузлі якого лежить секція. false, якщо секція не у вузлі або чанк із записом
+        /// до клієнта ще не дійшов.
+        /// </summary>
+        public bool FindCrossing(Section section, out RailCrossing record, out CrossingRef place)
+        {
+            record = null;
+            place = section.GetCrossingRef();
+            if (place == null) return false;
+            DataInChunk data = DataInChunk.GetClient(place.Chunk);
+            return data != null && data.Crossings.TryGetValue(place.Key, out record) && record.TrackOf(place) != null;
+        }
+
         /// <summary>Секція другої гілки тієї самої стрілки під тим самим номером, або null, якщо клієнт її не знає.</summary>
         public Section Opposite(RailSwitch record, SwitchRef place)
         {

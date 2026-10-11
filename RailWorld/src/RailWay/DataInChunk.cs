@@ -29,11 +29,16 @@ namespace RailWorld.src.RailWay
         [ProtoMember(4)]
         public int Revision;
 
+        // Перетини колій, чия основна перетнута секція лежить у цьому чанку, за ключем RailCrossing.Key
+        [ProtoMember(5)]
+        public Dictionary<int, RailCrossing> Crossings;
+
         public DataInChunk()
         {
             index = 0;
             RailWaySections = new Dictionary<int, Section>();
             Switches = new Dictionary<int, RailSwitch>();
+            Crossings = new Dictionary<int, RailCrossing>();
         }
 
         // Секція не зберігає свій номер, він є ключем словника. Роздаємо номери після читання
@@ -43,6 +48,7 @@ namespace RailWorld.src.RailWay
             if (RailWaySections == null) RailWaySections = new Dictionary<int, Section>();
             // У збереженнях, зроблених до появи списку стрілок, його немає
             if (Switches == null) Switches = new Dictionary<int, RailSwitch>();
+            if (Crossings == null) Crossings = new Dictionary<int, RailCrossing>();
             foreach (var kvp in RailWaySections)
                 kvp.Value.IndexInChunk = kvp.Key;
         }

@@ -95,6 +95,7 @@ namespace RailWorld.src.RailWay
 
                 data.Add(section);
                 session.MarkDirty(section.ChunkAddres);
+                session.MarkLaid(section);
                 stretch.Add(section);
             }
 

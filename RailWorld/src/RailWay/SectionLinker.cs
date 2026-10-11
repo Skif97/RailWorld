@@ -58,6 +58,8 @@ namespace RailWorld.src.RailWay
         private IWorldAccessor world;
         private Dictionary<Vec3i, DataInChunk> loaded = new Dictionary<Vec3i, DataInChunk>();
         private HashSet<Vec3i> dirty = new HashSet<Vec3i>();
+        // Секції, покладені за цю операцію
+        private HashSet<Section> laid = new HashSet<Section>();
 
         public RailDataSession(IWorldAccessor world)
         {
@@ -106,9 +108,21 @@ namespace RailWorld.src.RailWay
             dirty.Add(chunkCoord.Clone());
         }
 
+        /// <summary>Запам'ятовує, що секцію покладено щойно, за цю операцію.</summary>
+        public void MarkLaid(Section section)
+        {
+            laid.Add(section);
+        }
+
+        /// <summary>Чи секцію покладено за цю операцію. Перетин питає це, щоб знати, котра з двох колій лежала раніше.</summary>
+        public bool WasLaid(Section section)
+        {
+            return laid.Contains(section);
+        }
+
         /// <summary>
         /// Записує один чанк, дані якого щойно змінили, і розсилає його клієнтам; заразом перераховує
-        /// стрілки, яких ця зміна стосується. Для змін, що не проходять через власну сесію.
+        /// стрілки й перетини, яких ця зміна стосується. Для змін, що не проходять через власну сесію.
         /// </summary>
         public static void SaveChunk(IWorldAccessor world, Vec3i chunkCoord)
         {
@@ -123,9 +137,10 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public void SaveAll()
         {
-            // Записи про стрілки мають відповідати колії вже в тому, що зараз піде у збереження й клієнтам.
+            // Записи про стрілки й перетини мають відповідати колії вже в тому, що зараз піде у збереження й клієнтам.
             // Перерахунок сам позначає чанки, які зачепив
             SwitchRegistry.Refresh(this, new List<Vec3i>(dirty));
+            CrossingRegistry.Refresh(this, new List<Vec3i>(dirty));
 
             foreach (Vec3i chunkCoord in dirty)
             {

@@ -455,6 +455,26 @@ namespace RailWorld.src.RailWay
         [ProtoMember(42)]
         private SwitchRef _endSwitchRef;
 
+        // У вузлі якого перетину колій секція лежить. null, якщо ні в якому
+        [ProtoMember(45)]
+        private CrossingRef _crossingRef;
+
+        /// <summary>Перетин, у вузлі якого лежить секція, або null.</summary>
+        public CrossingRef GetCrossingRef()
+        {
+            return _crossingRef;
+        }
+
+        /// <summary>
+        /// Записує, у вузлі якого перетину лежить секція; null прибирає запис. Повертає true, якщо запис змінився.
+        /// </summary>
+        public bool SetCrossingRef(CrossingRef value)
+        {
+            if (_crossingRef == null ? value == null : _crossingRef.SameAs(value)) return false;
+            _crossingRef = value;
+            return true;
+        }
+
         /// <summary>
         /// Стрілка, на гілці якої лежить секція, якщо дивитися з кінця atStart, або null.
         /// </summary>

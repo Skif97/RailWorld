@@ -162,6 +162,7 @@ namespace RailWorld
             // Кеш статичний і міг лишитися від попереднього світу
             DataInChunk.ClearServerCache();
             SwitchRegistry.Reset();
+            CrossingRegistry.Reset();
             Journal = new BuildJournal();
 
             api.ChatCommands.Create("railundo")
@@ -475,8 +476,8 @@ namespace RailWorld
                 undone, sections, blocks, Journal.Count(player.PlayerUID)));
         }
 
-        // Щойно завантажена колонка чанків: дописує її стрілки, яких ще немає в записах, і дораховує стрілки
-        // сусідніх чанків, чиї гілки сюди заходять
+        // Щойно завантажена колонка чанків: дописує її стрілки й перетини, яких ще немає в записах, і дораховує
+        // ті в сусідніх чанках, чиї колії сюди заходять
         private void OnChunkColumnLoaded(Vec2i column, IWorldChunk[] chunks)
         {
             // Колонка без колії нікого не цікавить: стрілка чекає лише на чанк, куди заходить її гілка.
@@ -499,6 +500,8 @@ namespace RailWorld
             var session = new RailDataSession(sapi.World);
             for (int y = 0; y < height; y++) SwitchRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
             SwitchRegistry.CompletePendingNear(session, chunkX, chunkZ);
+            for (int y = 0; y < height; y++) CrossingRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
+            CrossingRegistry.CompletePendingNear(session, chunkX, chunkZ);
             if (session.HasChanges) session.SaveAll();
         }
 

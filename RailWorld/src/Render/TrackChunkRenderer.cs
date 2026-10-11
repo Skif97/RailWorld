@@ -62,6 +62,9 @@ namespace RailWorld
                         inNode = Layout(layouts, place.Chunk, record).Hidden.Contains(section);
                 }
 
+                if (!inNode && track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at))
+                    inNode = CrossingLayout(layouts, at.Chunk, crossing).Hidden.Contains(section);
+
                 if (section.SleeperInstalled && !inNode)
                 {
                     // Шпала лежить посередині секції, під серединою рейок, і повернута так само, як вони:
@@ -101,6 +104,10 @@ namespace RailWorld
                 foreach (RailSwitch record in data.Switches.Values)
                 {
                     foreach (Timber timber in Layout(layouts, chunkCoord, record).Timbers) AddTimber(chunkCoord, timber);
+                }
+                foreach (RailCrossing record in data.Crossings.Values)
+                {
+                    foreach (Timber timber in CrossingLayout(layouts, chunkCoord, record).Timbers) AddTimber(chunkCoord, timber);
                 }
             }
 
@@ -219,6 +226,49 @@ namespace RailWorld
             }
 
             layout = NodeTimbers.Lay(branches[0], branches[1], SectionPicker.LeverPosition(trunk, record.AtStart));
+            known[key] = layout;
+            return layout;
+        }
+
+        // Розкладка шпал перетину із записом record, що лежить у чанку chunk. У незібраного перетину, і якщо
+        // його прочитати не вдається, розкладка порожня: кожна секція лишається зі своєю шпалою
+        private TimberLayout CrossingLayout(Dictionary<string, TimberLayout> known, Vec3i chunk, RailCrossing record)
+        {
+            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_x" + record.Key;
+            if (known.TryGetValue(key, out TimberLayout layout)) return layout;
+            known[key] = layout = new TimberLayout();
+            if (!record.Complete || record.Tracks.Count != 2) return layout;
+
+            var tracks = new List<Section>[2];
+            var centers = new int[2];
+            for (int k = 0; k < 2; k++)
+            {
+                CrossingTrack crossed = record.Tracks[k];
+                Section center = crossed.Center >= 1 && crossed.Center <= crossed.Members.Count ? track.FindSection(crossed.Members[crossed.Center - 1]) : null;
+                if (center == null) return layout;
+
+                // Від перетнутої секції в обидва боки, до першої секції без шпали: далі розкладка не йде
+                var before = new List<Section>();
+                for (int n = crossed.Center - 2; n >= 0; n--)
+                {
+                    Section section = track.FindSection(crossed.Members[n]);
+                    if (section == null || !section.SleeperInstalled) break;
+                    before.Add(section);
+                }
+                before.Reverse();
+
+                tracks[k] = before;
+                centers[k] = before.Count;
+                tracks[k].Add(center);
+                for (int n = crossed.Center; n < crossed.Members.Count; n++)
+                {
+                    Section section = track.FindSection(crossed.Members[n]);
+                    if (section == null || !section.SleeperInstalled) break;
+                    tracks[k].Add(section);
+                }
+            }
+
+            layout = NodeTimbers.LayCrossing(tracks[0], centers[0], tracks[1], centers[1]);
             known[key] = layout;
             return layout;
         }

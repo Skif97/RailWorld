@@ -4,7 +4,7 @@ using Vintagestory.API.MathTools;
 
 namespace RailWorld.src.RailWay
 {
-    /// <summary>Шпала, яку кладе стрілка: брус під обома коліями.</summary>
+    /// <summary>Шпала, яку кладе вузол, стрілка чи перетин: брус під обома коліями.</summary>
     public class Timber
     {
         /// <summary>Середина на рівні підошви рейки.</summary>
@@ -16,7 +16,7 @@ namespace RailWorld.src.RailWay
         public Section Owner;
     }
 
-    /// <summary>Розкладка шпал стрілки: що вона кладе сама і секції, чиї власні шпали це заміняє.</summary>
+    /// <summary>Розкладка шпал вузла: що він кладе сам і секції, чиї власні шпали це заміняє.</summary>
     public class TimberLayout
     {
         public List<Timber> Timbers = new List<Timber>();
@@ -32,6 +32,8 @@ namespace RailWorld.src.RailWay
     /// упоперек середньої лінії і тягнуться до зовнішніх країв шпал обох гілок.
     /// Гілка кладе власні шпали, повні й упоперек себе, щойно вони перестають зачіпати шпали другої колії.
     /// Бруси біля них вкорочені: рівно настільки, щоб на них не лягти.
+    /// Перетин під гострим кутом кладеться як розвилка: бруси впоперек бісектриси. Під кутом, близьким до
+    /// прямого, основна колія тримає свої шпали, у вузлі вдвічі частіше: це щит, на якому лежить друга колія.
     /// Чиста геометрія.
     /// </summary>
     public static class NodeTimbers
@@ -42,6 +44,10 @@ namespace RailWorld.src.RailWay
         public const double RailTail = 0.1;
         // У скільки разів одна гілка може відвертати крутіше за другу, щоб це ще була розвилка без основної колії
         public const double ForkTurnRatio = 1.5;
+        /// <summary>Найменший кут між коліями перетину, за якого під ним кладеться щит, градуси.</summary>
+        public const double DeckAngleDeg = 60;
+        // Як далеко від свого кінця шпала щита шукає першу шпалу другої колії, щоб дотягнутися до неї
+        public const double DeckReach = 1;
         // Коротший за це брус не кладеться
         private const double MinLength = 0.3;
         // На скільки блоків брус виступає за місце, де стоїть важіль стрілки
@@ -78,6 +84,219 @@ namespace RailWorld.src.RailWay
             if (lever != null) ExtendToLever(beams, lever);
             layout.Timbers.AddRange(beams);
             return layout;
+        }
+
+        /// <summary>
+        /// Шпали перетину. main і other це секції двох колій по порядку крізь вузол, mainCenter і otherCenter
+        /// номери (з нуля) секцій, осі яких перетинаються. main це основна колія.
+        /// </summary>
+        public static TimberLayout LayCrossing(IList<Section> main, int mainCenter, IList<Section> other, int otherCenter)
+        {
+            var layout = new TimberLayout();
+            if (mainCenter < 0 || mainCenter >= main.Count || otherCenter < 0 || otherCenter >= other.Count) return layout;
+
+            Vec3d along = Chord(main[mainCenter]), across = Chord(other[otherCenter]);
+            double cos = Math.Abs(along.X * across.X + along.Z * across.Z);
+            double angle = Math.Acos(GameMath.Clamp(cos, 0, 1)) * 180 / Math.PI;
+
+            if (angle >= DeckAngleDeg) LayDeck(main, other, otherCenter, layout);
+            else LayAcross(main, mainCenter, other, otherCenter, layout);
+            return layout;
+        }
+
+        // Перетин під кутом, близьким до прямого: щит зі шпал основної колії, у вузлі вдвічі частіших.
+        // Друга колія лежить на ньому без власних шпал
+        private static void LayDeck(IList<Section> main, IList<Section> other, int otherCenter, TimberLayout layout)
+        {
+            Place[] mainPlaces = Places(main), otherPlaces = Places(other);
+            HiddenRange(otherPlaces, otherCenter, mainPlaces, out int from, out int to);
+
+            var ownPlaces = new List<Place>();
+            for (int i = 0; i < other.Count; i++)
+            {
+                if (i >= from && i <= to) layout.Hidden.Add(other[i]);
+                else ownPlaces.Add(otherPlaces[i]);
+            }
+
+            for (int j = 0; j < main.Count; j++)
+            {
+                if (OnTrack(mainPlaces[j], other))
+                {
+                    layout.Hidden.Add(main[j]);
+                    layout.Timbers.Add(DeckTimber(mainPlaces[j], main[j], ownPlaces));
+                }
+
+                // Ще одна шпала посередині між цією і наступною
+                if (j + 1 >= main.Count) continue;
+                Place between = Between(mainPlaces[j], mainPlaces[j + 1]);
+                if (OnTrack(between, other) && !TouchesAny(Along(between, -between.Half), between.Across, between.Half * 2, ownPlaces))
+                    layout.Timbers.Add(DeckTimber(between, main[j], ownPlaces));
+            }
+        }
+
+        // Шпала щита: у кожен бік тягнеться до першої шпали другої колії, якщо та лежить поруч
+        private static Timber DeckTimber(Place place, Section owner, List<Place> ownPlaces)
+        {
+            var back = new Vec3d(-place.Across.X, -place.Across.Y, -place.Across.Z);
+            double limit = place.Half + DeckReach;
+            double forward = Clip(place.Middle, place.Across, place.Half, limit, ownPlaces);
+            double backward = Clip(place.Middle, back, place.Half, limit, ownPlaces);
+            // Нічого не зустріла: звичайної довжини
+            if (forward >= limit - 1e-6) forward = place.Half;
+            if (backward >= limit - 1e-6) backward = place.Half;
+
+            return new Timber { Position = Along(place, (forward - backward) / 2), Across = place.Across, Length = forward + backward, Owner = owner };
+        }
+
+        // Перетин під гострим кутом: бруси впоперек бісектриси, від зовнішнього краю шпал однієї колії до другої
+        private static void LayAcross(IList<Section> main, int mainCenter, IList<Section> other, int otherCenter, TimberLayout layout)
+        {
+            Place[] mainPlaces = Places(main), otherPlaces = Places(other);
+            HiddenRange(mainPlaces, mainCenter, otherPlaces, out int mainFrom, out int mainTo);
+            HiddenRange(otherPlaces, otherCenter, mainPlaces, out int otherFrom, out int otherTo);
+
+            // Бісектриса гострого кута між коліями
+            Vec3d a = Chord(main[mainCenter]), b = Chord(other[otherCenter]);
+            if (a.X * b.X + a.Z * b.Z < 0) b = new Vec3d(-b.X, 0, -b.Z);
+            Vec3d middleLine = new Vec3d(a.X + b.X, 0, a.Z + b.Z).Normalize();
+            var sideways = new Vec3d(-middleLine.Z, 0, middleLine.X);
+            Vec3d crossAt = AxesCross(main[mainCenter], other[otherCenter]);
+
+            var ownPlaces = new List<Place>();
+            var ends = new List<Vec3d>();
+            double reach = 0;
+            for (int k = 0; k < 2; k++)
+            {
+                IList<Section> track = k == 0 ? main : other;
+                Place[] places = k == 0 ? mainPlaces : otherPlaces;
+                int from = k == 0 ? mainFrom : otherFrom, to = k == 0 ? mainTo : otherTo;
+                for (int i = 0; i < places.Length; i++)
+                {
+                    ends.Add(Along(places[i], -places[i].Half));
+                    ends.Add(Along(places[i], places[i].Half));
+                    if (i < from || i > to)
+                    {
+                        ownPlaces.Add(places[i]);
+                        continue;
+                    }
+                    layout.Hidden.Add(track[i]);
+                    reach = Math.Max(reach, Math.Abs(Project(places[i].Middle, crossAt, middleLine)));
+                }
+            }
+
+            // Бруси кроком звичайних шпал уздовж бісектриси, в обидва боки від місця, де перетнулися осі
+            double step = main[mainCenter].FullStartPosition.DistanceTo(main[mainCenter].FullEndPosition);
+            if (step < 1e-6) return;
+            var back = new Vec3d(-sideways.X, 0, -sideways.Z);
+            for (double at = step / 2; at <= reach + step / 2; at += step)
+            {
+                for (int sign = -1; sign <= 1; sign += 2)
+                {
+                    var middle = new Vec3d(crossAt.X + middleLine.X * at * sign, 0, crossAt.Z + middleLine.Z * at * sign);
+                    int nearest = Nearest(mainPlaces, middle);
+                    middle.Y = mainPlaces[nearest].Middle.Y;
+
+                    // У кожен бік до зовнішнього краю шпал, не далі, ніж дозволяють власні шпали колій
+                    double right = Clip(middle, sideways, 0, OuterEdge(middle, middleLine, sideways, ends, step), ownPlaces);
+                    double left = Clip(middle, back, 0, OuterEdge(middle, middleLine, back, ends, step), ownPlaces);
+                    if (left + right < MinLength) continue;
+
+                    double center = (right - left) / 2;
+                    layout.Timbers.Add(new Timber
+                    {
+                        Position = new Vec3d(middle.X + sideways.X * center, middle.Y, middle.Z + sideways.Z * center),
+                        Across = sideways, Length = left + right, Owner = main[nearest]
+                    });
+                }
+            }
+        }
+
+        // Котрі шпали колії навколо перетнутої секції не кладуться: від неї в обидва боки, поки шпала ще
+        // зачіпає шпали другої колії
+        private static void HiddenRange(Place[] places, int center, Place[] others, out int from, out int to)
+        {
+            from = to = center;
+            while (from - 1 >= 0 && TouchesTrack(places[from - 1], others)) from--;
+            while (to + 1 < places.Length && TouchesTrack(places[to + 1], others)) to++;
+        }
+
+        private static bool TouchesTrack(Place sleeper, Place[] others)
+        {
+            foreach (Place other in others)
+            {
+                if (Touches(sleeper, Along(other, -other.Half), Along(other, other.Half))) return true;
+            }
+            return false;
+        }
+
+        // Чи шпала на цьому місці лежить під другою колією: у смузі її шпал
+        private static bool OnTrack(Place sleeper, IList<Section> track)
+        {
+            Vec3d from = Along(sleeper, -sleeper.Half), to = Along(sleeper, sleeper.Half);
+            foreach (Section section in track)
+            {
+                if (Footprint.Overlap(from, to, SectionBox.SleeperHalfWidth * 2, section.FullStartPosition, section.FullEndPosition, section.SleeperLength, out _, out _)) return true;
+            }
+            return false;
+        }
+
+        // Місце шпали посередині між двома сусідніми
+        private static Place Between(Place a, Place b)
+        {
+            return new Place
+            {
+                Middle = new Vec3d((a.Middle.X + b.Middle.X) / 2, (a.Middle.Y + b.Middle.Y) / 2, (a.Middle.Z + b.Middle.Z) / 2),
+                Across = new Vec3d(a.Across.X + b.Across.X, a.Across.Y + b.Across.Y, a.Across.Z + b.Across.Z).Normalize(),
+                Half = (a.Half + b.Half) / 2
+            };
+        }
+
+        // Напрямок секції в плані
+        private static Vec3d Chord(Section section)
+        {
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            var chord = new Vec3d(end.X - start.X, 0, end.Z - start.Z);
+            return chord.Length() < 1e-9 ? new Vec3d(1, 0, 0) : chord.Normalize();
+        }
+
+        // Де в плані перетинаються осі двох секцій
+        private static Vec3d AxesCross(Section first, Section second)
+        {
+            Vec3d a = first.FullStartPosition, c = second.FullStartPosition;
+            Vec3d r = Chord(first), s = Chord(second);
+            double denominator = r.X * s.Z - r.Z * s.X;
+            if (Math.Abs(denominator) < 1e-9) return first.GetGlobalPos();
+            double t = ((c.X - a.X) * s.Z - (c.Z - a.Z) * s.X) / denominator;
+            return new Vec3d(a.X + r.X * t, a.Y, a.Z + r.Z * t);
+        }
+
+        // Номер місця, найближчого в плані до точки
+        private static int Nearest(Place[] places, Vec3d p)
+        {
+            int best = 0;
+            double bestDistance = double.MaxValue;
+            for (int i = 0; i < places.Length; i++)
+            {
+                double distance = places[i].Middle.HorizontalSquareDistanceTo(p.X, p.Z);
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = i;
+            }
+            return best;
+        }
+
+        // Як далеко в бік direction від точки на бісектрисі лежить зовнішній край шпал: найдальший кінець
+        // шпали серед тих, що стоять навпроти цієї точки
+        private static double OuterEdge(Vec3d middle, Vec3d middleLine, Vec3d direction, List<Vec3d> ends, double step)
+        {
+            double edge = 0;
+            foreach (Vec3d end in ends)
+            {
+                double dx = end.X - middle.X, dz = end.Z - middle.Z;
+                if (Math.Abs(dx * middleLine.X + dz * middleLine.Z) > step / 2) continue;
+                edge = Math.Max(edge, dx * direction.X + dz * direction.Z);
+            }
+            return edge;
         }
 
         // Звичайна стрілка: бруси це шпали основної колії, подовжені під відгалуження
