@@ -132,6 +132,7 @@ namespace RailWorld
 
             // Кеш статичний і міг лишитися від попереднього світу
             DataInChunk.ClearServerCache();
+            SwitchRegistry.Reset();
 
             // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
@@ -1416,27 +1417,27 @@ namespace RailWorld
         // сусідніх чанків, чиї гілки сюди заходять
         private void OnChunkColumnLoaded(Vec2i column, IWorldChunk[] chunks)
         {
-            RailDataSession session = null;
-            for (int y = 0; y < chunks.Length; y++)
+            // Колонка без колії нікого не цікавить: стрілка чекає лише на чанк, куди заходить її гілка.
+            // Дані не розбираємо, дивимося тільки, чи вони є
+            bool hasTrack = false;
+            for (int y = 0; y < chunks.Length && !hasTrack; y++)
             {
-                Vec3i chunk = new Vec3i(column.X, y, column.Y);
-                DataInChunk data = DataInChunk.Get(sapi.World, chunk);
-                if (data == null || data.RailWaySections.Count == 0) continue;
-
-                if (session == null) session = new RailDataSession(sapi.World);
-                SwitchRegistry.Complete(session, chunk);
-                for (int dx = -1; dx <= 1; dx++)
-                {
-                    for (int dy = -1; dy <= 1; dy++)
-                    {
-                        for (int dz = -1; dz <= 1; dz++)
-                        {
-                            if (dx != 0 || dy != 0 || dz != 0) SwitchRegistry.Complete(session, new Vec3i(chunk.X + dx, chunk.Y + dy, chunk.Z + dz));
-                        }
-                    }
-                }
+                hasTrack = chunks[y]?.GetModdata(DataInChunk.ModdataKey) != null;
             }
-            if (session != null && session.HasChanges) session.SaveAll();
+            if (!hasTrack) return;
+
+            // Гра повідомляє про колонку раніше, ніж додає її чанки до завантажених
+            // (ServerSystemSupplyChunks.mainThreadLoadChunkColumn), тож світ їх іще не віддає. Рахуємо, щойно віддасть
+            int chunkX = column.X, chunkZ = column.Y, height = chunks.Length;
+            sapi.Event.EnqueueMainThreadTask(() => CompleteSwitches(chunkX, chunkZ, height), "railworld-switches");
+        }
+
+        private void CompleteSwitches(int chunkX, int chunkZ, int height)
+        {
+            var session = new RailDataSession(sapi.World);
+            for (int y = 0; y < height; y++) SwitchRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
+            SwitchRegistry.CompletePendingNear(session, chunkX, chunkZ);
+            if (session.HasChanges) session.SaveAll();
         }
 
         // Що сервер знає про секцію: її деталі, сусідів і стрілки

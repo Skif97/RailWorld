@@ -11,6 +11,29 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class SwitchRegistry
     {
+        // Чанки, де є недорахована стрілка: її гілка заходить у чанк, який тоді не був завантажений.
+        // Між запусками не зберігається: чанк повертається сюди, коли його завантажують і переглядають
+        private static HashSet<Vec3i> pending = new HashSet<Vec3i>();
+
+        /// <summary>Забуває недораховані стрілки попереднього світу.</summary>
+        public static void Reset()
+        {
+            pending.Clear();
+        }
+
+        /// <summary>
+        /// Дораховує стрілки, які чекали на чанки колонки (chunkX, chunkZ) або сусідніх із нею.
+        /// </summary>
+        public static void CompletePendingNear(RailDataSession session, int chunkX, int chunkZ)
+        {
+            if (pending.Count == 0) return;
+
+            foreach (Vec3i chunk in new List<Vec3i>(pending))
+            {
+                if (System.Math.Abs(chunk.X - chunkX) <= 1 && System.Math.Abs(chunk.Z - chunkZ) <= 1) Complete(session, chunk);
+            }
+        }
+
         /// <summary>
         /// Перераховує стрілки, яких стосуються зміни в цих чанках: ті, що в них записані, ті, що мають там
         /// з'явитися, і ті, на чиїх гілках лежать секції цих чанків.
@@ -72,6 +95,8 @@ namespace RailWorld.src.RailWay
             }
 
             foreach (int key in missing) Update(session, chunk, key / 2, key % 2 == 0);
+            // Чанк, у якому нічого перераховувати, міг лишитися у списку від стрілки, якої вже немає
+            if (missing.Count == 0) pending.Remove(chunk);
             return missing.Count > 0;
         }
 
@@ -100,7 +125,7 @@ namespace RailWorld.src.RailWay
             int key = RailSwitch.KeyOf(trunkIndex, atStart);
             data.Switches.TryGetValue(key, out RailSwitch old);
             data.RailWaySections.TryGetValue(trunkIndex, out Section trunk);
-            RailSwitch built = trunk == null ? null : SwitchBuilder.Build(trunk, atStart, session.GetSection);
+            RailSwitch built = trunk == null ? null : SwitchBuilder.Rebuild(old, trunk, atStart, session.GetSection);
 
             // Секції, що входили в стрілку раніше, а тепер ні, мають про неї забути
             if (old != null) Mark(session, old, chunk, key, built);
@@ -113,11 +138,17 @@ namespace RailWorld.src.RailWay
                     session.MarkDirty(chunk);
                 }
                 if (trunk != null && trunk.ResetSwitch(atStart)) session.MarkDirty(chunk);
+                Track(chunk, data);
                 return;
             }
 
-            data.Switches[key] = built;
-            session.MarkDirty(chunk);
+            // Той самий запис не переписуємо: інакше чанк щоразу зберігався б і розсилався клієнтам
+            if (!built.SameAs(old))
+            {
+                data.Switches[key] = built;
+                session.MarkDirty(chunk);
+            }
+            Track(chunk, data);
 
             for (int branch = 0; branch < built.Branches.Count; branch++)
             {
@@ -134,6 +165,18 @@ namespace RailWorld.src.RailWay
 
             // Бік важеля залежить від того, куди йдуть гілки, а вони могли подовжитися
             SectionLinker.PlaceLever(session, trunk, atStart);
+        }
+
+        // Пам'ятає чанк, поки в ньому є недорахована стрілка
+        private static void Track(Vec3i chunk, DataInChunk data)
+        {
+            foreach (RailSwitch record in data.Switches.Values)
+            {
+                if (record.Resolved) continue;
+                pending.Add(chunk.Clone());
+                return;
+            }
+            pending.Remove(chunk);
         }
 
         // Прибирає посилання на стрілку в секціях, яких у новому записі вже немає

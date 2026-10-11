@@ -179,6 +179,63 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void RebuildKeepsAFullRecordWhileABranchChunkIsUnloaded()
+        {
+            RailSwitch full = BuildSwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            Forget(arc[2]);
+            RailSwitch rebuilt = SwitchBuilder.Rebuild(full, last, false, Resolve);
+
+            // Дані лишилися від повного розрахунку, але запис чекає на перерахунок
+            Assert.False(rebuilt.Resolved);
+            Assert.True(rebuilt.Complete);
+            Assert.Equal(full.Branches[1].Members.Count, rebuilt.Branches[1].Members.Count);
+            Assert.Equal(full.Branches[0].FrogTo, rebuilt.Branches[0].FrogTo);
+        }
+
+        [Fact]
+        public void RebuildSeesARailMissingInTheLoadedPart()
+        {
+            RailSwitch full = BuildSwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            Forget(arc[2]);
+            // Рейку знято на першій секції прямої гілки: вона завантажена, і це ще гостряк
+            straight[0].RemovePart(SectionPart.FirstRail);
+
+            Assert.False(SwitchBuilder.Rebuild(full, last, false, Resolve).Complete);
+        }
+
+        [Fact]
+        public void RebuildDropsARecordOfADifferentTrack()
+        {
+            RailSwitch full = BuildSwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            // Старий запис про іншу колію: його гілка починалася з іншої секції
+            full.Branches[1].Members[0] = new SectionLink(arc[5], true);
+            Forget(arc[2]);
+            RailSwitch rebuilt = SwitchBuilder.Rebuild(full, last, false, Resolve);
+
+            Assert.False(rebuilt.Resolved);
+            Assert.False(rebuilt.Complete);
+            Assert.True(rebuilt.Branches[1].Members[0].PointsTo(arc[0]));
+        }
+
+        [Fact]
+        public void RebuildOfAnUnchangedSwitchGivesTheSameRecord()
+        {
+            RailSwitch full = BuildSwitch();
+            Section last = trunk[trunk.Count - 1];
+
+            Assert.True(SwitchBuilder.Rebuild(full, last, false, Resolve).SameAs(full));
+
+            arc[1].RemovePart(SectionPart.FirstRail);
+            Assert.False(SwitchBuilder.Rebuild(full, last, false, Resolve).SameAs(full));
+        }
+
+        [Fact]
         public void UnloadedFirstSectionStillGivesASwitch()
         {
             BuildSwitch();

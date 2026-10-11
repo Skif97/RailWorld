@@ -92,6 +92,27 @@ namespace RailWorld.src.RailWay
             return FrogFrom > 0 && number >= FrogFrom && number <= FrogTo;
         }
 
+        public bool SameAs(SwitchBranch other)
+        {
+            if (other == null || PairSections != other.PairSections || OverlapSections != other.OverlapSections
+                || BladeSections != other.BladeSections || FrogFrom != other.FrogFrom || FrogTo != other.FrogTo
+                || Members.Count != other.Members.Count) return false;
+            return StartsWith(other);
+        }
+
+        /// <summary>Чи гілка починається тими самими секціями, що й other, у тому самому порядку.</summary>
+        public bool StartsWith(SwitchBranch other)
+        {
+            if (other.Members.Count > Members.Count) return false;
+            for (int n = 0; n < other.Members.Count; n++)
+            {
+                SectionLink mine = Members[n], theirs = other.Members[n];
+                if (mine.ChunkX != theirs.ChunkX || mine.ChunkY != theirs.ChunkY || mine.ChunkZ != theirs.ChunkZ
+                    || mine.Index != theirs.Index || mine.AtStart != theirs.AtStart) return false;
+            }
+            return true;
+        }
+
         [ProtoAfterDeserialization]
         private void OnDeserialized()
         {
@@ -124,8 +145,9 @@ namespace RailWorld.src.RailWay
         public bool Complete;
 
         /// <summary>
-        /// Усі секції зони вдалося прочитати. Якщо ні (чанк гілки не був завантажений), стрілка порахована
-        /// неповністю, вважається незібраною і має бути перерахована, коли чанк з'явиться.
+        /// Усі секції зони вдалося прочитати. Якщо ні (чанк гілки не був завантажений), запис треба
+        /// перерахувати, коли чанк з'явиться. Доти в ньому або те, що вдалося прочитати, і стрілка вважається
+        /// незібраною, або дані попереднього повного розрахунку: див. SwitchBuilder.Rebuild.
         /// </summary>
         [ProtoMember(5)]
         public bool Resolved;
@@ -136,6 +158,32 @@ namespace RailWorld.src.RailWay
         public static int KeyOf(int trunkIndex, bool atStart)
         {
             return trunkIndex * 2 + (atStart ? 0 : 1);
+        }
+
+        public bool SameAs(RailSwitch other)
+        {
+            if (other == null || TrunkIndex != other.TrunkIndex || AtStart != other.AtStart || Complete != other.Complete
+                || Resolved != other.Resolved || Branches.Count != other.Branches.Count) return false;
+            for (int k = 0; k < Branches.Count; k++)
+            {
+                if (!Branches[k].SameAs(other.Branches[k])) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Чи запис описує ту саму колію, що й partial, і знає про неї не менше: кожна гілка partial це початок
+        /// відповідної гілки цього запису.
+        /// </summary>
+        public bool Covers(RailSwitch partial)
+        {
+            if (partial == null || TrunkIndex != partial.TrunkIndex || AtStart != partial.AtStart
+                || Branches.Count != partial.Branches.Count) return false;
+            for (int k = 0; k < Branches.Count; k++)
+            {
+                if (!Branches[k].StartsWith(partial.Branches[k])) return false;
+            }
+            return true;
         }
 
         /// <summary>
@@ -174,6 +222,29 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static RailSwitch Build(Section trunk, bool atStart, Func<SectionLink, Section> resolve)
         {
+            return Build(trunk, atStart, resolve, out _);
+        }
+
+        /// <summary>
+        /// Рахує стрілку заново, маючи її попередній запис. Якщо всю стрілку прочитати не вдалося (чанк гілки
+        /// не завантажений), а попередній запис описує ту саму колію і знає про неї більше, його дані
+        /// лишаються: колія в незавантаженому чанку змінитися не могла. Запис при цьому позначений як
+        /// недорахований, а стрілка стає незібраною, лише якщо рейки бракує в прочитаній частині.
+        /// </summary>
+        public static RailSwitch Rebuild(RailSwitch previous, Section trunk, bool atStart, Func<SectionLink, Section> resolve)
+        {
+            RailSwitch built = Build(trunk, atStart, resolve, out bool railsInPlace);
+            if (built == null || built.Resolved || previous == null || !previous.Covers(built)) return built;
+
+            built.Branches = previous.Branches;
+            built.Complete = previous.Complete && railsInPlace;
+            return built;
+        }
+
+        // railsInPlace: у прочитаній частині зони стрілки обидві рейки стоять на кожній секції
+        private static RailSwitch Build(Section trunk, bool atStart, Func<SectionLink, Section> resolve, out bool railsInPlace)
+        {
+            railsInPlace = true;
             List<SectionLink> links = trunk.GetLinks(atStart);
             if (links.Count != 2) return null;
 
@@ -189,7 +260,6 @@ namespace RailWorld.src.RailWay
                 return result;
             }
 
-            bool railsInPlace = true;
             for (int k = 0; k < 2; k++)
             {
                 Section mine = first[k], other = first[1 - k];
