@@ -103,8 +103,7 @@ namespace RailWorld
                     }
                 }
 
-                // Важіль стрілки на кожному кінці, з якого колія розходиться. Стоїть прямо, а нахилом убік
-                // показує, котра з двох гілок увімкнена
+                // Важіль стрілки на кожному кінці, з якого колія розходиться
                 for (int e = 0; e < 2; e++)
                 {
                     bool atStart = e == 0;
@@ -198,11 +197,8 @@ namespace RailWorld
             }, 100);
         }
 
-        // На скільки радіан важіль стрілки нахилений убік у кожному з двох положень
-        private const float LeverLean = 0.45f;
-
-        // Важіль стрілки. Стоїть прямо, а нахилом убік показує, котра з двох гілок увімкнена; під час
-        // переведення перекидається з одного боку на інший
+        // Важіль стрілки. Ручка кидається впоперек колії, покажчик на щоглі розвертається; котра з двох гілок
+        // увімкнена, видно з обох. Під час переведення йде разом з гостряками
         private void AddLever(Vec3i chunkCoord, Section section, bool atStart)
         {
             Vec3d start = section.FullStartPosition;
@@ -211,10 +207,26 @@ namespace RailWorld
             float yaw = (float)Math.Atan2(dx, dz);
             float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
 
-            float target = section.GetSwitchPosition(atStart) == 0 ? LeverLean : -LeverLean;
+            // У моделі колія лежить з боку +X від важеля. Після повороту на yaw цей бік дивиться проти нормалі
+            // секції, тож важіль з боку нормалі стоїть як є, а з протилежного розвернутий на пів оберта
+            int side = section.GetLeverSide(atStart);
+            if (side > 0) pitch = -pitch;
+            else yaw += GameMath.PI;
+
+            // Де стрілка між першою гілкою (0) і другою (1)
             double moved = animator.Progress(chunkCoord, section.IndexInChunk, atStart);
-            float lean = (float)(target * (2 * moved - 1));
-            renderer.AddLever(chunkCoord, SectionPicker.LeverPosition(section, atStart), new Vec3f(pitch, yaw, lean));
+            double value = section.GetSwitchPosition(atStart) == 1 ? moved : 1 - moved;
+
+            // Модель на останньому кадрі штовхає тягу до колії, тобто відводить гостряки від важеля. Гостряки
+            // відходять у бік, протилежний увімкненій гілці: щоб їхати ліворуч, до рамної рейки притиснутий
+            // правий. Тож останній кадр це гілка з боку важеля, і туди ж тоді показує покажчик.
+            // Якщо гілок не знайти (сусідній чанк ще не прийшов), важіль стоїть як для першої
+            double[] sideways = SectionLinker.BranchSideways(section, atStart, track.FindSection);
+            bool secondAtLever = sideways != null && (sideways[1] > sideways[0]) == (side > 0);
+            double thrown = secondAtLever ? value : 1 - value;
+
+            string key = chunkCoord.X + "_" + chunkCoord.Y + "_" + chunkCoord.Z + "_" + section.IndexInChunk + (atStart ? "S" : "E");
+            renderer.SetLever(chunkCoord, key, SectionPicker.LeverPosition(section, atStart), yaw, pitch, thrown);
         }
 
         /// <summary>

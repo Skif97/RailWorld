@@ -752,39 +752,12 @@ namespace RailWorld.src.RailWay
         public static int ChooseLeverSide(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve,
             TrackIndex track)
         {
-            List<SectionLink> links = trunk.GetLinks(atStart);
-            if (links.Count < 2) return 0;
-
-            Vec3d joint = trunk.GetEndPosition(atStart);
-            Vec3f normal = atStart ? trunk.StartNormal : trunk.EndNormal;
-
             // Секції самої стрілки: вони лежать поруч із важелем, але це не чужа колія
             var own = new HashSet<string>();
             own.Add(SectionKey(trunk));
 
-            // На скільки кожна гілка відходить убік від стику, якщо міряти вздовж нормалі спільної колії
-            double[] sideways = new double[2];
-            for (int i = 0; i < 2; i++)
-            {
-                Section current = resolve(links[i]);
-                bool entered = links[i].AtStart;
-                if (current == null) return 0;
-                own.Add(SectionKey(current));
-
-                for (int step = 1; step < LeverLookAhead; step++)
-                {
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    Section next = resolve(ahead[0]);
-                    if (next == null) break;
-                    entered = ahead[0].AtStart;
-                    current = next;
-                    own.Add(SectionKey(current));
-                }
-
-                Vec3d far = current.GetEndPosition(!entered);
-                sideways[i] = (far.X - joint.X) * normal.X + (far.Z - joint.Z) * normal.Z;
-            }
+            double[] sideways = BranchSideways(trunk, atStart, resolve, own);
+            if (sideways == null) return 0;
 
             // Пряміша та, що відійшла менше. Друга відхиляється від неї в цей бік, а важіль стає з протилежного
             int straighter = Math.Abs(sideways[0]) <= Math.Abs(sideways[1]) ? 0 : 1;
@@ -796,6 +769,45 @@ namespace RailWorld.src.RailWay
                 if (LeverSideFree(trunk, atStart, side, own, track)) return side;
             }
             return 0;
+        }
+
+        /// <summary>
+        /// На скільки кожна з двох гілок стрілки відходить убік від стику, якщо міряти вздовж нормалі спільної
+        /// колії: додатне в бік нормалі. Номер гілки це номер зв'язку, він же положення стрілки. Біля самого
+        /// стику гілки ще лежать разом, тож дивимося на кілька секцій далі. own, якщо заданий, збирає пройдені
+        /// секції. null, якщо гілок не дві або котрусь не знайти.
+        /// </summary>
+        public static double[] BranchSideways(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve, HashSet<string> own = null)
+        {
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            if (links.Count < 2) return null;
+
+            Vec3d joint = trunk.GetEndPosition(atStart);
+            Vec3f normal = atStart ? trunk.StartNormal : trunk.EndNormal;
+
+            double[] sideways = new double[2];
+            for (int i = 0; i < 2; i++)
+            {
+                Section current = resolve(links[i]);
+                bool entered = links[i].AtStart;
+                if (current == null) return null;
+                own?.Add(SectionKey(current));
+
+                for (int step = 1; step < LeverLookAhead; step++)
+                {
+                    List<SectionLink> ahead = current.GetLinks(!entered);
+                    if (ahead.Count != 1) break;
+                    Section next = resolve(ahead[0]);
+                    if (next == null) break;
+                    entered = ahead[0].AtStart;
+                    current = next;
+                    own?.Add(SectionKey(current));
+                }
+
+                Vec3d far = current.GetEndPosition(!entered);
+                sideways[i] = (far.X - joint.X) * normal.X + (far.Z - joint.Z) * normal.Z;
+            }
+            return sideways;
         }
 
         /// <summary>

@@ -168,20 +168,17 @@ void main()
             return mesh;
         }
 
+        // Важелі стрілок: анімовані моделі, кожен зі своїм положенням
+        private SwitchLeverRenderer leverRenderer;
+
         /// <summary>
-        /// Додає важіль стрілки. Малюється тим самим рендером, що й шпали, і зникає разом зі шпалами свого чанка.
+        /// Ставить важіль стрілки або переводить уже поставлений. key відрізняє важелі між собою. Під час
+        /// перебудови чанка викликати між BeginParts і EndParts; поза нею лише переводить важіль.
         /// </summary>
-        public void AddLever(Vec3i chunkCoord, Vec3d position, Vec3f rotation)
+        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, float yaw, float pitch, double thrown)
         {
-            const string key = "#switchlever";
-            if (!sleeperRenderers.TryGetValue(key, out var renderer))
-            {
-                ItemStack stack = CreateStack("switchlever", "iron");
-                if (stack == null) return;
-                renderer = new SleeperRenderer(capi, stack);
-                sleeperRenderers[key] = renderer;
-            }
-            renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+            if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi);
+            leverRenderer.Set(chunkCoord, key, position, yaw, pitch, thrown);
         }
 
         /// <summary>
@@ -282,17 +279,19 @@ void main()
         }
 
         /// <summary>
-        /// Початок і кінець перебудови деталей стрілок чанка. Між ними кожна деталь ставиться знову; та, що
-        /// не змінилася, лишається з готовим мешем, а та, яку не поставили, зникає.
+        /// Початок і кінець перебудови деталей стрілок чанка. Між ними кожна деталь і кожен важіль ставиться
+        /// знову; те, що не змінилося, лишається з готовим мешем, а те, чого не поставили, зникає.
         /// </summary>
         internal void BeginParts(Vec3i chunkCoord)
         {
             bladeRenderer?.BeginChunk(chunkCoord);
+            leverRenderer?.BeginChunk(chunkCoord);
         }
 
         internal void EndParts(Vec3i chunkCoord)
         {
             bladeRenderer?.EndChunk(chunkCoord);
+            leverRenderer?.EndChunk(chunkCoord);
         }
 
         private ItemStack CreateStack(string itemCode, string material)
@@ -446,6 +445,8 @@ void main()
             railRenderers.Clear();
             bladeRenderer?.Dispose();
             bladeRenderer = null;
+            leverRenderer?.Dispose();
+            leverRenderer = null;
         }
     }
 }

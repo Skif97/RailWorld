@@ -53,12 +53,16 @@ namespace RailWorld.src.RailWay
         public const double SleeperHalfWidth  = 0.125;
         public const double RailHeight        = 0.15625;
         public const double RailHalfWidth     = 0.08;
-        // Важіль стрілки: на скільки він відступає від краю шпали, пів ширини і висота його бокса
-        public const double LeverGap          = 0.25;
+        // Важіль стрілки: на скільки він відступає від краю шпали і пів ширини місця, яке він займає біля колії.
+        // Модель важеля (shapes/part/switchlever.json) намальована під цей відступ: якщо його змінити, тяга
+        // не дійде до гостряків
+        public const double LeverGap          = 0.75;
         // На скільки блоків важіль стоїть далі за стик, з якого колія розходиться: одна секція
         public const double LeverAhead        = 0.5;
         public const double LeverHalfWidth    = 0.12;
-        public const double LeverHeight       = 0.85;
+        // Бокс виділення важеля: пів ширини основи і висота до покажчика на щоглі
+        public const double LeverBoxHalfWidth = 0.3;
+        public const double LeverHeight       = 1.3;
 
         public Vec3i Chunk;
         public int Index;
@@ -214,7 +218,7 @@ namespace RailWorld.src.RailWay
                 if (!s.HasSwitch(atStart)) continue;
 
                 boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Switch, LeverPosition(s, atStart), chord, s.CenterNormal,
-                    SectionBox.LeverHalfWidth, SectionBox.LeverHalfWidth, 0, SectionBox.LeverHeight)
+                    SectionBox.LeverBoxHalfWidth, SectionBox.LeverBoxHalfWidth, 0, SectionBox.LeverHeight)
                 {
                     Installed = true
                 });
