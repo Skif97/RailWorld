@@ -33,7 +33,11 @@ namespace RailWorld
         /// Ставить деталі стрілки, якщо секція це перша секція однієї з двох її колій: гостряк, вусовик і осердя.
         /// Усі три йдуть по лінії внутрішньої рейки колії, тому збираються з її перерізів.
         /// </summary>
-        public void Build(Vec3i chunkCoord, Section section)
+        /// <param name="wood">
+        /// Каже, яке дерево лежить під стрілкою із записом у цьому чанку: її бруси і шпали секцій. По ньому
+        /// хрестовину прибивають костилями. null, коли перебудовується лише рухома частина стрілки.
+        /// </param>
+        public void Build(Vec3i chunkCoord, Section section, System.Func<Vec3i, RailSwitch, IList<Timber>> wood = null)
         {
             // Секція має бути першою на гілці стрілки; з котрого боку від неї стрілка, перевіряємо окремо
             RailSwitch record = null;
@@ -167,7 +171,7 @@ namespace RailWorld
             }
 
             // Хрестовина одна на обидві колії: її ставить перша з них
-            if (primary && own.Throat >= 0) AddFrog(chunkCoord, section, left, material, own);
+            if (primary && own.Throat >= 0) AddFrog(chunkCoord, section, left, material, own, wood?.Invoke(switchChunk, record));
 
             // Контррейка в кожної колії своя
             if (own.Throat >= 0) AddCheckRail(chunkCoord, section, left, own);
@@ -266,6 +270,12 @@ namespace RailWorld
                     (end < 0 ? spacer.StartCaps : spacer.EndCaps).Add(box);
                 }
                 parts.Add(spacer);
+
+                // Вкладиш стягнутий з двома рейками наскрізним болтом: головка на ходовій рейці ззовні колії,
+                // гайка на контррейці з боку осі
+                var outward = new Vec3d(-frame.Side.X, -frame.Side.Y, -frame.Side.Z);
+                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, running), outward);
+                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, offset), frame.Side);
             }
 
             renderer.SetLoft(chunkCoord, section.IndexInChunk, !inner, "CR", material, parts);
@@ -436,8 +446,14 @@ namespace RailWorld
         /// добудовано хвостик: повний профіль рейки, усі його точки. Стінка торця закриває проміжок між
         /// хвостиками.
         /// </summary>
-        private void AddFrog(Vec3i chunkCoord, Section section, bool left, string material, BranchGeometry own)
+        private void AddFrog(Vec3i chunkCoord, Section section, bool left, string material, BranchGeometry own, IList<Timber> wood)
         {
+            // Осі двох вусовиків у кожному перерізі і бік, куди дивиться зовнішній бік лівого: по них хрестовину
+            // прибивають до дерева
+            var wingsLeft = new List<Vec3d>();
+            var wingsRight = new List<Vec3d>();
+            var wingSides = new List<Vec3d>();
+
             double half = BladeMesh.HeadHalfWidth;
             // Відстань між серединами рейок, за якої між їхніми головками лишається жолоб
             double clearance = half * 2 + SwitchGeometry.FrogFlangeway;
@@ -516,6 +532,19 @@ namespace RailWorld
                 // Правий навпаки
                 double wingLeft = mineAt - keep;
                 double wingRight = theirsAt + keep;
+
+                // Хрестовина стягнута наскрізними болтами через шийки вусовиків: на кожному стику секцій,
+                // тобто між брусами. Головка на одному вусовику, гайка на другому, обидві назовні
+                if (!first && !last && q % 2 == 0)
+                {
+                    var outward = new Vec3d(-station.Side.X, -station.Side.Y, -station.Side.Z);
+                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingLeft), outward);
+                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingRight), station.Side);
+                }
+
+                wingsLeft.Add(Along(station.Center, station.Side, wingLeft));
+                wingsRight.Add(Along(station.Center, station.Side, wingRight));
+                wingSides.Add(station.Side);
 
                 // Осердя: від робочої грані своєї рейки до робочої грані сусідньої. Поки рейки не розійшлися
                 // на ширину головки, воно суцільне, далі це два промені з дном між ними
@@ -614,6 +643,41 @@ namespace RailWorld
 
             // Тіло й хвостики це один меш
             renderer.SetLoft(chunkCoord, section.IndexInChunk, left, "F", material, parts);
+
+            // До дерева хрестовина прибита костилями з двох зовнішніх боків, за підошви вусовиків: там, де
+            // вусовик перетинає брус чи шпалу і костилі потрапляють у дерево
+            if (wood == null) return;
+            for (int n = 0; n + 1 < wingsLeft.Count; n++)
+            {
+                for (int wing = 0; wing < 2; wing++)
+                {
+                    List<Vec3d> line = wing == 0 ? wingsLeft : wingsRight;
+                    Vec3d near = line[n], far = line[n + 1];
+                    var along = new Vec3d(far.X - near.X, far.Y - near.Y, far.Z - near.Z);
+                    if (along.Length() < 1e-9) continue;
+                    along.Normalize();
+
+                    // Лівий вусовик дивиться назовні проти боку перерізу, правий за ним
+                    Vec3d side = wingSides[n];
+                    Vec3d outward = wing == 0 ? new Vec3d(-side.X, -side.Y, -side.Z) : side;
+                    // Бік, який NailsOnWood рахує додатним, це (z, -x) напрямку вусовика
+                    int nails = outward.X * along.Z - outward.Z * along.X > 0 ? 1 : -1;
+
+                    foreach (Timber timber in wood)
+                    {
+                        if (!NodeFastenings.Crosses(near, far, timber, out Vec3d at)) continue;
+                        if (!NodeFastenings.NailsOnWood(at, along, wood, nails)) continue;
+                        // Пара ставиться в місце самих костилів: за край підошви вусовика
+                        renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, material, Along(at, outward, NodeFastenings.SpikeAside), outward);
+                    }
+                }
+            }
+        }
+
+        // Точка за distance блоків від point у напрямку direction
+        private static Vec3d Along(Vec3d point, Vec3d direction, double distance)
+        {
+            return new Vec3d(point.X + direction.X * distance, point.Y + direction.Y * distance, point.Z + direction.Z * distance);
         }
 
         private static LoftPart Tail(LoftStation from, LoftStation to)

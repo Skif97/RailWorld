@@ -109,6 +109,112 @@ namespace RailWorld.src.RailWay
             return hidden.Contains(Key(section, part));
         }
 
+        /// <summary>
+        /// Чи біля ходової рейки, на осі якої лежить точка, у цьому місці стоїть контррейка. Точка, що не
+        /// лежить на жодній з рейок вузла, контррейки поруч не має.
+        /// </summary>
+        public bool GuardBeside(Vec3d point)
+        {
+            foreach (CrossingRail rail in Rails)
+            {
+                if (!Locate(rail, point, out double aside, out double at) || Math.Abs(aside) > RailProfile.HeadHalfWidth) continue;
+                if (Lies(rail, RailPiece.GuardFoot, at)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Чи в цьому місці справді лежить рейка, що йде в напрямку along: point це точка на її осі. У вузлі
+        /// рейка другої колії обривається на рейках основної, і там її немає. Поза ділянкою, яку заміняють
+        /// рейки перетину, лежить звичайна рейка секції: вона є завжди.
+        /// </summary>
+        public bool HasRail(Vec3d point, Vec3d along)
+        {
+            foreach (CrossingRail rail in Rails)
+            {
+                if (!Locate(rail, point, out double aside, out double at) || Math.Abs(aside) > RailProfile.HeadHalfWidth) continue;
+
+                // Та сама рейка, а не рейка іншої колії, що проходить крізь цю точку: колії перетинаються
+                // щонайменше під п'ятнадцять градусів, тож напрямки тієї самої рейки розходяться значно менше
+                RailFrame frame = rail.Frames[GameMath.Clamp((int)Math.Round(at), 0, rail.Frames.Count - 1)];
+                double length = Math.Sqrt(along.X * along.X + along.Z * along.Z);
+                if (length < 1e-9 || Math.Abs(frame.Along.X * along.X + frame.Along.Z * along.Z) / length < SameRailCos) continue;
+
+                List<RailSpan> feet = rail.Of(RailPiece.Foot);
+                if (feet.Count == 0) return true;
+                double from = double.MaxValue, to = double.MinValue;
+                foreach (RailSpan span in feet)
+                {
+                    from = Math.Min(from, span.From.Middle);
+                    to = Math.Max(to, span.To.Middle);
+                }
+                return at < from || at > to || Lies(rail, RailPiece.Foot, at);
+            }
+            // Жодна з рейок вузла тут не проходить: це рейка поза ним
+            return true;
+        }
+
+        // Косинус восьми градусів: ближчі за це напрямки належать одній рейці
+        private const double SameRailCos = 0.99;
+
+        /// <summary>
+        /// Чи точка лежить у плані під металом вузла: під підошвою котроїсь ходової рейки, під проставкою
+        /// чи під підошвою контррейки. Костиль у такому місці не забити.
+        /// </summary>
+        public bool Covers(Vec3d point)
+        {
+            double foot = RailProfile.FootHalfWidth, web = RailProfile.WebHalfWidth;
+            foreach (CrossingRail rail in Rails)
+            {
+                if (!Locate(rail, point, out double aside, out double at)) continue;
+                // Від осі рейки в бік осі колії: там лежать проставка і контррейка
+                double inward = -aside * rail.Side;
+
+                if (Math.Abs(aside) <= foot && Lies(rail, RailPiece.Foot, at)) return true;
+                if (inward >= web && inward <= CrossingGeometry.GuardAxis - web && Lies(rail, RailPiece.Spacer, at)) return true;
+                if (Math.Abs(inward - CrossingGeometry.GuardAxis) <= foot && Lies(rail, RailPiece.GuardFoot, at)) return true;
+            }
+            return false;
+        }
+
+        // Де точка відносно рейки: aside це відстань від її осі вздовж Side перерізу, at місце вздовж рейки,
+        // номер перерізу з дробовою частиною. false, якщо рейка від точки далеко
+        private static bool Locate(CrossingRail rail, Vec3d point, out double aside, out double at)
+        {
+            aside = at = 0;
+            int nearest = -1;
+            double best = double.MaxValue;
+            for (int n = 0; n < rail.Frames.Count; n++)
+            {
+                double distance = rail.Frames[n].Center.HorizontalSquareDistanceTo(point.X, point.Z);
+                if (distance >= best) continue;
+                best = distance;
+                nearest = n;
+            }
+            // Перерізи стоять через чверть блока; далі за пів блока від найближчого це вже не ця рейка
+            if (nearest < 0 || best > 0.25) return false;
+
+            RailFrame frame = rail.Frames[nearest];
+            double dx = point.X - frame.Center.X, dz = point.Z - frame.Center.Z;
+            aside = dx * frame.Side.X + dz * frame.Side.Z;
+
+            // Наскільки точка попереду чи позаду перерізу, у частках відстані до сусіднього
+            double ahead = dx * frame.Along.X + dz * frame.Along.Z;
+            int neighbour = GameMath.Clamp(nearest + (ahead >= 0 ? 1 : -1), 0, rail.Frames.Count - 1);
+            double step = neighbour == nearest ? 0 : frame.Center.DistanceTo(rail.Frames[neighbour].Center);
+            at = nearest + (step < 1e-9 ? 0 : ahead / step);
+            return true;
+        }
+
+        private static bool Lies(CrossingRail rail, RailPiece piece, double at)
+        {
+            foreach (RailSpan span in rail.Of(piece))
+            {
+                if (at >= span.From.Middle && at <= span.To.Middle) return true;
+            }
+            return false;
+        }
+
         private static string Key(Section section, SectionPart part)
         {
             Vec3i chunk = section.ChunkAddres;
@@ -126,12 +232,10 @@ namespace RailWorld.src.RailWay
     /// до підошви.
     /// Уздовж внутрішнього боку кожної ходової рейки через увесь вузол лежить проставка до низу головки: рейка
     /// там масивніша, а дно жолоба суцільне.
-    /// Контррейки, як на залізниці, залежать від кута. Під кутом, близьким до прямого, вздовж внутрішнього
-    /// боку кожної ходової рейки йде контррейка на відстані жолоба: починається перед ромбом, проходить
-    /// крізь нього і кінчається за ним, а на рейках іншої колії обривається. На кожному плечі це дає рамку
-    /// з двох контррейок і ходової рейки, без проміжків між ними, а всередині ромба раму. У ромбі під гострим
-    /// кутом контррейки стоять лише у двох тупих кутах, зігнуті вздовж обох рейок: у гострих рейки сходяться
-    /// вістрям.
+    /// Уздовж внутрішнього боку кожної ходової рейки йде контррейка на відстані жолоба: починається перед
+    /// ромбом, проходить крізь нього і кінчається за ним, а на рейках іншої колії обривається. На кожному
+    /// плечі це дає рамку з двох контррейок і ходової рейки, без проміжків між ними, а всередині ромба раму.
+    /// Так під будь-яким кутом: вузол виглядає однаково, прямий він чи гострий.
     /// Чиста геометрія.
     /// </summary>
     public static class CrossingGeometry
@@ -144,8 +248,8 @@ namespace RailWorld.src.RailWay
         /// <summary>Довжина контррейки від місця, де вона починається біля рейки іншої колії, блоків.</summary>
         public const double GuardLeg = 0.5;
 
-        // Від осі ходової рейки до осі контррейки: головка, жолоб і ще пів головки з кожного боку
-        private const double GuardAxis = 2 * RailProfile.HeadHalfWidth + SwitchGeometry.FrogFlangeway;
+        /// <summary>Від осі ходової рейки до осі контррейки: головка, жолоб і ще пів головки з кожного боку.</summary>
+        public const double GuardAxis = 2 * RailProfile.HeadHalfWidth + SwitchGeometry.FrogFlangeway;
 
         /// <summary>Як далеко від осі ходової рейки сягає те, що лежить біля неї: до краю підошви контррейки.</summary>
         public const double Reach = GuardAxis + RailProfile.FootHalfWidth;
@@ -305,11 +409,6 @@ namespace RailWorld.src.RailWay
             // він же ближчий до ходової рейки бік шийки контррейки
             double line = gauge - GuardAxis, spacerEdge = line + web;
 
-            RailFrame a = axes[0].Frames[centers[0] * 2 + 1], b = axes[1].Frames[centers[1] * 2 + 1];
-            double cos = Math.Abs(a.Along.X * b.Along.X + a.Along.Z * b.Along.Z);
-            // Під кутом, близьким до прямого, контррейки йдуть уздовж усіх рейок; у ромбі лише в тупих кутах
-            bool square = Math.Acos(GameMath.Clamp(cos, 0, 1)) * 180 / Math.PI >= NodeTimbers.DeckAngleDeg;
-
             var result = new CrossingRails();
             for (int k = 0; k < 2; k++)
             {
@@ -363,6 +462,16 @@ namespace RailWorld.src.RailWay
                             last = Math.Max(last, cut.To.Farthest);
                         }
                     }
+                    // Ділянка накриває і кінці контррейок на плечах: вони зрізані навскоси, і рівний край ділянки
+                    // між ними й розривами перетнувся б з ними
+                    double? middle = Meet(axes[k].Frames, side * gauge, axes[other].Frames, 0, near);
+                    for (int across = -1; across <= 1 && middle != null; across += 2)
+                    {
+                        RailEdge far = LegEnd(rail, At(across * (gauge + head)), middle.Value);
+                        if (far == null) continue;
+                        first = Math.Min(first, far.Nearest);
+                        last = Math.Max(last, far.Farthest);
+                    }
                     int sectionFrom = GameMath.Clamp((int)Math.Floor(first / 2), 0, tracks[k].Count - 1);
                     int sectionTo = GameMath.Clamp((int)Math.Floor(last / 2), 0, tracks[k].Count - 1);
                     RailEdge start = RailEdge.Square(sectionFrom * 2), end = RailEdge.Square(sectionTo * 2 + 2);
@@ -380,12 +489,7 @@ namespace RailWorld.src.RailWay
                     reach.Sort((x, y) => x.From.Middle.CompareTo(y.From.Middle));
                     RailEdge zoneFrom = reach[0].From, zoneTo = reach[reach.Count - 1].To;
 
-                    double? middle = Meet(axes[k].Frames, side * gauge, axes[other].Frames, 0, near);
-                    if (middle != null)
-                    {
-                        if (square) SquareGuards(rail, At, k, gauge, line, spacerEdge, middle.Value, ref zoneFrom, ref zoneTo);
-                        else DiamondGuard(rail, At, axes, k, side, gauge, line, spacerEdge, near, middle.Value);
-                    }
+                    if (middle != null) Guards(rail, At, k, gauge, line, spacerEdge, middle.Value, ref zoneFrom, ref zoneTo);
 
                     // Проставка основної колії суцільна; другої на рейці основної обривається, як і її шийка
                     rail.Of(RailPiece.Spacer).AddRange(Between(zoneFrom, zoneTo, k == 0 ? new List<RailSpan>() : webCuts, true));
@@ -396,9 +500,9 @@ namespace RailWorld.src.RailWay
             return result;
         }
 
-        // Контррейка під кутом, близьким до прямого: всередині ромба і на обох плечах. Яку частину не вдається
-        // порахувати, тієї просто немає
-        private static void SquareGuards(CrossingRail rail, Func<double, RailEdge> at, int k, double gauge, double line, double spacerEdge, double middle,
+        // Контррейка вздовж ходової рейки: всередині ромба і на обох плечах. Яку частину не вдається порахувати,
+        // тієї просто немає
+        private static void Guards(CrossingRail rail, Func<double, RailEdge> at, int k, double gauge, double line, double spacerEdge, double middle,
             ref RailEdge zoneFrom, ref RailEdge zoneTo)
         {
             double head = RailProfile.HeadHalfWidth, foot = RailProfile.FootHalfWidth, web = RailProfile.WebHalfWidth, groove = SwitchGeometry.FrogFlangeway;
@@ -417,7 +521,7 @@ namespace RailWorld.src.RailWay
             {
                 RailEdge headFrom = at(across * (gauge + head));
                 if (headFrom == null) continue;
-                RailEdge far = RailEdge.Square(Advance(rail.Frames, headFrom.Middle, headFrom.Middle > middle ? GuardLeg : -GuardLeg));
+                RailEdge far = LegEnd(rail, headFrom, middle);
 
                 Add(rail.Of(RailPiece.GuardHead), Span(headFrom, false, far, true));
                 Add(rail.Of(RailPiece.GuardWeb), Span(at(across * (gauge + web)), false, far, true));
@@ -428,36 +532,14 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Контррейка в ромбі: одна ніжка від тупого кута вглиб ромба
-        private static void DiamondGuard(CrossingRail rail, Func<double, RailEdge> at, Axis[] axes, int k, int side, double gauge, double line, double spacerEdge,
-            double near, double middle)
+        // Дальній кінець контррейки на плечі: за GuardLeg від місця headFrom, де вона впирається в рейку іншої
+        // колії, у бік від середини вузла. Зрізано так само, як ближній: уздовж рейки іншої колії. Під прямим
+        // кутом це рівний торець, під гострим косий; рівний там перетнувся б із косими краями поруч
+        private static RailEdge LegEnd(CrossingRail rail, RailEdge headFrom, double middle)
         {
-            double head = RailProfile.HeadHalfWidth, foot = RailProfile.FootHalfWidth, web = RailProfile.WebHalfWidth, groove = SwitchGeometry.FrogFlangeway;
-
-            // Тупий кут ромба з цього боку колії: той із двох, що ближче до середини
-            int corner = 0;
-            double best = double.MaxValue;
-            for (int across = -1; across <= 1; across += 2)
-            {
-                double? found = Meet(axes[k].Frames, side * gauge, axes[1 - k].Frames, across * gauge, near);
-                if (found == null || Math.Abs(found.Value - near) >= best) continue;
-                best = Math.Abs(found.Value - near);
-                corner = across;
-            }
-            if (corner == 0) return;
-
-            double headReach = k == 0 ? gauge - head - groove : line - head;
-            double webReach = k == 0 ? spacerEdge : line - web, footReach = k == 0 ? spacerEdge : line - foot;
-            RailEdge headFrom = at(corner * headReach);
-            if (headFrom == null) return;
-
-            // Дальній кінець зрізано так само навскоси, як і всі краї довкола: уздовж рейки іншої колії
-            double length = Advance(rail.Frames, headFrom.Middle, headFrom.Middle > middle ? -GuardLeg : GuardLeg) - headFrom.Middle;
-            RailEdge far = headFrom.Moved(length);
-
-            Add(rail.Of(RailPiece.GuardHead), Span(headFrom, k == 0, far, true));
-            Add(rail.Of(RailPiece.GuardWeb), Span(at(corner * webReach), false, far, true));
-            Add(rail.Of(RailPiece.GuardFoot), Span(at(corner * footReach), false, far, true));
+            if (headFrom == null) return null;
+            double length = Advance(rail.Frames, headFrom.Middle, headFrom.Middle > middle ? GuardLeg : -GuardLeg) - headFrom.Middle;
+            return headFrom.Moved(length);
         }
 
         private static void Add(List<RailSpan> spans, RailSpan span)

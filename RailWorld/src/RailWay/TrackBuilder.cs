@@ -100,6 +100,7 @@ namespace RailWorld.src.RailWay
             }
 
             SectionLinker.LinkStretch(session, stretch);
+            RailJoints.Mark(stretch, session.GetSection);
             session.SaveAll();
 
             // Секції з деталями займають клітинки під собою. Після збереження, бо блоки колії шукають свої секції в даних чанка

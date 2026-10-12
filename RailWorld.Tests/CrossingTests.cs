@@ -399,7 +399,9 @@ namespace RailWorld.Tests
         [Theory]
         [InlineData(90.0)]
         [InlineData(70.0)]
-        public void NearRightAngleEveryRunningRailGetsAGuardRailThroughTheCrossing(double angle)
+        [InlineData(45.0)]
+        [InlineData(20.0)]
+        public void EveryRunningRailGetsAGuardRailThroughTheCrossingAtAnyAngle(double angle)
         {
             CrossingRails rails = LayRails(angle);
             double sin = Math.Sin(angle * Math.PI / 180);
@@ -414,11 +416,12 @@ namespace RailWorld.Tests
                 Assert.Equal(3, webs.Count);
                 Assert.Equal(3, feet.Count);
 
-                // На плечах пів блока, рівним торцем назовні; до рейки іншої колії впритул, без торця
+                // На плечах пів блока, з торцем назовні; до рейки іншої колії впритул, без торця. Дальній кінець
+                // зрізано так само, як ближній: уздовж рейки іншої колії
                 Assert.InRange(Gap(rail, heads[0].From, heads[0].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + 0.01);
                 Assert.InRange(Gap(rail, heads[2].From, heads[2].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + 0.01);
-                Assert.Equal(heads[0].From.Minus, heads[0].From.Plus);
-                Assert.Equal(heads[2].To.Minus, heads[2].To.Plus);
+                Assert.Equal(heads[0].To.Plus - heads[0].To.Minus, heads[0].From.Plus - heads[0].From.Minus, 9);
+                Assert.Equal(heads[2].From.Plus - heads[2].From.Minus, heads[2].To.Plus - heads[2].To.Minus, 9);
                 Assert.True(heads[0].CapFrom && heads[2].CapTo && !heads[0].CapTo && !heads[2].CapFrom);
 
                 // Усередині: контррейки основної колії на всю раму, другої між ними
@@ -436,53 +439,6 @@ namespace RailWorld.Tests
                 Assert.Equal(heads[2].To.Middle, spacers[spacers.Count - 1].To.Middle, 6);
                 Assert.True(spacers[0].CapFrom && spacers[spacers.Count - 1].CapTo);
             }
-        }
-
-        [Theory]
-        [InlineData(45.0)]
-        [InlineData(20.0)]
-        public void InADiamondGuardRailsStandOnlyInTheTwoObtuseCorners(double angle)
-        {
-            CrossingRails rails = LayRails(angle);
-
-            // По одній ніжці вздовж кожної з чотирьох рейок: дві зігнуті контррейки, у двох тупих кутах
-            var ends = new List<Vec3d>();
-            foreach (CrossingRail rail in rails.Rails)
-            {
-                List<RailSpan> heads = rail.Of(RailPiece.GuardHead);
-                Assert.Single(heads);
-                Assert.Single(rail.Of(RailPiece.GuardWeb));
-                Assert.Single(rail.Of(RailPiece.GuardFoot));
-                Assert.InRange(Gap(rail, heads[0].From, heads[0].To), CrossingGeometry.GuardLeg - 0.02, CrossingGeometry.GuardLeg + 0.02);
-
-                // Дальній кінець у головки, шийки й підошви спільний; другий кінець це кут
-                RailSpan web = rail.Of(RailPiece.GuardWeb)[0];
-                bool cornerAtStart = Math.Abs(web.To.Middle - heads[0].To.Middle) < 1e-6;
-                ends.Add(Where(rail, cornerAtStart ? heads[0].From.Middle : heads[0].To.Middle));
-                Assert.True(cornerAtStart ? heads[0].CapTo : heads[0].CapFrom);
-
-                // Проставка в основної колії суцільна, від першого жолоба до останнього
-                if (rail.Track == 0)
-                {
-                    List<RailSpan> running = Sorted(rail, RailPiece.Head);
-                    RailSpan spacer = Assert.Single(rail.Of(RailPiece.Spacer));
-                    Assert.True(spacer.From.Middle <= running[0].To.Middle + 1e-6 && spacer.To.Middle >= running[2].From.Middle - 1e-6);
-                }
-            }
-
-            // Кути лежать біля короткої діагоналі ромба, по обидва боки від місця, де перетнулися осі. Місце заміряно
-            // на осі ходової рейки, тож від самої діагоналі воно трохи зсунуте; гострі кути лежать у кілька разів далі
-            double half = angle * Math.PI / 360;
-            double bx = Math.Cos(half), bz = Math.Sin(half);
-            int above = 0, below = 0;
-            foreach (Vec3d end in ends)
-            {
-                Assert.True(Math.Abs(end.X * bx + end.Z * bz) < 0.6, "контррейка стоїть не в тупому куті");
-                if (-end.X * bz + end.Z * bx > 0) above++;
-                else below++;
-            }
-            Assert.Equal(2, above);
-            Assert.Equal(2, below);
         }
 
         [Theory]
@@ -559,6 +515,29 @@ namespace RailWorld.Tests
                 }
             }
             Assert.True(parts >= 12);
+        }
+
+        [Theory]
+        [InlineData(90.0)]
+        [InlineData(30.0)]
+        public void SecondTrackRailIsAbsentWhereItBreaksOnTheMainRail(double angle)
+        {
+            CrossingRails rails = LayRails(angle);
+
+            foreach (CrossingRail rail in rails.Rails)
+            {
+                List<RailSpan> feet = Sorted(rail, RailPiece.Foot);
+                Vec3d along = rail.Frames[rail.Frames.Count / 2].Along;
+
+                // Посередині кожного шматка підошви рейка є; далеко за вузлом теж, там звичайна рейка секції
+                foreach (RailSpan span in feet) Assert.True(rails.HasRail(Where(rail, (span.From.Middle + span.To.Middle) / 2), along));
+                Assert.True(rails.HasRail(Where(rail, 1.3), along));
+
+                // У розриві рейки другої колії її немає; в основної розривів підошви немає зовсім
+                for (int n = 0; n + 1 < feet.Count; n++)
+                    Assert.False(rails.HasRail(Where(rail, (feet[n].To.Middle + feet[n + 1].From.Middle) / 2), along), "рейка знайшлася там, де вона обірвана");
+                Assert.Equal(rail.Track == 0 ? 1 : 3, feet.Count);
+            }
         }
 
         [Fact]

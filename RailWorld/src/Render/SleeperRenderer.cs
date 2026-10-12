@@ -61,6 +61,19 @@ namespace RailWorld
                 capi.Tesselator.TesselateItem(itemStack.Item, out itemMesh);
             }
 
+            UseMesh(itemMesh);
+        }
+
+        /// <summary>Малює готовий меш: деталь, у якої немає свого предмета.</summary>
+        public SleeperRenderer(ICoreClientAPI capi, MeshData mesh)
+        {
+            this.capi = capi;
+            UseMesh(mesh);
+        }
+
+        private void UseMesh(MeshData mesh)
+        {
+            itemMesh = mesh;
             if (itemMesh == null) return;
 
             // Копія, щоб дані інстансів не потрапили в кешований меш предмета
@@ -68,7 +81,18 @@ namespace RailWorld
             TextureId = itemMesh.TextureIds != null && itemMesh.TextureIds.Length > 0
                 ? itemMesh.TextureIds[0]
                 : capi.BlockTextureAtlas.Positions[0].atlasTextureId;
+
+            float left = float.MaxValue, right = float.MinValue;
+            for (int v = 0; v < itemMesh.VerticesCount; v++)
+            {
+                left = Math.Min(left, itemMesh.xyz[v * 3]);
+                right = Math.Max(right, itemMesh.xyz[v * 3]);
+            }
+            if (right > left) ModelLength = right - left;
         }
+
+        /// <summary>Довжина моделі вздовж її осі X, блоків: довжина шпали, якою її намальовано.</summary>
+        public float ModelLength { get; private set; } = 1f;
 
         /// <summary>
         /// Ставить шпалу. Шпала на тому самому місці в тому самому чанку замінюється: так важіль стрілки
@@ -203,9 +227,9 @@ namespace RailWorld
                 Mat4f.RotateY(tmpMat, tmpMat, part.rotation.Y);
                 Mat4f.RotateX(tmpMat, tmpMat, -part.rotation.X);
                 Mat4f.RotateZ(tmpMat, tmpMat, -part.rotation.Z);
-                scale[0] = part.length;
+                scale[0] = part.stretch;
                 Mat4f.Scale(tmpMat, tmpMat, scale);
-                // Меш шпали займає блок 0..1, обертаємо навколо його центру
+                // Модель стоїть серединою в точці (0.5, 0, 0.5) блока: обертаємо й розтягуємо навколо неї
                 Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, -0.5f);
 
                 // Положення шпали відносно кута чанка, разом зі зсувом, який дала сама матриця

@@ -1,0 +1,93 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textureSizes": {
+		"metal": [
+			32,
+			32
+		]
+	},
+	"textures": {
+		"metal": "game:block/metal/plate/iron"
+	},
+	"elements": [
+		{
+			"name": "BoltHead",
+			"from": [
+				8.2,
+				0.85,
+				7.8
+			],
+			"to": [
+				8.4,
+				1.25,
+				8.2
+			],
+			"rotationOrigin": [
+				8.3,
+				0.85,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				}
+			}
+		}
+	]
+}

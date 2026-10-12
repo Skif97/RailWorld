@@ -79,6 +79,8 @@ namespace RailWorld
 
         // Габарити перерізу рейки, беруться з меша: висота над підошвою і півширина від осі
         private double railHeight;
+        // Довжина моделі рейки, блоків: шматок, яким рейку намальовано
+        private double railLength;
         private double railHalfWidth;
 
         private float[] tmpMat = Mat4f.Create();
@@ -115,6 +117,7 @@ namespace RailWorld
             {
                 railHalfWidth = Math.Max(railHalfWidth, Math.Abs(itemMesh.xyz[v * 3] - 0.5));
                 railHeight    = Math.Max(railHeight, itemMesh.xyz[v * 3 + 1]);
+                railLength    = Math.Max(railLength, itemMesh.xyz[v * 3 + 2]);
             }
         }
 
@@ -331,7 +334,9 @@ namespace RailWorld
                 Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
                 Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
                 scale[0] = d.ScaleX;
-                scale[2] = d.ScaleZ;
+                // Модель рейки це шматок звичайної довжини; шматок секції розтягує її рівно настільки,
+                // наскільки він довший чи коротший
+                scale[2] = railLength > 0 ? (float)(d.ScaleZ / railLength) : d.ScaleZ;
                 Mat4f.Scale(tmpMat, tmpMat, scale);
                 // Рейка в меші лежить по X = 0.5, зсуваємо її на вісь
                 Mat4f.Translate(tmpMat, tmpMat, -0.5f, 0f, 0f);

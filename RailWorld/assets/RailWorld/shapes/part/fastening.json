@@ -1,0 +1,833 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textureSizes": {
+		"metal": [
+			32,
+			32
+		]
+	},
+	"textures": {
+		"metal": "game:block/metal/plate/iron"
+	},
+	"elements": [
+		{
+			"name": "FasteningSpikeOuterShank",
+			"from": [
+				6.7,
+				-1.2,
+				7.1
+			],
+			"to": [
+				7.0,
+				0.3,
+				7.4
+			],
+			"rotationOrigin": [
+				6.85,
+				-1.2,
+				7.25
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningSpikeOuterHead",
+			"from": [
+				6.51,
+				0.3,
+				6.925
+			],
+			"to": [
+				7.29,
+				0.56,
+				7.575
+			],
+			"rotationOrigin": [
+				6.9,
+				0.3,
+				7.25
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningSpikeInnerShank",
+			"from": [
+				9.0,
+				-1.2,
+				8.6
+			],
+			"to": [
+				9.3,
+				0.3,
+				8.9
+			],
+			"rotationOrigin": [
+				9.15,
+				-1.2,
+				8.75
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningSpikeInnerHead",
+			"from": [
+				8.71,
+				0.3,
+				8.425
+			],
+			"to": [
+				9.49,
+				0.56,
+				9.075
+			],
+			"rotationOrigin": [
+				9.1,
+				0.3,
+				8.75
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateOuter",
+			"from": [
+				5.6,
+				-0.25,
+				6.4
+			],
+			"to": [
+				6.7,
+				0.0,
+				9.6
+			],
+			"rotationOrigin": [
+				6.15,
+				-0.25,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						3.2
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						3.2
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateOuterRowA",
+			"from": [
+				6.7,
+				-0.25,
+				6.4
+			],
+			"to": [
+				7.0,
+				0.0,
+				8.6
+			],
+			"rotationOrigin": [
+				6.85,
+				-0.25,
+				7.5
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.2,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.2,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						2.2
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						2.2
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateOuterRowB",
+			"from": [
+				6.7,
+				-0.25,
+				8.9
+			],
+			"to": [
+				7.0,
+				0.0,
+				9.6
+			],
+			"rotationOrigin": [
+				6.85,
+				-0.25,
+				9.25
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.7,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.7,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.7
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.7
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateUnderRail",
+			"from": [
+				7.0,
+				-0.25,
+				6.4
+			],
+			"to": [
+				9.0,
+				0.0,
+				9.6
+			],
+			"rotationOrigin": [
+				8.0,
+				-0.25,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.0,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.0,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.0,
+						3.2
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.0,
+						3.2
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateInnerRowA",
+			"from": [
+				9.0,
+				-0.25,
+				6.4
+			],
+			"to": [
+				9.3,
+				0.0,
+				7.1
+			],
+			"rotationOrigin": [
+				9.15,
+				-0.25,
+				6.75
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.7,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.7,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.7
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.7
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateInnerRowB",
+			"from": [
+				9.0,
+				-0.25,
+				7.4
+			],
+			"to": [
+				9.3,
+				0.0,
+				9.6
+			],
+			"rotationOrigin": [
+				9.15,
+				-0.25,
+				8.5
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.2,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						2.2,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						2.2
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						2.2
+					]
+				}
+			}
+		},
+		{
+			"name": "FasteningPlateInner",
+			"from": [
+				9.3,
+				-0.25,
+				6.4
+			],
+			"to": [
+				10.4,
+				0.0,
+				9.6
+			],
+			"rotationOrigin": [
+				9.85,
+				-0.25,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						0.25
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						0.25
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						3.2,
+						0.25
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						3.2
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						1.1,
+						3.2
+					]
+				}
+			}
+		}
+	]
+}

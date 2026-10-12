@@ -14,6 +14,11 @@ namespace RailWorld.src.RailWay
         public double Length;
         /// <summary>Секція, на місці шпали якої вона лежить: звідти дерево й ухил.</summary>
         public Section Owner;
+        /// <summary>
+        /// На брусі лежить металева пластина від рамної рейки до рамної: по ній ковзають гостряки, коли стрілку
+        /// переводять. Такі два бруси, між якими стоїть важіль.
+        /// </summary>
+        public bool SlidePlate;
     }
 
     /// <summary>Розкладка шпал вузла: що він кладе сам і секції, чиї власні шпали це заміняє.</summary>
@@ -527,6 +532,7 @@ namespace RailWorld.src.RailWay
             for (int n = 0; n < Math.Min(LeverTimbers, nearest.Count); n++)
             {
                 Timber timber = nearest[n];
+                timber.SlidePlate = true;
                 double along = (lever.X - timber.Position.X) * timber.Across.X + (lever.Y - timber.Position.Y) * timber.Across.Y + (lever.Z - timber.Position.Z) * timber.Across.Z;
                 double grow = Math.Abs(along) + LeverBase - timber.Length / 2;
                 if (grow <= 0) continue;

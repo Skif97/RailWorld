@@ -1,0 +1,315 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textureSizes": {
+		"metal": [
+			32,
+			32
+		]
+	},
+	"textures": {
+		"metal": "game:block/metal/plate/iron"
+	},
+	"elements": [
+		{
+			"name": "SpikeSideAShank",
+			"from": [
+				7.85,
+				-1.2,
+				7.1
+			],
+			"to": [
+				8.15,
+				0.3,
+				7.4
+			],
+			"rotationOrigin": [
+				8.0,
+				-1.2,
+				7.25
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				}
+			}
+		},
+		{
+			"name": "SpikeSideAHead",
+			"from": [
+				7.56,
+				0.3,
+				6.925
+			],
+			"to": [
+				8.34,
+				0.56,
+				7.575
+			],
+			"rotationOrigin": [
+				7.95,
+				0.3,
+				7.25
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				}
+			}
+		},
+		{
+			"name": "SpikeSideBShank",
+			"from": [
+				7.85,
+				-1.2,
+				8.6
+			],
+			"to": [
+				8.15,
+				0.3,
+				8.9
+			],
+			"rotationOrigin": [
+				8.0,
+				-1.2,
+				8.75
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.5
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						0.3
+					]
+				}
+			}
+		},
+		{
+			"name": "SpikeSideBHead",
+			"from": [
+				7.56,
+				0.3,
+				8.425
+			],
+			"to": [
+				8.34,
+				0.56,
+				9.075
+			],
+			"rotationOrigin": [
+				7.95,
+				0.3,
+				8.75
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.26
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.65,
+						0.26
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.78,
+						0.65
+					]
+				}
+			}
+		}
+	]
+}

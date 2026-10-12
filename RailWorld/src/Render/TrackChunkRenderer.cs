@@ -81,7 +81,26 @@ namespace RailWorld
                     float yaw = (float)Math.Atan2(dx, dz);
                     float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
                     float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
-                    renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", globalPos, new Vec3f(pitch, yaw, roll), section.SleeperLength);
+                    // Між шпалою і рейкою лежить підкладка, тож шпала нижча за підошву рейки на її товщину
+                    var sleeperPos = new Vec3d(globalPos.X, globalPos.Y - RailProfile.PlateThickness, globalPos.Z);
+                    renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", sleeperPos, new Vec3f(pitch, yaw, roll), section.SleeperLength);
+
+                    // Скріплення: під кожною рейкою, там де вона лежить на шпалі. Друге повернуте на пів оберта,
+                    // тож костилі двох рейок стоять дзеркально відносно осі колії. Де на секції стик рейок,
+                    // там само стоїть і стикова накладка
+                    Vec3f normal = section.CenterNormal;
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        SectionPart rail = side > 0 ? SectionPart.FirstRail : SectionPart.SecondRail;
+                        if (!section.IsInstalled(rail)) continue;
+
+                        double offset = section.TrackWidth / 2 * side;
+                        var onRail = new Vec3d(globalPos.X + normal.X * offset, globalPos.Y + normal.Y * offset, globalPos.Z + normal.Z * offset);
+                        Vec3f turned = side > 0 ? new Vec3f(pitch, yaw, roll) : new Vec3f(-pitch, yaw + GameMath.PI, -roll);
+                        string metal = section.GetMaterial(rail) ?? "iron";
+                        renderer.AddRailPart(chunkCoord, RailWayRendererSystem.FasteningPart, metal, onRail, turned);
+                        if (section.RailJoint) renderer.AddRailPart(chunkCoord, RailWayRendererSystem.JointPart, metal, onRail, turned);
+                    }
                 }
 
                 // Важіль стрілки на кожному кінці, з якого колія розходиться. Стоїть прямо, а нахилом убік
@@ -108,18 +127,30 @@ namespace RailWorld
             {
                 foreach (RailSwitch record in data.Switches.Values)
                 {
-                    foreach (Timber timber in Layout(layouts, chunkCoord, record).Timbers) AddTimber(chunkCoord, timber);
+                    List<Timber> timbers = Layout(layouts, chunkCoord, record).Timbers;
+                    if (timbers.Count == 0) continue;
+                    foreach (Timber timber in timbers) AddTimber(chunkCoord, timber);
+
+                    List<Section>[] branches = SwitchBranches(chunkCoord, record, out _);
+                    if (branches != null) AddNodeFastenings(chunkCoord, timbers, branches, (rail, at) => CheckRailBeside(rail.Section, rail.Part == SectionPart.FirstRail), null);
                 }
                 foreach (RailCrossing record in data.Crossings.Values)
                 {
-                    foreach (Timber timber in CrossingLayout(layouts, chunkCoord, record).Timbers) AddTimber(chunkCoord, timber);
+                    List<Timber> timbers = CrossingLayout(layouts, chunkCoord, record).Timbers;
+                    if (timbers.Count == 0) continue;
+                    foreach (Timber timber in timbers) AddTimber(chunkCoord, timber);
+
+                    CrossingRails crossingRails = RailsOf(chunkCoord, record);
+                    if (CrossingTracks(record, out List<Section>[] tracks, out _, out _))
+                        AddNodeFastenings(chunkCoord, timbers, tracks, (rail, at) => crossingRails != null && crossingRails.GuardBeside(at) ? FasteningKind.GuardSpikes : (FasteningKind?)null, crossingRails);
                 }
             }
 
             if (railSections.Count > 0)
                 renderer.RebuildRails(chunkCoord, railSections, BladeShape);
 
-            foreach (Section section in bladeSections) builder.Build(chunkCoord, section);
+            var wood = new Dictionary<string, IList<Timber>>();
+            foreach (Section section in bladeSections) builder.Build(chunkCoord, section, (chunk, record) => SwitchWood(layouts, wood, chunk, record));
             if (data != null)
             {
                 foreach (RailCrossing record in data.Crossings.Values) crossingBuilder.Build(chunkCoord, record, RailsOf(chunkCoord, record));
@@ -215,8 +246,52 @@ namespace RailWorld
             if (known.TryGetValue(key, out TimberLayout layout)) return layout;
             known[key] = layout = new TimberLayout();
 
+            List<Section>[] branches = SwitchBranches(chunk, record, out Section trunk);
+            if (branches == null) return layout;
+
+            layout = NodeTimbers.Lay(branches[0], branches[1], SectionPicker.LeverPosition(trunk, record.AtStart));
+            known[key] = layout;
+            return layout;
+        }
+
+        // Усе дерево під стрілкою: її бруси і шпали тих секцій гілок, що лежать на власних шпалах. known це вже
+        // зібране за цю перебудову
+        private IList<Timber> SwitchWood(Dictionary<string, TimberLayout> layouts, Dictionary<string, IList<Timber>> known, Vec3i chunk, RailSwitch record)
+        {
+            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            if (known.TryGetValue(key, out IList<Timber> wood)) return wood;
+
+            TimberLayout layout = Layout(layouts, chunk, record);
+            var all = new List<Timber>(layout.Timbers);
+            List<Section>[] branches = SwitchBranches(chunk, record, out _);
+            if (branches != null)
+            {
+                foreach (List<Section> branch in branches)
+                {
+                    foreach (Section section in branch)
+                    {
+                        if (layout.Hidden.Contains(section) || !section.SleeperInstalled) continue;
+                        Vec3f normal = section.CenterNormal;
+                        all.Add(new Timber
+                        {
+                            Position = section.GetGlobalPos(), Across = new Vec3d(normal.X, normal.Y, normal.Z).Normalize(),
+                            Length = section.SleeperLength, Owner = section
+                        });
+                    }
+                }
+            }
+
+            known[key] = all;
+            return all;
+        }
+
+        // Секції двох гілок зібраної стрілки по порядку від стику, trunk її спільна секція. null у незібраної
+        // стрілки і якщо її прочитати не вдається
+        private List<Section>[] SwitchBranches(Vec3i chunk, RailSwitch record, out Section trunk)
+        {
+            trunk = null;
             DataInChunk data = DataInChunk.GetClient(chunk);
-            if (data == null || !record.Complete || record.Branches.Count != 2 || !data.RailWaySections.TryGetValue(record.TrunkIndex, out Section trunk)) return layout;
+            if (data == null || !record.Complete || record.Branches.Count != 2 || !data.RailWaySections.TryGetValue(record.TrunkIndex, out trunk)) return null;
 
             var branches = new List<Section>[2];
             for (int k = 0; k < 2; k++)
@@ -231,12 +306,141 @@ namespace RailWorld
                     if (section == null || !section.SleeperInstalled) break;
                     branches[k].Add(section);
                 }
-                if (branches[k].Count == 0) return layout;
+                if (branches[k].Count == 0) return null;
+            }
+            return branches;
+        }
+
+        // Ставить скріплення рейок вузла на його бруси, там де рейка лежить на брусі. Скріплення складене
+        // з частин: підкладка, а де їй немає місця або до рейки щось прилягає, прокладка під підошву; і пари
+        // костилів окремо з кожного боку рейки. На підкладці їх усі чотири. Немає їх з того боку, де до рейки
+        // прилягає гостряк чи контррейка, де костиль опинився б під іншою рейкою перетину, і де він не
+        // потрапляє в дерево. guardBeside каже про контррейку, crossing це рейки перетину або null у стрілки.
+        // Під гостряком і хрестовиною стрілки скріплень немає: гостряк рухається, а хрестовина прибита окремо
+        private void AddNodeFastenings(Vec3i chunkCoord, List<Timber> timbers, List<Section>[] tracks, System.Func<RailRun, Vec3d, FasteningKind?> guardBeside,
+            CrossingRails crossing)
+        {
+            var rails = new List<RailRun>();
+            foreach (List<Section> sections in tracks)
+            {
+                foreach (Section section in sections)
+                {
+                    Vec3d start = section.FullStartPosition, middle = section.GetGlobalPos(), end = section.FullEndPosition;
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        SectionPart part = side > 0 ? SectionPart.FirstRail : SectionPart.SecondRail;
+                        if (!section.IsInstalled(part) || ReplacedBySwitch(section, side > 0)) continue;
+
+                        double offset = section.TrackWidth / 2 * side;
+                        rails.Add(new RailRun
+                        {
+                            Section = section, Part = part,
+                            From = Shifted(start, section.StartNormal, offset), Middle = Shifted(middle, section.CenterNormal, offset), To = Shifted(end, section.EndNormal, offset)
+                        });
+                    }
+                }
             }
 
-            layout = NodeTimbers.Lay(branches[0], branches[1], SectionPicker.LeverPosition(trunk, record.AtStart));
-            known[key] = layout;
-            return layout;
+            foreach (NodeFastening fastening in NodeFastenings.Lay(timbers, rails, guardBeside))
+            {
+                // На перетині рейка другої колії обривається на рейці основної: де рейки немає, кріпити нічого
+                if (crossing != null && !crossing.HasRail(fastening.Position, fastening.Along)) continue;
+
+                Section section = fastening.Section;
+
+                Vec3d along = fastening.Along;
+                float yaw = (float)Math.Atan2(along.X, along.Z);
+                float pitch = (float)Math.Atan2(along.Y, Math.Sqrt(along.X * along.X + along.Z * along.Z));
+                float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
+
+                // Як і на звичайній колії, під другою рейкою скріплення повернуте на пів оберта
+                bool first = fastening.Part == SectionPart.FirstRail;
+                var straight = new Vec3f(pitch, yaw, roll);
+                var reversed = new Vec3f(-pitch, yaw + GameMath.PI, -roll);
+                string metal = section.GetMaterial(fastening.Part) ?? "iron";
+
+                // Підкладка, якщо їй є місце і до рейки нічого не прилягає; інакше прокладка завширшки з підошву
+                bool plate = fastening.Kind == FasteningKind.Plate;
+                string under = plate ? RailWayRendererSystem.PlatePart : RailWayRendererSystem.PadPart;
+                renderer.AddRailPart(chunkCoord, under, metal, fastening.Position, first ? straight : reversed);
+
+                // Бік рейки, який NodeFastenings.NailsOnWood рахує додатним: для напрямку (x, z) це (z, -x).
+                // Нормаль секції лежить з протилежного боку: у секції, що йде на схід, вона дивиться на південь
+                // (перевірено на покладеній секції). Перша рейка лежить з боку нормалі, тож назовні від колії
+                // в неї від'ємний бік, у другої додатний
+                var right = new Vec3d(along.Z, 0, -along.X);
+                if (right.Length() < 1e-9) continue;
+                right.Normalize();
+                int outer = first ? -1 : 1;
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    // З боку осі колії до рейки може прилягати гостряк чи контррейка
+                    bool inner = side != outer;
+                    if (inner && (fastening.Kind == FasteningKind.GuardSpikes || fastening.Kind == FasteningKind.OuterSpikes)) continue;
+
+                    var away = new Vec3d(right.X * side, 0, right.Z * side);
+                    AddSpikePair(chunkCoord, metal, fastening.Position, along, away, side, timbers, crossing);
+                }
+
+                // Біля контррейки ще одна пара з її боку, що дивиться на вісь колії
+                if (fastening.Kind == FasteningKind.GuardSpikes)
+                {
+                    var inward = new Vec3d(-right.X * outer, 0, -right.Z * outer);
+                    var guard = new Vec3d(fastening.Position.X + inward.X * CrossingGeometry.GuardAxis, fastening.Position.Y,
+                        fastening.Position.Z + inward.Z * CrossingGeometry.GuardAxis);
+                    // Лише якщо контррейка справді лежить у цьому місці: костилі мають щось тримати
+                    if (crossing == null || crossing.Covers(guard)) AddSpikePair(chunkCoord, metal, guard, along, inward, -outer, timbers, crossing);
+                }
+            }
+        }
+
+        // Пара костилів з одного боку рейки: axis точка на осі рейки, away бік, куди вони стоять від неї, side
+        // той самий бік числом, як його рахує NodeFastenings.NailsOnWood. Не ставиться, якщо костилі не
+        // потрапляють у дерево або опинилися б під металом перетину
+        private void AddSpikePair(Vec3i chunkCoord, string metal, Vec3d axis, Vec3d along, Vec3d away, int side, List<Timber> timbers, CrossingRails crossing)
+        {
+            if (!NodeFastenings.NailsOnWood(axis, along, timbers, side)) return;
+
+            var at = new Vec3d(axis.X + away.X * NodeFastenings.SpikeAside, axis.Y, axis.Z + away.Z * NodeFastenings.SpikeAside);
+            if (crossing != null)
+            {
+                double length = Math.Sqrt(along.X * along.X + along.Z * along.Z);
+                if (length < 1e-9) return;
+                for (int end = -1; end <= 1; end += 2)
+                {
+                    double forward = NodeFastenings.SpikeAlong * end / length;
+                    if (crossing.Covers(new Vec3d(at.X + along.X * forward, at.Y, at.Z + along.Z * forward))) return;
+                }
+            }
+            renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, metal, at, away);
+        }
+
+        // Чи біля цієї рейки секції стоїть контррейка стрілки (навпроти хрестовини, біля зовнішньої рейки гілки),
+        // і як тоді кріпити рейку. На першій і останній секції контррейки лежать її відігнуті кінці: вони до
+        // бруса не кріпляться, костилі там лише із зовнішнього боку ходової рейки. null, якщо контррейки немає
+        private FasteningKind? CheckRailBeside(Section section, bool left)
+        {
+            for (int end = 0; end < 2; end++)
+            {
+                if (!track.FindSwitch(section, end == 0, out RailSwitch record, out SwitchRef place) || !record.Complete) continue;
+
+                SwitchBranch branch = record.BranchOf(place);
+                if (branch.FrogFrom <= 0 || place.Number < branch.FrogFrom || place.Number > branch.FrogTo) continue;
+
+                // Зовнішня рейка це та, що не з боку сусідньої гілки
+                Section partner = track.Opposite(record, place);
+                if (partner == null || left == SwitchGeometry.TowardPartner(section, partner) > 0) continue;
+
+                bool flared = place.Number == branch.FrogFrom || place.Number == branch.FrogTo;
+                return flared ? FasteningKind.OuterSpikes : FasteningKind.GuardSpikes;
+            }
+            return null;
+        }
+
+        private static Vec3d Shifted(Vec3d point, Vec3f normal, double offset)
+        {
+            return new Vec3d(point.X + normal.X * offset, point.Y + normal.Y * offset, point.Z + normal.Z * offset);
         }
 
         // Розкладка шпал перетину із записом record, що лежить у чанку chunk. У незібраного перетину, і якщо
@@ -319,7 +523,17 @@ namespace RailWorld
             // Ухил як у колії на цьому місці: дві гілки лежать в одній площині
             float pitch = Pitch(timber.Owner);
 
-            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", timber.Position, new Vec3f(pitch, yaw, roll), (float)timber.Length);
+            // Між брусом і рейкою лежить підкладка, тож брус нижчий за підошву рейки на її товщину, як і шпала
+            var position = new Vec3d(timber.Position.X, timber.Position.Y - RailProfile.PlateThickness, timber.Position.Z);
+            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", position, new Vec3f(pitch, yaw, roll), (float)timber.Length);
+
+            // Пластина під гостряки: на осі колії, упоперек неї, як сам брус. З металу рейки над нею
+            if (timber.SlidePlate)
+            {
+                Section owner = timber.Owner;
+                string metal = owner.GetMaterial(SectionPart.FirstRail) ?? owner.GetMaterial(SectionPart.SecondRail) ?? "iron";
+                renderer.AddRailPart(chunkCoord, RailWayRendererSystem.SlidePlatePart, metal, owner.GetGlobalPos(), new Vec3f(pitch, yaw, roll));
+            }
         }
 
         // Ухил секції: підйом її хорди
@@ -330,12 +544,8 @@ namespace RailWorld
             return (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
         }
 
-        /// <summary>
-        /// Каже рендеру рейок не малювати ту рейку, місце якої займає деталь стрілки чи перетину: внутрішню
-        /// рейку колії на секціях гостряка і хрестовини, рейку з жолобами у вузлі перетину. Для решти рейок
-        /// повертає null.
-        /// </summary>
-        private RailShape BladeShape(Section section, bool left)
+        // Чи місце цієї рейки секції займає деталь стрілки: гостряк або хрестовина
+        private bool ReplacedBySwitch(Section section, bool left)
         {
             // Стрілка може бути з будь-якого боку секції, і з обох одразу, якщо стрілки стоять густо:
             // перевіряємо кожен бік окремо
@@ -348,8 +558,19 @@ namespace RailWorld
                 // Внутрішня рейка це та, що з боку сусідньої гілки
                 Section partner = track.Opposite(record, place);
                 if (partner == null) continue;
-                if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return new RailShape { Hidden = true };
+                if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return true;
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Каже рендеру рейок не малювати ту рейку, місце якої займає деталь стрілки чи перетину: внутрішню
+        /// рейку колії на секціях гостряка і хрестовини, рейку з жолобами у вузлі перетину. Для решти рейок
+        /// повертає null.
+        /// </summary>
+        private RailShape BladeShape(Section section, bool left)
+        {
+            if (ReplacedBySwitch(section, left)) return new RailShape { Hidden = true };
 
             // Рейку секції у вузлі перетину заміняє рейка перетину, з жолобами для реборд
             if (track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at))

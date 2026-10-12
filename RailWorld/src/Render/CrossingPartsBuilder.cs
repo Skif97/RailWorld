@@ -46,10 +46,50 @@ namespace RailWorld
                     order.Add(material);
                 }
                 parts.AddRange(Parts(rail));
+                AddBolts(chunkCoord, rail, material);
             }
 
             for (int n = 0; n < order.Count; n++)
                 renderer.SetLoft(chunkCoord, record.Key, true, "X" + n, order[n], byMaterial[order[n]]);
+        }
+
+        // Вузол стягнутий наскрізними болтами: крізь шийку ходової рейки, проставку і шийку контррейки, а де
+        // контррейки немає, крізь рейку з проставкою. Стоять уздовж усієї проставки, через чверть блока.
+        // Головка на ходовій рейці ззовні колії, гайка з боку осі: на контррейці або на самій проставці
+        private void AddBolts(Vec3i chunkCoord, CrossingRail rail, string material)
+        {
+            double web = RailProfile.WebHalfWidth;
+            foreach (RailSpan span in rail.Of(RailPiece.Spacer))
+            {
+                // Не ближче ніж за пів перерізу від кінців проставки
+                int first = (int)Math.Ceiling(span.From.Farthest + 0.5), last = (int)Math.Floor(span.To.Nearest - 0.5);
+                for (int at = first; at <= last; at++)
+                {
+                    if (at < 0 || at >= rail.Frames.Count) continue;
+                    // Де шийки ходової рейки немає, вона там обірвана на рейці іншої колії: стягувати нічого
+                    if (!Lies(rail, RailPiece.Web, at)) continue;
+
+                    RailFrame frame = rail.Frames[at];
+                    var outer = new Vec3d(frame.Side.X * rail.Side, frame.Side.Y * rail.Side, frame.Side.Z * rail.Side);
+                    var inner = new Vec3d(-outer.X, -outer.Y, -outer.Z);
+                    renderer.AddBolt(chunkCoord, material, frame.Center, outer);
+
+                    // Модель болта стоїть на пів шийки від точки, куди її поставлено. Гайка сидить на шийці
+                    // контррейки, а де її немає, на дальньому боці проставки
+                    double nut = Lies(rail, RailPiece.GuardWeb, at) ? CrossingGeometry.GuardAxis : CrossingGeometry.GuardAxis - 2 * web;
+                    renderer.AddBolt(chunkCoord, material, new Vec3d(frame.Center.X + inner.X * nut, frame.Center.Y + inner.Y * nut, frame.Center.Z + inner.Z * nut), inner);
+                }
+            }
+        }
+
+        // Чи складова рейки лежить у цьому місці вздовж неї
+        private static bool Lies(CrossingRail rail, RailPiece piece, double at)
+        {
+            foreach (RailSpan span in rail.Of(piece))
+            {
+                if (at >= span.From.Middle && at <= span.To.Middle) return true;
+            }
+            return false;
         }
 
         // Рейка з усім, що до неї прилягає, відрізками між сусідніми краями

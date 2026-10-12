@@ -1,0 +1,759 @@
+{
+	"editor": {
+		"allAngles": false,
+		"entityTextureMode": false
+	},
+	"textureWidth": 32,
+	"textureHeight": 32,
+	"textureSizes": {
+		"metal": [
+			32,
+			32
+		]
+	},
+	"textures": {
+		"metal": "game:block/metal/plate/iron"
+	},
+	"elements": [
+		{
+			"name": "JointBarOuter",
+			"from": [
+				7.5,
+				0.45,
+				4.25
+			],
+			"to": [
+				7.8,
+				1.65,
+				11.75
+			],
+			"rotationOrigin": [
+				7.65,
+				0.45,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.2
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						7.5,
+						1.2
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.2
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						7.5,
+						1.2
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						7.5
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						7.5
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBarInner",
+			"from": [
+				8.2,
+				0.45,
+				4.25
+			],
+			"to": [
+				8.5,
+				1.65,
+				11.75
+			],
+			"rotationOrigin": [
+				8.35,
+				0.45,
+				8.0
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.2
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						7.5,
+						1.2
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						1.2
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						7.5,
+						1.2
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						7.5
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.3,
+						7.5
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt1Head",
+			"from": [
+				7.3,
+				0.9,
+				4.95
+			],
+			"to": [
+				7.5,
+				1.3,
+				5.35
+			],
+			"rotationOrigin": [
+				7.4,
+				0.9,
+				5.15
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt1Nut",
+			"from": [
+				8.5,
+				0.9,
+				4.95
+			],
+			"to": [
+				8.75,
+				1.3,
+				5.35
+			],
+			"rotationOrigin": [
+				8.625,
+				0.9,
+				5.15
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt2Head",
+			"from": [
+				7.3,
+				0.9,
+				6.75
+			],
+			"to": [
+				7.5,
+				1.3,
+				7.15
+			],
+			"rotationOrigin": [
+				7.4,
+				0.9,
+				6.95
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt2Nut",
+			"from": [
+				8.5,
+				0.9,
+				6.75
+			],
+			"to": [
+				8.75,
+				1.3,
+				7.15
+			],
+			"rotationOrigin": [
+				8.625,
+				0.9,
+				6.95
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt3Head",
+			"from": [
+				7.3,
+				0.9,
+				8.85
+			],
+			"to": [
+				7.5,
+				1.3,
+				9.25
+			],
+			"rotationOrigin": [
+				7.4,
+				0.9,
+				9.05
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt3Nut",
+			"from": [
+				8.5,
+				0.9,
+				8.85
+			],
+			"to": [
+				8.75,
+				1.3,
+				9.25
+			],
+			"rotationOrigin": [
+				8.625,
+				0.9,
+				9.05
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt4Head",
+			"from": [
+				7.3,
+				0.9,
+				10.65
+			],
+			"to": [
+				7.5,
+				1.3,
+				11.05
+			],
+			"rotationOrigin": [
+				7.4,
+				0.9,
+				10.85
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.2,
+						0.4
+					]
+				}
+			}
+		},
+		{
+			"name": "JointBolt4Nut",
+			"from": [
+				8.5,
+				0.9,
+				10.65
+			],
+			"to": [
+				8.75,
+				1.3,
+				11.05
+			],
+			"rotationOrigin": [
+				8.625,
+				0.9,
+				10.85
+			],
+			"faces": {
+				"north": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"east": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"south": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"west": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.4,
+						0.4
+					]
+				},
+				"up": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				},
+				"down": {
+					"texture": "#metal",
+					"uv": [
+						0.0,
+						0.0,
+						0.25,
+						0.4
+					]
+				}
+			}
+		}
+	]
+}

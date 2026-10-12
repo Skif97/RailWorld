@@ -455,6 +455,18 @@ namespace RailWorld.src.RailWay
         [ProtoMember(42)]
         private SwitchRef _endSwitchRef;
 
+        // Чи на цій секції стикуються дві рейки: тоді на ній стоять стикові накладки. Вирішується раз,
+        // коли колію кладуть: див. RailJoints
+        [ProtoMember(46)]
+        private bool _railJoint;
+
+        /// <summary>Чи на цій секції стик рейок, стягнутий накладками.</summary>
+        public bool RailJoint
+        {
+            get { return _railJoint; }
+            set { _railJoint = value; }
+        }
+
         // У вузлі якого перетину колій секція лежить. null, якщо ні в якому
         [ProtoMember(45)]
         private CrossingRef _crossingRef;

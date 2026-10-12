@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.GameContent;
 using RailWorld.src.RailWay;
 
 namespace RailWorld
@@ -88,7 +89,83 @@ void main()
                 renderer = new SleeperRenderer(capi, stack);
                 sleeperRenderers[material] = renderer;
             }
-            renderer.AddRailWayPart(position, new SleeperInstance(rotation, length, chunkCoord.Clone()));
+            // Модель шпали намальована своєї звичайної довжини; довший брус стрілки це вона ж, розтягнута
+            renderer.AddRailWayPart(position, new SleeperInstance(rotation, length / renderer.ModelLength, chunkCoord.Clone()));
+        }
+
+        /// <summary>Скріплення рейки зі шпалою: підкладка з костилями.</summary>
+        public const string FasteningPart = "fastening";
+        /// <summary>Стикова накладка на болтах: стоїть там, де стикуються дві рейки.</summary>
+        public const string JointPart = "joint";
+
+        /// <summary>Сама підкладка, без костилів: у вузлах костилі ставляться окремо з кожного боку рейки.</summary>
+        public const string PlatePart = "plate";
+        /// <summary>Прокладка під підошвою рейки там, де підкладці немає місця: рейка має на чомусь лежати.</summary>
+        public const string PadPart = "pad";
+        /// <summary>Пара костилів з одного боку підошви рейки. Ставиться в місце самих костилів.</summary>
+        public const string SpikePairPart = "spikepair";
+
+        /// <summary>Пластина на брусі стрілки під гостряки: від рамної рейки до рамної.</summary>
+        public const string SlidePlatePart = "slideplate";
+
+        /// <summary>Головка болта на шийці рейки.</summary>
+        public const string BoltPart = "bolt";
+
+        /// <summary>
+        /// Додає болт у шийку рейки. axis це точка на осі рейки на рівні низу підошви, outward бік, куди
+        /// дивиться головка. Наскрізний болт це два таких: головка з одного боку і гайка з іншого.
+        /// </summary>
+        public void AddBolt(Vec3i chunkCoord, string material, Vec3d axis, Vec3d outward)
+        {
+            AddOutward(chunkCoord, BoltPart, material, axis, outward);
+        }
+
+        /// <summary>
+        /// Додає деталь, що стоїть з одного боку рейки: болт у шийці, костилі з одного боку підошви. axis це
+        /// точка на осі рейки на рівні низу підошви, outward бік, куди деталь дивиться.
+        /// </summary>
+        public void AddOutward(Vec3i chunkCoord, string part, string material, Vec3d axis, Vec3d outward)
+        {
+            // Такі моделі намальовані з боку +X від осі рейки: повертаємо їх цим боком куди треба
+            float yaw = (float)Math.Atan2(-outward.Z, outward.X);
+            AddRailPart(chunkCoord, part, material, axis, new Vec3f(0, yaw, 0));
+        }
+
+        /// <summary>
+        /// Додає металеву деталь рейки з моделі shapes/part: з того самого металу, що й рейка. Малюється тим
+        /// самим рендером, що й шпали, і зникає разом зі шпалами свого чанка.
+        /// </summary>
+        public void AddRailPart(Vec3i chunkCoord, string part, string material, Vec3d position, Vec3f rotation)
+        {
+            string key = "#" + part + "-" + material;
+            if (!sleeperRenderers.TryGetValue(key, out var renderer))
+            {
+                renderer = new SleeperRenderer(capi, TesselatePart(part, material));
+                sleeperRenderers[key] = renderer;
+            }
+            renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+        }
+
+        // Меш деталі з моделі shapes/part, з текстурою потрібного металу. Свого предмета в такої деталі немає:
+        // її не тримають у руках, вона з'являється разом з рейкою. null, якщо моделі немає
+        private MeshData TesselatePart(string name, string material)
+        {
+            var location = new AssetLocation("railworld", "shapes/part/" + name + ".json");
+            Shape shape = capi.Assets.TryGet(location)?.ToObject<Shape>();
+            if (shape == null)
+            {
+                capi.Logger.Error("[RailWorld] немає моделі " + location + ": деталь не малюватиметься");
+                return null;
+            }
+
+            // Та сама текстура, що й у рейки з цього металу (itemtypes/rail.json)
+            var source = new ShapeTextureSource(capi, shape, location.ToString());
+            var texture = new CompositeTexture(new AssetLocation("game", "block/metal/plate/" + material));
+            texture.Bake(capi.Assets);
+            source.textures["metal"] = texture;
+
+            capi.Tesselator.TesselateShape("RailWorld " + name, shape, out MeshData mesh, source);
+            return mesh;
         }
 
         /// <summary>
