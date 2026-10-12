@@ -91,7 +91,15 @@ namespace RailWorld
         /// </summary>
         public MeshData TemplateMesh { get; private set; }
 
-        public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack)
+        /// <summary>
+        /// Скільки варіантів рейки з тією самою моделлю, але різним місцем текстури вздовж неї. Модель рейки це
+        /// шматок у чверть блока, і вздовж він бере чверть текстури; якби всі шматки брали ту саму чверть,
+        /// малюнок повторювався б на кожному. Сусідні шматки беруть варіанти по черзі.
+        /// </summary>
+        public const int Variants = 4;
+
+        /// <param name="variant">Котра за рахунком частина текстури вздовж рейки лягає на цей варіант, з нуля.</param>
+        public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack, int variant = 0)
         {
             this.capi = capi;
 
@@ -108,6 +116,7 @@ namespace RailWorld
             itemMesh = itemMesh.Clone();
 
             TemplateMesh = itemMesh.Clone();
+            ShiftTexture(itemMesh, variant);
 
             TextureId = itemMesh.TextureIds != null && itemMesh.TextureIds.Length > 0
                 ? itemMesh.TextureIds[0]
@@ -121,7 +130,75 @@ namespace RailWorld
             }
         }
 
-        public void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape = null)
+        // Зсуває текстуру вздовж рейки на variant її частин. Яка вісь текстури йде вздовж рейки, у кожної грані
+        // своя: на боках одна, зверху інша, тож це видно лише з самої грані. Торці не чіпаються. Зсув не може
+        // вивести грань за межі текстури: в атласі поруч лежить чужа
+        private static void ShiftTexture(MeshData mesh, int variant)
+        {
+            if (variant <= 0 || mesh.VerticesCount == 0) return;
+
+            // Межі текстури в атласі невідомі, відомі лише координати, які модель з неї бере. Початок текстури
+            // це найменші з них, розмір найбільші, округлені вгору до цілого числа частин
+            float[] low = { float.MaxValue, float.MaxValue }, high = { float.MinValue, float.MinValue };
+            for (int v = 0; v < mesh.VerticesCount; v++)
+            {
+                for (int axis = 0; axis < 2; axis++)
+                {
+                    low[axis] = Math.Min(low[axis], mesh.Uv[v * 2 + axis]);
+                    high[axis] = Math.Max(high[axis], mesh.Uv[v * 2 + axis]);
+                }
+            }
+
+            // Грань це чотири вершини підряд
+            for (int face = 0; face + 3 < mesh.VerticesCount; face += 4)
+            {
+                float zLow = float.MaxValue, zHigh = float.MinValue;
+                for (int n = 0; n < 4; n++)
+                {
+                    float z = mesh.xyz[(face + n) * 3 + 2];
+                    zLow = Math.Min(zLow, z);
+                    zHigh = Math.Max(zHigh, z);
+                }
+                // Торець: уздовж рейки він не тягнеться
+                if (zHigh - zLow < 1e-5) continue;
+
+                // Вісь текстури, що міняється разом з місцем уздовж рейки
+                float zMiddle = (zLow + zHigh) / 2;
+                int along = -1;
+                float span = 0, start = 0;
+                for (int axis = 0; axis < 2; axis++)
+                {
+                    float atStart = 0, atEnd = 0, least = float.MaxValue;
+                    int startCount = 0, endCount = 0;
+                    for (int n = 0; n < 4; n++)
+                    {
+                        float uv = mesh.Uv[(face + n) * 2 + axis];
+                        least = Math.Min(least, uv);
+                        if (mesh.xyz[(face + n) * 3 + 2] < zMiddle) { atStart += uv; startCount++; }
+                        else { atEnd += uv; endCount++; }
+                    }
+                    if (startCount == 0 || endCount == 0) continue;
+
+                    float change = Math.Abs(atEnd / endCount - atStart / startCount);
+                    if (change <= span) continue;
+                    span = change;
+                    start = least;
+                    along = axis;
+                }
+                if (along < 0 || span < 1e-7) continue;
+
+                // Скільки таких частин уміщається в текстуру від місця цієї грані до її кінця
+                int total = (int)Math.Ceiling((high[along] - low[along]) / span - 1e-3);
+                int room = total - (int)Math.Round((start - low[along]) / span);
+                if (room <= 1) continue;
+
+                float shift = variant % room * span;
+                for (int n = 0; n < 4; n++) mesh.Uv[(face + n) * 2 + along] += shift;
+            }
+        }
+
+        /// <summary>Ставить один з двох шматків рейки секції: piece 0 від початку до середини, 1 від середини до кінця.</summary>
+        public void AddRailPiece(Vec3i chunkCoord, Section section, bool left, RailShape shape, int piece)
         {
             float sign = left ? 1f : -1f;
             float offset = section.TrackWidth / 2f * sign;
@@ -139,8 +216,8 @@ namespace RailWorld
                 widths[1] = (shape.Width[1] + shape.Width[2]) / 2;
             }
 
-            AddPiece(chunkCoord, BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
-            AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
+            if (piece == 0) AddPiece(chunkCoord, BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
+            else AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
         }
 
         private void AddPiece(Vec3i chunkCoord, RailInstanceData piece)

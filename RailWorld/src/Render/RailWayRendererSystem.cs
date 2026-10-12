@@ -224,13 +224,8 @@ void main()
         {
             if (parts == null || parts.Count == 0) return;
 
-            if (!railRenderers.TryGetValue(material, out var renderer))
-            {
-                ItemStack stack = CreateStack("rail", material);
-                if (stack == null) return;
-                renderer = new RailSectionRenderer(capi, stack);
-                railRenderers[material] = renderer;
-            }
+            RailSectionRenderer renderer = RailRenderer(material, 0);
+            if (renderer == null) return;
 
             if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
             string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}{tag}";
@@ -250,20 +245,33 @@ void main()
 
             string material = section.GetMaterial(left ? SectionPart.FirstRail : SectionPart.SecondRail) ?? "iron";
 
-            if (!railRenderers.TryGetValue(material, out var renderer))
+            // Два шматки секції беруть текстуру з різних її частин, а сусідня секція з двох наступних: уздовж
+            // колії виходить 1-2-3-4. Номери секцій, покладених одним маршрутом, ідуть підряд
+            for (int piece = 0; piece < 2; piece++)
             {
-                ItemStack stack = CreateStack("rail", material);
-                if (stack == null) return;
-                renderer = new RailSectionRenderer(capi, stack);
-                railRenderers[material] = renderer;
+                int variant = (section.IndexInChunk * 2 + piece) % RailSectionRenderer.Variants;
+                RailRenderer(material, variant)?.AddRailPiece(chunkCoord, section, left, shape, piece);
             }
-            renderer.AddRail(chunkCoord, index, section, left, shape);
+        }
+
+        // Рендер рейок з цього металу, з текстурою з variant-ї її частини вздовж рейки. null, якщо предмета немає
+        private RailSectionRenderer RailRenderer(string material, int variant)
+        {
+            string key = material + "#" + variant;
+            if (railRenderers.TryGetValue(key, out var renderer)) return renderer;
+
+            ItemStack stack = CreateStack("rail", material);
+            if (stack == null) return null;
+            renderer = new RailSectionRenderer(capi, stack, variant);
+            railRenderers[key] = renderer;
+            return renderer;
         }
 
         public void RemoveRailChunk(Vec3i chunkCoord)
         {
             ClearRails(chunkCoord);
             bladeRenderer?.RemoveChunk(chunkCoord);
+            leverRenderer?.RemoveChunk(chunkCoord);
         }
 
         // Прибирає звичайні рейки чанка. Деталі стрілок лишаються: вони перебудовуються окремо
