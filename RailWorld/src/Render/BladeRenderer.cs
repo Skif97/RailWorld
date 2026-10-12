@@ -55,9 +55,10 @@ namespace RailWorld
         // чверть блока; між ними лінія гостряка веде плавна крива, і частіший поділ робить дугу гладкою
         private const int Subdivisions = 3;
 
-        // На скільки відрізків гостряка розтягується один повтор текстури рейки вздовж нього. Відрізок
-        // короткий, дванадцята частина блока, і якби текстура повторювалася на кожному, вона рябіла б
-        private const int TextureSlices = 5;
+        // Скільки блоків уздовж деталі займає один повтор текстури рейки: стільки ж, скільки у звичайної рейки
+        // (shapes/item/rail.json, 32 пікселі на 16 вокселів). Текстура лягає за справжньою довжиною, а не
+        // порівну на кожен відрізок між перерізами: перерізи стоять нерівно, біля жолобів і торців густо
+        private const double TextureLength = 1;
 
         // Відбиток вхідних даних деталі: якщо він той самий, що й минулого разу, меш вийде той самий,
         // і збирати його заново не треба. Числа змішуються по черзі (FNV-1a)
@@ -159,7 +160,8 @@ namespace RailWorld
             {
                 List<LoftStation> stations = part.Stations;
                 int count = stations[0].Points.Length;
-                int sliceNumber = 0;
+                // Скільки блоків деталі вже вкрито поточним повтором текстури
+                double covered = 0;
 
                 for (int i = 0; i + 1 < stations.Count; i++)
                 {
@@ -170,8 +172,14 @@ namespace RailWorld
                     for (int m = 0; m < Subdivisions; m++)
                     {
                         double from = (double)m / Subdivisions, to = (double)(m + 1) / Subdivisions;
-                        int slice = sliceNumber++ % TextureSlices;
-                        float uFrom = u0 + (u1 - u0) * slice / TextureSlices, uTo = u0 + (u1 - u0) * (slice + 1) / TextureSlices;
+
+                        // Довжина відрізка по середній лінії контуру. Текстура в атласі не повторюється сама,
+                        // тож відрізок, що не вміщається в залишок повтору, починає новий: там шов
+                        double length = Math.Min(Between(a, b, count / 2, from).DistanceTo(Between(a, b, count / 2, to)), TextureLength);
+                        if (covered + length > TextureLength) covered = 0;
+                        float uFrom = u0 + (u1 - u0) * (float)(covered / TextureLength);
+                        float uTo = u0 + (u1 - u0) * (float)((covered + length) / TextureLength);
+                        covered += length;
 
                         for (int k = 0; k < count; k++)
                         {
