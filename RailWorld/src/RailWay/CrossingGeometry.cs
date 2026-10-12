@@ -462,15 +462,14 @@ namespace RailWorld.src.RailWay
                             last = Math.Max(last, cut.To.Farthest);
                         }
                     }
-                    // Ділянка накриває і кінці контррейок на плечах: вони зрізані навскоси, і рівний край ділянки
-                    // між ними й розривами перетнувся б з ними
+                    // Ділянка накриває і кінці контррейок на плечах
                     double? middle = Meet(axes[k].Frames, side * gauge, axes[other].Frames, 0, near);
                     for (int across = -1; across <= 1 && middle != null; across += 2)
                     {
-                        RailEdge far = LegEnd(rail, At(across * (gauge + head)), middle.Value);
+                        RailEdge far = LegEnd(rail, At(across * (gauge + foot)), middle.Value);
                         if (far == null) continue;
-                        first = Math.Min(first, far.Nearest);
-                        last = Math.Max(last, far.Farthest);
+                        first = Math.Min(first, far.Middle);
+                        last = Math.Max(last, far.Middle);
                     }
                     int sectionFrom = GameMath.Clamp((int)Math.Floor(first / 2), 0, tracks[k].Count - 1);
                     int sectionTo = GameMath.Clamp((int)Math.Floor(last / 2), 0, tracks[k].Count - 1);
@@ -521,7 +520,8 @@ namespace RailWorld.src.RailWay
             {
                 RailEdge headFrom = at(across * (gauge + head));
                 if (headFrom == null) continue;
-                RailEdge far = LegEnd(rail, headFrom, middle);
+                RailEdge far = LegEnd(rail, at(across * (gauge + foot)), middle);
+                if (far == null) continue;
 
                 Add(rail.Of(RailPiece.GuardHead), Span(headFrom, false, far, true));
                 Add(rail.Of(RailPiece.GuardWeb), Span(at(across * (gauge + web)), false, far, true));
@@ -532,14 +532,20 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Дальній кінець контррейки на плечі: за GuardLeg від місця headFrom, де вона впирається в рейку іншої
-        // колії, у бік від середини вузла. Зрізано так само, як ближній: уздовж рейки іншої колії. Під прямим
-        // кутом це рівний торець, під гострим косий; рівний там перетнувся б із косими краями поруч
-        private static RailEdge LegEnd(CrossingRail rail, RailEdge headFrom, double middle)
+        // Дальній, вільний кінець контррейки на плечі. Вільні кінці завжди зрізані під прямим кутом. Ближній
+        // кінець упирається в рейку іншої колії і зрізаний по ній, тобто навскоси; butt це найдальший з таких
+        // зрізів, по підошві. Довжину GuardLeg відміряно від найдальшої його точки на всю ширину рейки з
+        // контррейкою: так рівний торець ніде не перетинається з косим зрізом, а найкоротший бік контррейки
+        // має довжину GuardLeg. Під гострим кутом другий її бік довший
+        private static RailEdge LegEnd(CrossingRail rail, RailEdge butt, double middle)
         {
-            if (headFrom == null) return null;
-            double length = Advance(rail.Frames, headFrom.Middle, headFrom.Middle > middle ? GuardLeg : -GuardLeg) - headFrom.Middle;
-            return headFrom.Moved(length);
+            if (butt == null) return null;
+
+            // Упоперек рейки: від зовнішнього краю підошви ходової рейки до внутрішнього краю підошви контррейки
+            double outer = butt.At(rail.Side * RailProfile.FootHalfWidth), inner = butt.At(-rail.Side * Reach);
+            bool away = butt.Middle > middle;
+            double from = away ? Math.Max(outer, inner) : Math.Min(outer, inner);
+            return RailEdge.Square(Advance(rail.Frames, from, away ? GuardLeg : -GuardLeg));
         }
 
         private static void Add(List<RailSpan> spans, RailSpan span)

@@ -416,12 +416,19 @@ namespace RailWorld.Tests
                 Assert.Equal(3, webs.Count);
                 Assert.Equal(3, feet.Count);
 
-                // На плечах пів блока, з торцем назовні; до рейки іншої колії впритул, без торця. Дальній кінець
-                // зрізано так само, як ближній: уздовж рейки іншої колії
-                Assert.InRange(Gap(rail, heads[0].From, heads[0].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + 0.01);
-                Assert.InRange(Gap(rail, heads[2].From, heads[2].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + 0.01);
-                Assert.Equal(heads[0].To.Plus - heads[0].To.Minus, heads[0].From.Plus - heads[0].From.Minus, 9);
-                Assert.Equal(heads[2].From.Plus - heads[2].From.Minus, heads[2].To.Plus - heads[2].To.Minus, 9);
+                // На плечах до рейки іншої колії впритул, без торця; вільний кінець зрізано під прямим кутом,
+                // з торцем. Найкоротший бік контррейки пів блока; під гострим кутом другий бік довший, бо ближній
+                // кінець косий
+                double skew = 0.45 / Math.Tan(angle * Math.PI / 180);
+                Assert.InRange(Gap(rail, heads[0].From, heads[0].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + skew + 0.05);
+                Assert.InRange(Gap(rail, heads[2].From, heads[2].To), CrossingGeometry.GuardLeg - 0.01, CrossingGeometry.GuardLeg + skew + 0.05);
+                Assert.Equal(heads[0].From.Minus, heads[0].From.Plus);
+                Assert.Equal(heads[2].To.Minus, heads[2].To.Plus);
+
+                // Рівний торець ніде не перетинається з косим зрізом ближнього кінця
+                double outer = rail.Side * RailProfile.FootHalfWidth, inner = -rail.Side * CrossingGeometry.Reach;
+                Assert.True(heads[0].From.Plus <= Math.Min(heads[0].To.At(outer), heads[0].To.At(inner)));
+                Assert.True(heads[2].To.Plus >= Math.Max(heads[2].From.At(outer), heads[2].From.At(inner)));
                 Assert.True(heads[0].CapFrom && heads[2].CapTo && !heads[0].CapTo && !heads[2].CapFrom);
 
                 // Усередині: контррейки основної колії на всю раму, другої між ними
