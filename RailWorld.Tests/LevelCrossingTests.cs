@@ -44,6 +44,43 @@ namespace RailWorld.Tests
             }
         }
 
+        private static RoutePoint Sloped(double x, double y, double z, double tangentX, double tangentY, double tangentZ)
+        {
+            return new RoutePoint { Position = new Vec3d(x, y, z), Tangent = new Vec3d(tangentX, tangentY, tangentZ).Normalize() };
+        }
+
+        [Fact]
+        public void RouteAcrossASteepCurveHasNoStepsBetweenItsSections()
+        {
+            // Колія круто спускається і водночас повертає: площини її сусідніх секцій збоку від осі розходяться
+            // по висоті. Маршрут перетинає її навскоси, тобто проходить над кількома секціями поспіль
+            List<Section> track = Lay(Sloped(0, 20, 0, 1, -0.6, 0), Sloped(10, 13.5, 5, 0.6, -0.55, 0.8));
+            Vec3d middle = track[track.Count / 2].GetGlobalPos();
+            var route = new List<RoutePoint>
+            {
+                Sloped(middle.X - 6 * 0.99, middle.Y, middle.Z + 6 * 0.15, 0.99, 0, -0.15),
+                Sloped(middle.X + 6 * 0.99, middle.Y, middle.Z - 6 * 0.15, 0.99, 0, -0.15)
+            };
+
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, Resolve, out string conflict, SectionsIn);
+            Assert.True(conflict == null, conflict);
+
+            // Над колією висота маршруту міняється плавно: ухил від кроку до кроку не стрибає. Зовсім рівним
+            // він не буває: полотно між сусідніми точками колії складене з рівних смужок, і на їхніх межах
+            // ухил навскоси трохи ламається (тут до 0.008). З площинами секцій замість полотна було 0.016
+            double worst = 0;
+            int over = 0;
+            for (int i = 1; i + 1 < points.Count; i++)
+            {
+                if (points[i].position.HorizontalSquareDistanceTo(middle.X, middle.Z) > 1.2 * 1.2) continue;
+                over++;
+                double before = points[i].position.Y - points[i - 1].position.Y, after = points[i + 1].position.Y - points[i].position.Y;
+                worst = Math.Max(worst, Math.Abs(after - before));
+            }
+            Assert.True(over >= 4, "над колією замало точок маршруту: " + over);
+            Assert.True(worst < 0.01, "ухил маршруту над колією стрибає на " + worst.ToString("0.0000"));
+        }
+
         private string ConflictOf(double z)
         {
             // Маршрут на схід уздовж лінії з таким z

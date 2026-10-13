@@ -591,8 +591,12 @@ namespace RailWorld.src.RailWay
 
                     Vec3d p = points[i].position;
                     Vec3f travel = points[i].tangent;
+                    // Висота й нахил з полотна колії, спільного для сусідніх секцій: маршрут іде навскоси над
+                    // кількома секціями поспіль, а площини сусідніх секцій на крутій кривій збоку від осі
+                    // розходяться по висоті, і він ліг би сходинками (TrackSurface)
                     Section plane = NearestInChain(crossing.Section, p, resolve);
-                    if (!CrossPlane(plane, p, travel.X, travel.Z, out double planeY, out double cant)) continue;
+                    if (!TrackSurface.At(plane, Neighbour(plane, true, resolve), Neighbour(plane, false, resolve), p, travel.X, travel.Z,
+                        out double planeY, out double cant)) continue;
 
                     if (weight[i] > 0)
                     {
@@ -733,7 +737,15 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
-        // Секція тієї самої колії, що й section, найближча в плані до точки: площина колії міняється вздовж неї
+        // Сусідня секція тієї самої колії з цього кінця; null, якщо колія тут закінчується, розходиться
+        // стрілкою або сусіда не знайти
+        private static Section Neighbour(Section section, bool atStart, Func<SectionLink, Section> resolve)
+        {
+            List<SectionLink> links = section.GetLinks(atStart);
+            return links.Count == 1 && resolve != null ? resolve(links[0]) : null;
+        }
+
+        // Секція тієї самої колії, що й section, найближча в плані до точки: полотно колії міняється вздовж неї
         private static Section NearestInChain(Section section, Vec3d p, Func<SectionLink, Section> resolve)
         {
             Section best = section;
