@@ -312,9 +312,7 @@ namespace RailWorld.src.RailWay
         {
             Vec3d a = first.FullStartPosition, c = second.FullStartPosition;
             Vec3d r = Chord(first), s = Chord(second);
-            double denominator = r.X * s.Z - r.Z * s.X;
-            if (Math.Abs(denominator) < 1e-9) return first.GetGlobalPos();
-            double t = ((c.X - a.X) * s.Z - (c.Z - a.Z) * s.X) / denominator;
+            if (!PlanLines.Meet(a.X, a.Z, r.X, r.Z, c.X, c.Z, s.X, s.Z, out double t, out _)) return first.GetGlobalPos();
             return new Vec3d(a.X + r.X * t, a.Y, a.Z + r.Z * t);
         }
 
@@ -547,10 +545,7 @@ namespace RailWorld.src.RailWay
             az /= acrossLength;
 
             // Пряма бруса проти осі секції
-            double denominator = ax * sz - az * sx;
-            if (Math.Abs(denominator) < 1e-9) return false;
-            double t = ((c.X - own.Middle.X) * sz - (c.Z - own.Middle.Z) * sx) / denominator;
-            double u = ((c.X - own.Middle.X) * az - (c.Z - own.Middle.Z) * ax) / denominator;
+            if (!PlanLines.Meet(own.Middle.X, own.Middle.Z, ax, az, c.X, c.Z, sx, sz, out double t, out double u)) return false;
             if (u < -1e-6 || u > 1 + 1e-6) return false;
 
             Vec3d start = section.FullStartPosition, end = section.FullEndPosition;

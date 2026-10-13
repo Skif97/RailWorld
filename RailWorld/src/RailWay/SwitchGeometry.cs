@@ -166,12 +166,14 @@ namespace RailWorld.src.RailWay
         public static List<RailFrame> RailFrames(Section first, bool switchAtStart, double toward, int sections, Func<SectionLink, Section> resolve)
         {
             var frames = new List<RailFrame>();
-            Section current = first;
-            bool enteredAtStart = switchAtStart;
+            TrackWalker walk = TrackWalker.Entering(first, switchAtStart, resolve);
             Vec3d side = null;
 
             for (int n = 0; n < sections; n++)
             {
+                Section current = walk.Section;
+                bool enteredAtStart = walk.Entered;
+
                 // Три точки секції в порядку від стрілки. Перша збігається з останньою точкою попередньої секції
                 Vec3d[] axis = { current.FullStartPosition, current.GetGlobalPos(), current.FullEndPosition };
                 Vec3f[] normals = { current.StartNormal, current.CenterNormal, current.EndNormal };
@@ -211,12 +213,7 @@ namespace RailWorld.src.RailWay
                 }
 
                 // Наступна секція колії. Якщо колія скінчилася, перерізи закінчуються там само
-                List<SectionLink> links = current.GetLinks(!enteredAtStart);
-                if (links.Count != 1) break;
-                Section next = resolve == null ? null : resolve(links[0]);
-                if (next == null) break;
-                current = next;
-                enteredAtStart = links[0].AtStart;
+                if (!walk.Next()) break;
             }
 
             return frames;

@@ -178,52 +178,10 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static bool Cross(Section a, Section b)
         {
-            if (a == b || Related(a, b)) return false;
             // Прокладання лишає лише два випадки: колії в одній площині або щонайменше за CrossingClearance
             // одна над одною. Межа посередині між ними відрізняє їх із запасом
             if (Math.Abs(a.GetGlobalPos().Y - b.GetGlobalPos().Y) >= RouteCurve.CrossingClearance / 2) return false;
-
-            Vec3d p = a.FullStartPosition, q = b.FullStartPosition;
-            double rx = a.FullEndPosition.X - p.X, rz = a.FullEndPosition.Z - p.Z, sx = b.FullEndPosition.X - q.X, sz = b.FullEndPosition.Z - q.Z;
-            double denominator = rx * sz - rz * sx;
-            if (Math.Abs(denominator) < 1e-12) return false;
-
-            double t = ((q.X - p.X) * sz - (q.Z - p.Z) * sx) / denominator;
-            double u = ((q.X - p.X) * rz - (q.Z - p.Z) * rx) / denominator;
-            return Within(a, t) && Within(b, u);
-        }
-
-        // Чи місце перетину лежить на секції: at це частка її довжини. Колії можуть перетнутися точно на стику
-        // секцій, тож кінець теж рахується, але лише якщо колія за ним продовжується: колія, що впирається
-        // кінцем у бік іншої, її не перетинає
-        private static bool Within(Section section, double at)
-        {
-            const double edge = 1e-3;
-            if (at < -edge || at > 1 + edge) return false;
-            if (at <= edge) return section.GetLinks(true).Count > 0;
-            if (at >= 1 - edge) return section.GetLinks(false).Count > 0;
-            return true;
-        }
-
-        // Чи дві секції належать одній колії або одній стрілці: сусідні, або мають спільну сусідню.
-        // Такі сходяться кінцями, але це не перетин
-        private static bool Related(Section a, Section b)
-        {
-            for (int end = 0; end < 2; end++)
-            {
-                foreach (SectionLink mine in a.GetLinks(end == 0))
-                {
-                    if (mine.PointsTo(b)) return true;
-                    for (int otherEnd = 0; otherEnd < 2; otherEnd++)
-                    {
-                        foreach (SectionLink theirs in b.GetLinks(otherEnd == 0))
-                        {
-                            if (mine.ChunkX == theirs.ChunkX && mine.ChunkY == theirs.ChunkY && mine.ChunkZ == theirs.ChunkZ && mine.Index == theirs.Index) return true;
-                        }
-                    }
-                }
-            }
-            return false;
+            return AxisCrossing.OfLaid(a, b);
         }
 
         /// <summary>
@@ -333,26 +291,15 @@ namespace RailWorld.src.RailWay
         private static Side Walk(Section center, bool exitAtStart, Func<SectionLink, Section> resolve)
         {
             var side = new Side();
-            Section current = center;
+            TrackWalker walk = TrackWalker.Leaving(center, exitAtStart, resolve);
             double run = 0;
-            while (side.Steps.Count < MaxWalk && run <= RouteCurve.MaxNodeReach + MarginSections)
+            // Колія скінчилася або розходиться стрілкою: далі це вже не вона
+            while (side.Steps.Count < MaxWalk && run <= RouteCurve.MaxNodeReach + MarginSections && walk.Next())
             {
-                List<SectionLink> links = current.GetLinks(exitAtStart);
-                // Колія скінчилася або розходиться стрілкою: далі це вже не вона
-                if (links.Count != 1) break;
-
-                Section next = resolve(links[0]);
-                if (next == null)
-                {
-                    side.Cut = true;
-                    break;
-                }
-
-                side.Steps.Add(new Step { Section = next, Entered = links[0].AtStart });
-                run += next.FullStartPosition.DistanceTo(next.FullEndPosition);
-                exitAtStart = !links[0].AtStart;
-                current = next;
+                side.Steps.Add(new Step { Section = walk.Section, Entered = walk.Entered });
+                run += walk.Section.FullStartPosition.DistanceTo(walk.Section.FullEndPosition);
             }
+            side.Cut = walk.Stop == WalkStop.Unread;
             return side;
         }
     }

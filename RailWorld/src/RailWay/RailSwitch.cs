@@ -285,26 +285,19 @@ namespace RailWorld.src.RailWay
                 int zone = branch.ZoneSections;
                 int length = zone + SwitchZone.ClearSections;
 
-                Section current = mine;
-                bool entered = mineAtStart;
+                TrackWalker walk = TrackWalker.Entering(mine, mineAtStart, resolve);
                 for (int number = 1; number <= length; number++)
                 {
-                    branch.Members.Add(new SectionLink(current, entered));
+                    Section current = walk.Section;
+                    branch.Members.Add(new SectionLink(current, walk.Entered));
                     if (number <= zone && (!current.RailsInstalled || !current.SleeperInstalled)) partsInPlace = false;
 
-                    List<SectionLink> ahead = current.GetLinks(!entered);
                     // Гілка скінчилася або сама розходиться: далі це вже не ця стрілка
-                    if (ahead.Count != 1) break;
+                    if (walk.Next()) continue;
 
-                    Section next = resolve(ahead[0]);
-                    if (next == null)
-                    {
-                        // Колія далі є, але прочитати її не вдалося
-                        if (number < length) result.Resolved = false;
-                        break;
-                    }
-                    entered = ahead[0].AtStart;
-                    current = next;
+                    // Колія далі є, але прочитати її не вдалося
+                    if (walk.Stop == WalkStop.Unread && number < length) result.Resolved = false;
+                    break;
                 }
 
                 result.Branches.Add(branch);

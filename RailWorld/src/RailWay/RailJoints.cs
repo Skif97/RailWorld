@@ -88,23 +88,16 @@ namespace RailWorld.src.RailWay
         private static int Look(Section section, bool exitAtStart, Func<SectionLink, Section> resolve, out bool joint)
         {
             joint = false;
-            Section current = section;
+            TrackWalker walk = TrackWalker.Leaving(section, exitAtStart, resolve);
             int passed = 0;
-            while (passed < RailSections)
+            while (passed < RailSections && walk.Next())
             {
-                List<SectionLink> links = current.GetLinks(exitAtStart);
-                if (links.Count != 1) break;
-                Section next = resolve == null ? null : resolve(links[0]);
-                if (next == null) break;
-
-                if (next.RailJoint)
+                if (walk.Section.RailJoint)
                 {
                     joint = true;
                     break;
                 }
                 passed++;
-                exitAtStart = !links[0].AtStart;
-                current = next;
             }
             return passed;
         }

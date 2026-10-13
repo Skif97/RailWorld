@@ -152,11 +152,7 @@ namespace RailWorld.src.RailWay
             double half = timber.Length / 2;
             double ax = timber.Position.X - timber.Across.X * half, az = timber.Position.Z - timber.Across.Z * half;
             double sx = timber.Across.X * timber.Length, sz = timber.Across.Z * timber.Length;
-            double denominator = rx * sz - rz * sx;
-            if (Math.Abs(denominator) < 1e-12) return false;
-
-            double t = ((ax - from.X) * sz - (az - from.Z) * sx) / denominator;
-            double u = ((ax - from.X) * rz - (az - from.Z) * rx) / denominator;
+            if (!PlanLines.Meet(from.X, from.Z, rx, rz, ax, az, sx, sz, out double t, out double u)) return false;
             if (t < 0 || t >= 1 || u < 0 || u > 1) return false;
 
             at = new Vec3d(from.X + rx * t, from.Y + (to.Y - from.Y) * t, from.Z + rz * t);

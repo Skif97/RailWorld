@@ -458,12 +458,12 @@ namespace RailWorld.src.RailWay
                 }
 
                 int to = from;
-                bool crossed = facts[from].Crossed.Count > 0;
+                bool crossed = facts[from].Crossed;
                 while (to + 1 < planned.Count && facts[to + 1].InPlane.Count > 0
                     && planned[to].FullEndPosition.DistanceTo(planned[to + 1].FullStartPosition) <= PositionTolerance)
                 {
                     to++;
-                    crossed |= facts[to].Crossed.Count > 0;
+                    crossed |= facts[to].Crossed;
                 }
 
                 for (int i = from; crossed && i <= to; i++) inNode[i] = true;
@@ -556,17 +556,15 @@ namespace RailWorld.src.RailWay
             int best = 0;
             foreach (SectionLink meeting in Meeting(section, atStart, track))
             {
-                Section current = resolve(meeting);
-                bool entered = meeting.AtStart;
-                int count = 0;
+                Section first = resolve(meeting);
+                if (first == null) continue;
 
-                while (current != null && count <= MaxOverlapSections && TrackSurvey.Examine(current, track).LiesOnTrack)
+                TrackWalker walk = TrackWalker.Entering(first, meeting.AtStart, resolve);
+                int count = 0;
+                while (count <= MaxOverlapSections && TrackSurvey.Examine(walk.Section, track).LiesOnTrack)
                 {
                     count++;
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    entered = ahead[0].AtStart;
-                    current = resolve(ahead[0]);
+                    if (!walk.Next()) break;
                 }
                 best = Math.Max(best, count);
             }
@@ -603,6 +601,10 @@ namespace RailWorld.src.RailWay
 
         // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
         // і якщо ні, скільки блоків від краю тіла до її початку
+        // Скільки секцій щонайбільше проходить пошук перетинів біля стрілки в один бік: тіло найпологішої
+        // стрілки і найдовший вузол перетину за ним
+        private const int MaxBodyWalk = 128;
+
         private class BodyStep
         {
             public Section Section;
@@ -627,19 +629,19 @@ namespace RailWorld.src.RailWay
             // Іде по колії від first, у яку зайшли кінцем entered; перші bodySections секцій це тіло стрілки
             void Walk(Section first, bool entered, int bodySections)
             {
-                Section current = first;
-                double at = 0;
-                for (int n = 0; n < 128 && current != null && at <= reach; n++)
-                {
-                    bool inBody = n < bodySections;
-                    steps.Add(new BodyStep { Section = current, Entered = entered, InBody = inBody, At = at });
-                    own.Add(Key(current));
-                    if (!inBody) at += current.GetEndPosition(entered).DistanceTo(current.GetEndPosition(!entered));
+                if (first == null) return;
 
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    entered = ahead[0].AtStart;
-                    current = resolve(ahead[0]);
+                TrackWalker walk = TrackWalker.Entering(first, entered, resolve);
+                double at = 0;
+                for (int n = 0; n < MaxBodyWalk && at <= reach; n++)
+                {
+                    Section current = walk.Section;
+                    bool inBody = n < bodySections;
+                    steps.Add(new BodyStep { Section = current, Entered = walk.Entered, InBody = inBody, At = at });
+                    own.Add(Key(current));
+                    if (!inBody) at += current.FullStartPosition.DistanceTo(current.FullEndPosition);
+
+                    if (!walk.Next()) break;
                 }
             }
 
@@ -662,7 +664,7 @@ namespace RailWorld.src.RailWay
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
                     if (own.Contains(Key(other))) continue;
                     if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
-                    if (!RouteCurve.Crosses(from, to, other, out _, out _)) continue;
+                    if (!AxisCrossing.OfLaid(step.Section, other)) continue;
 
                     if (step.InBody) return true;
                     crossed = true;
@@ -790,23 +792,14 @@ namespace RailWorld.src.RailWay
             double[] sideways = new double[2];
             for (int i = 0; i < 2; i++)
             {
-                Section current = resolve(links[i]);
-                bool entered = links[i].AtStart;
-                if (current == null) return null;
-                own?.Add(SectionKey(current));
+                Section first = resolve(links[i]);
+                if (first == null) return null;
+                own?.Add(SectionKey(first));
 
-                for (int step = 1; step < LeverLookAhead; step++)
-                {
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    Section next = resolve(ahead[0]);
-                    if (next == null) break;
-                    entered = ahead[0].AtStart;
-                    current = next;
-                    own?.Add(SectionKey(current));
-                }
+                TrackWalker walk = TrackWalker.Entering(first, links[i].AtStart, resolve);
+                for (int step = 1; step < LeverLookAhead && walk.Next(); step++) own?.Add(SectionKey(walk.Section));
 
-                Vec3d far = current.GetEndPosition(!entered);
+                Vec3d far = walk.Section.GetEndPosition(!walk.Entered);
                 sideways[i] = (far.X - joint.X) * normal.X + (far.Z - joint.Z) * normal.Z;
             }
             return sideways;
@@ -835,15 +828,14 @@ namespace RailWorld.src.RailWay
             own.Add(SectionKey(trunk));
             foreach (SectionLink link in trunk.GetLinks(atStart))
             {
-                Section current = resolve(link);
-                bool entered = link.AtStart;
-                for (int step = 0; step < LeverLookAhead && current != null; step++)
+                Section first = resolve(link);
+                if (first == null) continue;
+
+                TrackWalker walk = TrackWalker.Entering(first, link.AtStart, resolve);
+                for (int step = 0; step < LeverLookAhead; step++)
                 {
-                    own.Add(SectionKey(current));
-                    List<SectionLink> ahead = current.GetLinks(!entered);
-                    if (ahead.Count != 1) break;
-                    entered = ahead[0].AtStart;
-                    current = resolve(ahead[0]);
+                    own.Add(SectionKey(walk.Section));
+                    if (!walk.Next()) break;
                 }
             }
             return LeverSideFree(trunk, atStart, side, own, track);

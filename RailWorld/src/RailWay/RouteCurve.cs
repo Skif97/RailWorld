@@ -222,6 +222,10 @@ namespace RailWorld.src.RailWay
         /// <summary>Найгостріший кут, під яким маршрут може перетнути іншу колію, градуси.</summary>
         public const double MinCrossingAngleDeg = 15;
 
+        // Два перетини маршруту ближче один до одного, ніж це, блоків уздовж нього, це один і той самий перетин,
+        // знайдений двічі. Справжні два перетини так близько не стоять: їхні вузли наклалися б
+        private const double SamePlace = 0.01;
+
         /// <summary>
         /// Якщо колія, яку маршрут перетинає в плані, вища чи нижча за нього менше ніж на стільки блоків,
         /// це перетин в одному рівні, і маршрут вирівнюється по ній. Якщо більше, маршрут проходить над нею
@@ -284,23 +288,16 @@ namespace RailWorld.src.RailWay
             for (int end = 0; end < 2; end++)
             {
                 var chain = new List<Section>();
-                Section current = crossing.Section;
-                bool exitAtStart = end == 0;
+                TrackWalker walk = TrackWalker.Leaving(crossing.Section, end == 0, resolve);
                 while (chain.Count < MaxNodeSections)
                 {
-                    List<SectionLink> links = current.GetLinks(exitAtStart);
-                    if (links.Count >= 2)
+                    if (walk.Next())
                     {
-                        crossing.Fork[end] = links;
-                        break;
+                        chain.Add(walk.Section);
+                        continue;
                     }
-                    if (links.Count != 1 || resolve == null) break;
-                    Section next = resolve(links[0]);
-                    if (next == null) break;
-
-                    chain.Add(next);
-                    exitAtStart = !links[0].AtStart;
-                    current = next;
+                    if (walk.Stop == WalkStop.Fork) crossing.Fork[end] = walk.Ahead;
+                    break;
                 }
                 crossing.Chain[end] = chain;
             }
@@ -524,6 +521,10 @@ namespace RailWorld.src.RailWay
                         continue;
                     }
 
+                    // Перетин рівно на стику знаходиться двічі: на обох секціях біля стику і на обох шматках
+                    // маршруту, якщо стик припав на точку нарізки. Це один перетин
+                    if (crossings.Exists(found => Math.Abs(found.At - at) < SamePlace)) continue;
+
                     // Вузол перетину тягнеться вздовж обох колій від місця, де перетнулися осі: на косому перетині
                     // на кілька блоків. Що він зачіпає на перетнутій колії, пам'ятається, доки маршрут у ньому той самий
                     var crossing = new Crossing { Hit = hit, At = at, Section = section, Angle = angle, Where = where, Index = k };
@@ -711,32 +712,6 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Чи відрізок від from до to перетинає в плані вісь секції, і де: t це частка відрізка, angle кут між ними.
-        // Спільний кінець двох секцій однієї колії і спільний початок двох гілок стрілки це не перетин
-        internal static bool Crosses(Vec3d from, Vec3d to, Section other, out double t, out double angle)
-        {
-            t = 0;
-            angle = 0;
-            Vec3d c = other.FullStartPosition, d = other.FullEndPosition;
-            double rx = to.X - from.X, rz = to.Z - from.Z, sx = d.X - c.X, sz = d.Z - c.Z;
-            double denominator = rx * sz - rz * sx;
-            if (Math.Abs(denominator) < 1e-12) return false;
-
-            t = ((c.X - from.X) * sz - (c.Z - from.Z) * sx) / denominator;
-            double u = ((c.X - from.X) * rz - (c.Z - from.Z) * rx) / denominator;
-            const double edge = 1e-4;
-            if (t <= edge || t >= 1 - edge || u <= edge || u >= 1 - edge)
-            {
-                // На самому стику секцій перетин належить рівно одній з них: тій, де він на початку
-                bool onJoint = (t > -edge && t <= edge && u > edge && u < 1 - edge) || (u > -edge && u <= edge && t > edge && t < 1 - edge);
-                if (!onJoint) return false;
-            }
-
-            double cos = Math.Abs(rx * sx + rz * sz) / Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
-            angle = Math.Acos(GameMath.Clamp(cos, -1, 1));
-            return true;
-        }
-
         // Сусідня секція тієї самої колії з цього кінця; null, якщо колія тут закінчується, розходиться
         // стрілкою або сусіда не знайти
         private static Section Neighbour(Section section, bool atStart, Func<SectionLink, Section> resolve)
@@ -754,25 +729,16 @@ namespace RailWorld.src.RailWay
 
             for (int end = 0; end < 2; end++)
             {
-                Section current = section;
-                bool exitAtStart = end == 0;
-                for (int hop = 0; hop < MaxNodeSections; hop++)
+                TrackWalker walk = TrackWalker.Leaving(section, end == 0, resolve);
+                for (int hop = 0; hop < MaxNodeSections && walk.Next(); hop++)
                 {
-                    List<SectionLink> links = current.GetLinks(exitAtStart);
-                    if (links.Count != 1) break;
-                    Section next = resolve(links[0]);
-                    if (next == null) break;
-
-                    double distance = PlanDistance(next, p);
+                    double distance = PlanDistance(walk.Section, p);
                     if (distance < bestDistance)
                     {
-                        best = next;
+                        best = walk.Section;
                         bestDistance = distance;
                     }
                     else if (distance > bestDistance + 1) break;
-
-                    current = next;
-                    exitAtStart = !links[0].AtStart;
                 }
             }
             return best;
@@ -995,6 +961,13 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
+        /// <summary>
+        /// Через скільки секцій покладеної колії щонайбільше переступає одна точка нарізки маршруту, що йде
+        /// поруч із нею. Точки стоять через чверть блока, секція це пів блока, тож зазвичай жодної чи одну;
+        /// запас на те, що колії розходяться під кутом.
+        /// </summary>
+        internal const int MaxHopsPerPoint = 8;
+
         // Крок 1: від стрілки поверх основної колії, поки маршрут із неї не зійде
         private static Follow FollowOnTrack(List<PointOnBezierCurve> points, bool fromStart, Section track, bool jointAtStart,
             Func<SectionLink, Section> resolve, double[] weight, double[] trackCant, ref string conflict)
@@ -1004,8 +977,8 @@ namespace RailWorld.src.RailWay
             int step = fromStart ? 1 : -1;
 
             Follow follow = new Follow { Virtual = anchor, Plane = track };
-            Section current = track;
-            bool enteredAtStart = jointAtStart;
+            // Основною колією йдемо так, як стоять її стрілки
+            TrackWalker walk = TrackWalker.Riding(track, jointAtStart, resolve);
             Section behind = null;
 
             for (int i = anchor, guard = 0; i >= 0 && i < count; i += step, guard++)
@@ -1020,28 +993,26 @@ namespace RailWorld.src.RailWay
 
                 // Переходимо на наступну секцію основної колії, поки точка лежить за кінцем поточної
                 bool ended = false;
-                for (int hop = 0; hop < 8; hop++)
+                for (int hop = 0; hop < MaxHopsPerPoint; hop++)
                 {
-                    if (Along(current, enteredAtStart, p, out double length, out _) <= length + 1e-6) break;
+                    if (Along(walk.Section, walk.Entered, p, out double length, out _) <= length + 1e-6) break;
 
-                    SectionLink link = current.GetActiveLink(!enteredAtStart);
-                    Section next = link == null || resolve == null ? null : resolve(link);
-                    if (next == null)
+                    Section passed = walk.Section;
+                    if (!walk.Next())
                     {
                         ended = true;
                         break;
                     }
-                    behind = current;
-                    current = next;
-                    enteredAtStart = link.AtStart;
+                    behind = passed;
                 }
+                Section current = walk.Section;
+                bool enteredAtStart = walk.Entered;
 
                 // Край стрілки там, де габарити двох колій перестають перекриватися. Маршрут тут це шматок
                 // від цієї точки нарізки до сусідньої; основна колія це секція навпроти і її сусіди
                 int neighbour = i + step >= 0 && i + step < count ? i + step : i - step;
                 Vec3d q = points[neighbour].position;
-                SectionLink aheadLink = current.GetActiveLink(!enteredAtStart);
-                Section ahead = aheadLink == null || resolve == null ? null : resolve(aheadLink);
+                Section ahead = walk.Peek();
                 bool lies = OnFootprint(p, q, current) || (behind != null && OnFootprint(p, q, behind)) || (ahead != null && OnFootprint(p, q, ahead));
 
                 if (ended || !lies)

@@ -609,10 +609,7 @@ namespace RailWorld.src.RailWay
                     double qx = b[j].Center.X + b[j].Side.X * shiftB, qz = b[j].Center.Z + b[j].Side.Z * shiftB;
                     double sx = b[j + 1].Center.X + b[j + 1].Side.X * shiftB - qx, sz = b[j + 1].Center.Z + b[j + 1].Side.Z * shiftB - qz;
 
-                    double denominator = rx * sz - rz * sx;
-                    if (Math.Abs(denominator) < 1e-12) continue;
-                    double t = ((qx - px) * sz - (qz - pz) * sx) / denominator;
-                    double u = ((qx - px) * rz - (qz - pz) * rx) / denominator;
+                    if (!PlanLines.Meet(px, pz, rx, rz, qx, qz, sx, sz, out double t, out double u)) continue;
                     // Стик двох відрізків належить обом: щілини між ними бути не повинно
                     if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) continue;
 

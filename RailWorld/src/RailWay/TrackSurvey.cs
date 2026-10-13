@@ -13,7 +13,6 @@ namespace RailWorld.src.RailWay
     public class SectionFacts
     {
         private static readonly List<Section> NoSections = new List<Section>();
-        private static readonly List<double> NoAngles = new List<double>();
 
         /// <summary>Така сама секція вже лежить: удруге вона не кладеться.</summary>
         public bool AlreadyLaid;
@@ -35,8 +34,8 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public List<Section> InPlane = NoSections;
 
-        /// <summary>Кути, під якими вісь секції перетинають осі покладених колій на близькій висоті.</summary>
-        public List<double> Crossed = NoAngles;
+        /// <summary>Вісь секції перетинає вісь покладеної колії на близькій висоті.</summary>
+        public bool Crossed;
 
         internal void AddInPlane(Section other)
         {
@@ -44,11 +43,6 @@ namespace RailWorld.src.RailWay
             InPlane.Add(other);
         }
 
-        internal void AddCrossed(double angle)
-        {
-            if (Crossed == NoAngles) Crossed = new List<double>();
-            Crossed.Add(angle);
-        }
     }
 
     /// <summary>
@@ -119,7 +113,7 @@ namespace RailWorld.src.RailWay
                 }
 
                 bool near = Math.Abs(other.GetGlobalPos().Y - middle.Y) < RouteCurve.CrossingClearance;
-                if (near && RouteCurve.Crosses(start, end, other, out _, out double angle)) facts.AddCrossed(angle);
+                if (near && !facts.Crossed) facts.Crossed = AxisCrossing.OfPlanned(section, other);
 
                 if (!Footprint.Overlap(section, other, out double x, out double z)) continue;
 
@@ -146,18 +140,10 @@ namespace RailWorld.src.RailWay
         public static List<SegmentHit> Hits(Vec3d a, Vec3d b, TrackIndex track)
         {
             List<SegmentHit> hits = null;
-            double rx = b.X - a.X, rz = b.Z - a.Z;
 
             foreach (Section section in track.Around(a, CrossReach, RouteCurve.CrossingClearance + 1))
             {
-                Vec3d c = section.FullStartPosition, d = section.FullEndPosition;
-                double sx = d.X - c.X, sz = d.Z - c.Z;
-                double denominator = rx * sz - rz * sx;
-                if (Math.Abs(denominator) < 1e-12) continue;
-
-                double t = ((c.X - a.X) * sz - (c.Z - a.Z) * sx) / denominator;
-                double u = ((c.X - a.X) * rz - (c.Z - a.Z) * rx) / denominator;
-                if (t < 0 || t >= 1 || u < 0 || u >= 1) continue;
+                if (!AxisCrossing.Of(a, b, section, out double t)) continue;
 
                 if (hits == null) hits = new List<SegmentHit>();
                 hits.Add(new SegmentHit { Section = section, T = t });
