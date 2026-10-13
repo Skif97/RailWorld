@@ -369,6 +369,10 @@ namespace RailWorld
         private AnimationMetaData swayMeta;
         private ILoadedSound squeal;
 
+        // ТИМЧАСОВО, замір
+        private float debugSince;
+        private Vec3d debugPeak = new Vec3d();
+
         private void ShowMotion(float dt)
         {
             Vec3d now = Pos.XYZ;
@@ -384,6 +388,22 @@ namespace RailWorld
             double rolled = (now.X - shownAt.X) * nose.X + (now.Z - shownAt.Z) * nose.Z;
             double moved = now.DistanceTo(shownAt);
             float turned = Math.Abs(GameMath.AngleRadDistance(shownYaw, Pos.Yaw));
+            // ТИМЧАСОВО, замір: вагонетка стоїть (колеса не крутяться), а кузов гойдається. Раз на секунду
+            // пише, куди й наскільки зсунулася намальована вагонетка за кадр. Прибрати, щойно знайдемо причину
+            debugSince += dt;
+            debugPeak.Set(Math.Max(debugPeak.X, Math.Abs(now.X - shownAt.X)), Math.Max(debugPeak.Y, Math.Abs(now.Y - shownAt.Y)), Math.Max(debugPeak.Z, Math.Abs(now.Z - shownAt.Z)));
+            if (debugSince >= 1)
+            {
+                if (shownSpeed > 0.05f)
+                {
+                    Api.Logger.Notification("[RailWorld] trolley {0}: shownSpeed {1:0.000}, wheelTurns {2:0.000}, max step per frame x {3:0.00000} y {4:0.00000} z {5:0.00000}, onRail {6}, pos {7:0.000} {8:0.000} {9:0.000}, motion {10:0.00000} {11:0.00000} {12:0.00000}",
+                        EntityId, shownSpeed, wheelTurns, debugPeak.X, debugPeak.Y, debugPeak.Z, WatchedAttributes.GetBool("onRail"),
+                        now.X, now.Y, now.Z, Pos.Motion.X, Pos.Motion.Y, Pos.Motion.Z);
+                }
+                debugSince = 0;
+                debugPeak.Set(0, 0, 0);
+            }
+
             shownAt = now;
             shownYaw = Pos.Yaw;
 
