@@ -79,11 +79,14 @@ namespace RailWorld.src.RailWay
     public static class TrackSurvey
     {
         /// <summary>
-        /// Як далеко від середини секції лежить те, що може її стосуватися, блоків у плані. Найдальше це
-        /// важіль стрілки сусідньої колії: пів секції, пів шпали й сам важіль з одного боку і стільки ж
-        /// з другого, близько 2.6 блока. Габарити двох секцій перекриваються ще ближче, до 2.5.
+        /// Як далеко від середини секції лежить середина іншої, яка може її стосуватися, блоків у плані.
+        /// Найдальше це секція зі стрілкою, у місце важеля якої заходить ця. Упоперек: пів габариту цієї секції
+        /// (0.98), хід вантажу важеля (SectionBox.LeverReachAcross) і відстань від важеля до осі його колії
+        /// (пів шпали і SectionBox.LeverGap), разом 3.2. Уздовж: важіль стоїть на SectionBox.LeverAhead за стиком,
+        /// середина секції зі стрілкою на чверть блока перед ним, плюс хід уздовж (LeverReachAlong) і пів цієї
+        /// секції, разом 1.5. По діагоналі близько 3.5. Габарити двох секцій перекриваються значно ближче.
         /// </summary>
-        public const double Reach = 3;
+        public const double Reach = 4;
 
         /// <summary>
         /// Як далеко від початку шматка завдовжки із секцію лежить середина секції, вісь якої він перетинає.
@@ -112,7 +115,7 @@ namespace RailWorld.src.RailWay
                 for (int side = 0; side < 2 && !facts.CoversLever; side++)
                 {
                     bool atStart = side == 0;
-                    if (other.HasSwitch(atStart)) facts.CoversLever = CoversLever(section, SectionPicker.LeverPosition(other, atStart));
+                    if (other.HasSwitch(atStart)) facts.CoversLever = CoversLever(section, other, atStart, other.GetLeverSide(atStart));
                 }
 
                 bool near = Math.Abs(other.GetGlobalPos().Y - middle.Y) < RouteCurve.CrossingClearance;
@@ -162,14 +165,16 @@ namespace RailWorld.src.RailWay
             return hits;
         }
 
-        /// <summary>Чи важіль у цьому місці опинився б під колією: під шпалами секції, на близькій до неї висоті.</summary>
-        public static bool CoversLever(Section section, Vec3d lever)
+        /// <summary>
+        /// Чи колія заходить у місце важеля стрілки trunk, якби той стояв з боку side: чи габарит секції
+        /// перекривається з місцем, яке важіль займає разом з ходом ручки й вантажу, на близькій до нього висоті.
+        /// </summary>
+        public static bool CoversLever(Section section, Section trunk, bool atStart, int side)
         {
-            if (Math.Abs(lever.Y - section.GetGlobalPos().Y) >= RouteCurve.CrossingClearance) return false;
+            SectionPicker.LeverFootprint(trunk, atStart, side, out Vec3d from, out Vec3d to);
+            if (Math.Abs(from.Y - section.GetGlobalPos().Y) >= RouteCurve.CrossingClearance) return false;
 
-            // Важіль під колією, якщо він ближче до її осі, ніж край шпали
-            double along = RouteCurve.Along(section, true, lever, out double length, out double sideways);
-            return along >= 0 && along <= length && sideways < section.SleeperLength / 2 + SectionBox.LeverHalfWidth;
+            return Footprint.Overlap(from, to, SectionBox.LeverReachAcross * 2, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _);
         }
 
         // Ті самі кінці, в будь-якому з двох напрямків

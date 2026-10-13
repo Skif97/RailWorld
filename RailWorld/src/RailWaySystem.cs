@@ -322,8 +322,8 @@ namespace RailWorld
             });
         }
 
-        // Клієнт: стрілку переведено. Решта чанка не змінилася, тому нічого не перебудовується:
-        // важіль і гостряки далі веде TrackChunkRenderer.AnimateSwitches
+        // Клієнт: стрілку переведено. Решта чанка не змінилася, тому нічого не перебудовується: важелю кажуть
+        // нове положення, і далі його веде гра, а гостряки веде TrackChunkRenderer.AnimateSwitches
         private void OnSwitchToggled(SwitchTogglePacket packet)
         {
             Vec3i chunk = new Vec3i(packet.ChunkX, packet.ChunkY, packet.ChunkZ);
@@ -334,7 +334,9 @@ namespace RailWorld
 
             trunk.SetSwitchPosition(packet.AtStart, packet.Position);
             data.Revision = packet.Revision;
-            if (trunk.HasSwitch(packet.AtStart)) switchAnimator.Track(chunk, trunk, packet.AtStart);
+            if (!trunk.HasSwitch(packet.AtStart)) return;
+            switchAnimator.Track(chunk, trunk, packet.AtStart);
+            chunkRenderer?.SwitchToggled(chunk, trunk, packet.AtStart);
         }
 
         public void RemoveChunk(Vec3i chunkCoord)

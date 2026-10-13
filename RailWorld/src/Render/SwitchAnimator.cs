@@ -23,8 +23,8 @@ namespace RailWorld
             this.capi = capi;
         }
 
-        // Скільки триває рух на екрані. Трохи довше за час, коли вагонетка на стрілці сходить із колії
-        private const int SwitchAnimationMs = Section.SwitchTimeMs + 200;
+        /// <summary>Скільки триває рух на екрані. Трохи довше за час, коли вагонетка на стрілці сходить із колії.</summary>
+        public const int DurationMs = Section.SwitchTimeMs + 200;
 
         // Стрілка, яку клієнт уже бачив: у якому вона положенні і коли воно востаннє змінилося (час клієнта)
         private class SwitchState
@@ -76,7 +76,7 @@ namespace RailWorld
             double distance = Math.Abs(state.Position - state.From);
             if (distance < 1e-6) return state.Position;
 
-            double passed = GameMath.Clamp((capi.ElapsedMilliseconds - state.ChangedAtMs) / (SwitchAnimationMs * distance), 0, 1);
+            double passed = GameMath.Clamp((capi.ElapsedMilliseconds - state.ChangedAtMs) / (DurationMs * distance), 0, 1);
             return state.From + (state.Position - state.From) * passed * passed * (3 - 2 * passed);
         }
 
@@ -97,7 +97,7 @@ namespace RailWorld
             foreach (SwitchState state in states.Values)
             {
                 if (!state.Moving) continue;
-                if (capi.ElapsedMilliseconds - state.ChangedAtMs >= SwitchAnimationMs) state.Moving = false;
+                if (capi.ElapsedMilliseconds - state.ChangedAtMs >= DurationMs) state.Moving = false;
 
                 redraw(state.Chunk, state.Index, state.AtStart);
             }

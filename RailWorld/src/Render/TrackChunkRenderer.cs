@@ -198,7 +198,7 @@ namespace RailWorld
         }
 
         // Важіль стрілки. Ручка кидається впоперек колії, покажчик на щоглі розвертається; котра з двох гілок
-        // увімкнена, видно з обох. Під час переведення йде разом з гостряками
+        // увімкнена, видно з обох. Тут йому лише кажуть, у якому положенні бути: рух веде гра
         private void AddLever(Vec3i chunkCoord, Section section, bool atStart)
         {
             // Важіль стоїть у площині колії, як і бруси під ним. Її задають ті самі два напрямки, з яких рахується
@@ -209,24 +209,25 @@ namespace RailWorld
             var toTrack = new Vec3d(-normal.X * side, -normal.Y * side, -normal.Z * side);
             var along = new Vec3d(outward.X, outward.Y, outward.Z);
 
-            // Де стрілка між першою гілкою (0) і другою (1)
-            double moved = animator.Progress(chunkCoord, section.IndexInChunk, atStart);
-            double value = section.GetSwitchPosition(atStart) == 1 ? moved : 1 - moved;
-
-            // Модель на останньому кадрі штовхає тягу до колії, тобто відводить гостряки від важеля. Гостряки
-            // відходять у бік, протилежний увімкненій гілці: щоб їхати ліворуч, до рамної рейки притиснутий
-            // правий. Тож останній кадр це гілка з боку важеля, і туди ж тоді показує покажчик.
-            // Якщо гілок не знайти (сусідній чанк ще не прийшов), важіль стоїть як для першої
-            double[] sideways = SectionLinker.BranchSideways(section, atStart, track.FindSection);
-            bool secondAtLever = sideways != null && (sideways[1] > sideways[0]) == (side > 0);
-            double thrown = secondAtLever ? value : 1 - value;
+            // Важіль стоїть в останньому положенні, коли увімкнена гілка з його боку (LeverPose). Якщо гілок
+            // не знайти (сусідній чанк ще не прийшов), він стоїть як для першої, доки чанк не збереться знову
+            int branchAtLever = SectionLinker.BranchToward(section, atStart, side, track.FindSection);
+            bool thrown = LeverPose.Thrown(section.GetSwitchPosition(atStart), 1, branchAtLever) > 0.5;
 
             string key = chunkCoord.X + "_" + chunkCoord.Y + "_" + chunkCoord.Z + "_" + section.IndexInChunk + (atStart ? "S" : "E");
             renderer.SetLever(chunkCoord, key, SectionPicker.LeverPosition(section, atStart), toTrack, along, thrown);
         }
 
         /// <summary>
-        /// Щокадру, поки котрась стрілка рухається: ставить її важіль і гостряки в нове проміжне положення.
+        /// Стрілку щойно перевели, колія не мінялася: важіль переходить у нове положення.
+        /// </summary>
+        public void SwitchToggled(Vec3i chunkCoord, Section trunk, bool atStart)
+        {
+            if (!disposed) AddLever(chunkCoord, trunk, atStart);
+        }
+
+        /// <summary>
+        /// Щокадру, поки котрась стрілка рухається: ставить її гостряки в нове проміжне положення.
         /// Решту чанка не чіпає; хрестовина й контррейки не змінюються і лишаються з готовим мешем.
         /// </summary>
         public void AnimateSwitches()
@@ -236,7 +237,6 @@ namespace RailWorld
                 DataInChunk data = DataInChunk.GetClient(chunk);
                 if (data == null || !data.RailWaySections.TryGetValue(index, out Section trunk) || !trunk.HasSwitch(atStart)) return;
 
-                AddLever(chunk, trunk, atStart);
                 foreach (SectionLink link in trunk.GetLinks(atStart))
                 {
                     Section branch = track.FindSection(link);

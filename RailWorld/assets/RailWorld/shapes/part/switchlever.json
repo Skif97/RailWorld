@@ -2138,7 +2138,7 @@
 				12.3
 			],
 			"rotationOrigin": [
-				8,
+				8.0,
 				1.5,
 				12.0
 			],
@@ -3911,7 +3911,7 @@
 			"name": "Throw",
 			"code": "throw",
 			"quantityframes": 31,
-			"onActivityStopped": "EaseOut",
+			"onActivityStopped": "Rewind",
 			"onAnimationEnd": "Hold",
 			"keyframes": [
 				{

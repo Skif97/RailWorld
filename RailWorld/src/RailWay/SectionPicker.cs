@@ -59,7 +59,11 @@ namespace RailWorld.src.RailWay
         public const double LeverGap          = 0.75;
         // На скільки блоків важіль стоїть далі за стик, з якого колія розходиться: одна секція
         public const double LeverAhead        = 0.5;
-        public const double LeverHalfWidth    = 0.12;
+        // Місце, яке важіль займає разом з ходом ручки, вантажу й покажчика: на скільки блоків від своєї точки
+        // він сягає впоперек колії і вздовж неї. Пораховано з моделі за всіма кадрами переведення; числа друкує
+        // tools/make_lever_scene.py, і якщо модель змінено, їх треба звірити
+        public const double LeverReachAcross  = 0.62;
+        public const double LeverReachAlong   = 0.47;
         // Бокс виділення важеля: пів ширини основи і висота до покажчика на щоглі
         public const double LeverBoxHalfWidth = 0.3;
         public const double LeverHeight       = 1.3;
@@ -250,6 +254,21 @@ namespace RailWorld.src.RailWay
         public static Vec3d LeverPosition(Section s, bool atStart)
         {
             return LeverPosition(s, atStart, s.GetLeverSide(atStart));
+        }
+
+        /// <summary>
+        /// Місце, яке займає важіль стрілки з боку side, прямокутником у плані: відрізок від from до to вздовж
+        /// колії крізь точку важеля, завширшки SectionBox.LeverReachAcross у кожен бік від нього.
+        /// </summary>
+        public static void LeverFootprint(Section s, bool atStart, int side, out Vec3d from, out Vec3d to)
+        {
+            Vec3d lever = LeverPosition(s, atStart, side);
+            Vec3f outward = s.GetOutwardDirection(atStart);
+            double length = Math.Sqrt(outward.X * outward.X + outward.Z * outward.Z);
+            double x = length < 1e-9 ? 1 : outward.X / length, z = length < 1e-9 ? 0 : outward.Z / length;
+
+            from = new Vec3d(lever.X - x * SectionBox.LeverReachAlong, lever.Y, lever.Z - z * SectionBox.LeverReachAlong);
+            to = new Vec3d(lever.X + x * SectionBox.LeverReachAlong, lever.Y, lever.Z + z * SectionBox.LeverReachAlong);
         }
 
         /// <summary>Де стояв би важіль стрілки з боку side: 1 з боку нормалі секції, -1 з протилежного.</summary>

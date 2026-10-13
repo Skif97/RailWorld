@@ -206,10 +206,10 @@ void main()
         private SwitchLeverRenderer leverRenderer;
 
         /// <summary>
-        /// Ставить важіль стрілки або переводить уже поставлений. key відрізняє важелі між собою. Під час
-        /// перебудови чанка викликати між BeginParts і EndParts; поза нею лише переводить важіль.
+        /// Ставить важіль стрілки або переводить уже поставлений у положення thrown. key відрізняє важелі між
+        /// собою. Викликати під час перебудови чанка, між BeginParts і EndParts.
         /// </summary>
-        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, double thrown)
+        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
         {
             if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi);
             leverRenderer.Set(chunkCoord, key, position, toTrack, along, thrown);

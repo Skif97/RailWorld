@@ -811,7 +811,19 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Чи може важіль стрілки стати з цього боку: чи не опиниться він під шпалами іншої колії.
+        /// Котра з двох гілок стрілки відходить від другої в бік side: 1 це бік нормалі спільної секції,
+        /// -1 протилежний. Номер гілки це положення стрілки, в якому вона увімкнена. -1, якщо гілок не дві
+        /// або котрусь не знайти.
+        /// </summary>
+        public static int BranchToward(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve)
+        {
+            double[] sideways = BranchSideways(trunk, atStart, resolve);
+            if (sideways == null) return -1;
+            return (sideways[1] > sideways[0]) == (side > 0) ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Чи може важіль стрілки стати з цього боку: чи не заходить у його місце інша колія.
         /// </summary>
         public static bool LeverSideFree(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve,
             TrackIndex track)
@@ -840,7 +852,7 @@ namespace RailWorld.src.RailWay
             Vec3d lever = SectionPicker.LeverPosition(trunk, atStart, side);
             foreach (Section other in track.Around(lever, TrackSurvey.Reach, RouteCurve.CrossingClearance))
             {
-                if (!own.Contains(SectionKey(other)) && TrackSurvey.CoversLever(other, lever)) return false;
+                if (!own.Contains(SectionKey(other)) && TrackSurvey.CoversLever(other, trunk, atStart, side)) return false;
             }
             return true;
         }

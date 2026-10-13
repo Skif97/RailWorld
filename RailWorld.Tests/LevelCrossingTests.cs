@@ -181,6 +181,46 @@ namespace RailWorld.Tests
             Assert.Equal(-1, SectionLinker.FindLeverInTrack(aside, SectionsIn));
         }
 
+        [Fact]
+        public void TrackThroughTheSwingOfASwitchLeverIsRefused()
+        {
+            Section trunk = LaySwitchAtOrigin();
+            Vec3d lever = SectionPicker.LeverPosition(trunk, false);
+            double side = Math.Sign(lever.Z);
+            double body = Footprint.StandardWidth / 2;
+
+            // Колія вздовж стрілки, далі за важіль: шпалами до самого важеля вона не дістає, але заходить
+            // у місце, де ходить його вантаж
+            double touching = body + SectionBox.LeverReachAcross - 0.2;
+            Assert.True(touching > TrackGauge.StandardSleeperLength / 2 + 0.2);
+            List<Section> beside = Plan(Point(lever.X - 3, lever.Z + side * touching, 1, 0), Point(lever.X + 3, lever.Z + side * touching, 1, 0));
+            Assert.True(SectionLinker.FindLeverInTrack(beside, SectionsIn) >= 0);
+
+            // Трохи далі вбік вона важеля вже не зачіпає
+            double clear = body + SectionBox.LeverReachAcross + 0.2;
+            List<Section> apart = Plan(Point(lever.X - 3, lever.Z + side * clear, 1, 0), Point(lever.X + 3, lever.Z + side * clear, 1, 0));
+            Assert.Equal(-1, SectionLinker.FindLeverInTrack(apart, SectionsIn));
+        }
+
+        [Fact]
+        public void TrackJustAheadOfASwitchLeverIsRefused()
+        {
+            Section trunk = LaySwitchAtOrigin();
+            Vec3d lever = SectionPicker.LeverPosition(trunk, false);
+            double side = Math.Sign(lever.Z);
+            double body = Footprint.StandardWidth / 2;
+
+            // Коротка колія впоперек, одразу за важелем уздовж стрілки і лише з його боку: повз сам важіль
+            // вона проходить, але вантаж посередині ходу дивиться вздовж колії і зачепив би її
+            double touching = body + SectionBox.LeverReachAlong - 0.2;
+            List<Section> ahead = Plan(Point(lever.X + touching, lever.Z + side * 3, 0, -side), Point(lever.X + touching, lever.Z - side * 0.3, 0, -side));
+            Assert.True(SectionLinker.FindLeverInTrack(ahead, SectionsIn) >= 0);
+
+            double clear = body + SectionBox.LeverReachAlong + 0.2;
+            List<Section> further = Plan(Point(lever.X + clear, lever.Z + side * 3, 0, -side), Point(lever.X + clear, lever.Z - side * 0.3, 0, -side));
+            Assert.Equal(-1, SectionLinker.FindLeverInTrack(further, SectionsIn));
+        }
+
         // Колія з півночі на південь через точку з таким x, на заданій висоті
         private void LayAcross(double x, double y)
         {
