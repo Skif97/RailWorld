@@ -115,20 +115,54 @@ void main()
         /// Додає болт у шийку рейки. axis це точка на осі рейки на рівні низу підошви, outward бік, куди
         /// дивиться головка. Наскрізний болт це два таких: головка з одного боку і гайка з іншого.
         /// </summary>
-        public void AddBolt(Vec3i chunkCoord, string material, Vec3d axis, Vec3d outward)
+        public void AddBolt(Vec3i chunkCoord, string material, Vec3d axis, Vec3d outward, Vec3d along)
         {
-            AddOutward(chunkCoord, BoltPart, material, axis, outward);
+            AddOutward(chunkCoord, BoltPart, material, axis, outward, along);
         }
 
         /// <summary>
         /// Додає деталь, що стоїть з одного боку рейки: болт у шийці, костилі з одного боку підошви. axis це
-        /// точка на осі рейки на рівні низу підошви, outward бік, куди деталь дивиться.
+        /// точка на осі рейки на рівні низу підошви, outward бік, куди деталь дивиться, along напрямок рейки.
+        /// Обидва напрямки беруться разом з ухилом колії: деталь лягає в її площину, а не стоїть рівно.
         /// </summary>
-        public void AddOutward(Vec3i chunkCoord, string part, string material, Vec3d axis, Vec3d outward)
+        public void AddOutward(Vec3i chunkCoord, string part, string material, Vec3d axis, Vec3d outward, Vec3d along)
         {
             // Такі моделі намальовані з боку +X від осі рейки: повертаємо їх цим боком куди треба
-            float yaw = (float)Math.Atan2(-outward.Z, outward.X);
-            AddRailPart(chunkCoord, part, material, axis, new Vec3f(0, yaw, 0));
+            AddRailPart(chunkCoord, part, material, axis, InPlane(outward, along));
+        }
+
+        /// <summary>
+        /// Поворот деталі, що лежить у площині колії: вісь X моделі дивиться вздовж sideways, вісь Z уздовж
+        /// колії along, в один чи другий її бік, як вийде. Обидва напрямки беруться з ухилом. Знаки нахилів
+        /// виходять із самих напрямків, тож байдуже, в який бік покладена секція і куди дивиться sideways.
+        /// </summary>
+        public static Vec3f InPlane(Vec3d sideways, Vec3d along)
+        {
+            float flat = (float)Math.Atan2(-sideways.Z, sideways.X);
+            if (sideways.Length() < 1e-9) return new Vec3f(0, flat, 0);
+
+            // Три осі моделі у світі: X уздовж sideways, Z уздовж колії впоперек X, Y вгору від площини.
+            // На полотні, нахиленому одразу і вздовж, і впоперек, ухил і поперечний нахил не можна брати
+            // окремо з двох напрямків: кути рахуються з цієї трійки разом
+            Vec3d x = sideways.Clone().Normalize();
+            double lean = along.X * x.X + along.Y * x.Y + along.Z * x.Z;
+            var z = new Vec3d(along.X - x.X * lean, along.Y - x.Y * lean, along.Z - x.Z * lean);
+            if (z.Length() < 1e-9) return new Vec3f(0, flat, 0);
+            z.Normalize();
+            Vec3d y = z.Cross(x);
+            if (y.Y < 0)
+            {
+                z = new Vec3d(-z.X, -z.Y, -z.Z);
+                y = new Vec3d(-y.X, -y.Y, -y.Z);
+            }
+
+            // SleeperRenderer повертає деталь довкола Y на yaw, потім довкола X на -pitch, потім довкола Z на -roll.
+            // Після цього вісь Z моделі це (sin yaw cos pitch, sin pitch, cos yaw cos pitch), а висоти осей X і Y
+            // це -sin roll cos pitch і cos roll cos pitch: звідси й кути
+            double pitch = Math.Asin(GameMath.Clamp(z.Y, -1, 1));
+            double yaw = Math.Atan2(z.X, z.Z);
+            double roll = Math.Atan2(-x.Y, y.Y);
+            return new Vec3f((float)pitch, (float)yaw, (float)roll);
         }
 
         /// <summary>
@@ -175,10 +209,10 @@ void main()
         /// Ставить важіль стрілки або переводить уже поставлений. key відрізняє важелі між собою. Під час
         /// перебудови чанка викликати між BeginParts і EndParts; поза нею лише переводить важіль.
         /// </summary>
-        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, float yaw, float pitch, double thrown)
+        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, double thrown)
         {
             if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi);
-            leverRenderer.Set(chunkCoord, key, position, yaw, pitch, thrown);
+            leverRenderer.Set(chunkCoord, key, position, toTrack, along, thrown);
         }
 
         /// <summary>

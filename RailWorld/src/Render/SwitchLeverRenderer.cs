@@ -107,10 +107,11 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Ставить важіль або переводить уже поставлений. yaw і pitch це поворот моделі довкола вертикалі
-        /// і нахил уздовж колії, радіани. thrown каже, де стрілка: 0 це перша гілка, 1 друга, між ними рух.
+        /// Ставить важіль або переводить уже поставлений. toTrack це напрямок від важеля до колії, along напрямок
+        /// самої колії; обидва з її ухилом, важіль стає в їхню площину. thrown каже, який кадр: 0 перший,
+        /// 1 останній, між ними рух.
         /// </summary>
-        public void Set(Vec3i chunkCoord, string key, Vec3d position, float yaw, float pitch, double thrown)
+        public void Set(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, double thrown)
         {
             if (!Load()) return;
 
@@ -134,14 +135,34 @@ namespace RailWorld
             }
             lever.Kept = true;
 
-            // Точка (8, 0, 8) моделі, де стоїть важіль, це середина блока
-            float[] transform = Mat4f.Create();
-            Mat4f.RotateY(transform, transform, yaw);
-            Mat4f.RotateX(transform, transform, pitch);
-            Mat4f.Translate(transform, transform, -0.5f, 0f, -0.5f);
-            lever.Renderer.CustomTransform = transform;
-
+            lever.Renderer.CustomTransform = Placement(toTrack, along);
             Pose(lever, thrown);
+        }
+
+        // Матриця, що ставить модель у площину колії. У моделі колія лежить з боку +X від важеля, а вздовж
+        // колії йде вісь Z; у котрий її бік, моделі байдуже, тож беремо той, за якого верх моделі дивиться вгору
+        private static float[] Placement(Vec3d toTrack, Vec3d along)
+        {
+            Vec3d x = toTrack.Clone().Normalize();
+            double lean = along.X * x.X + along.Y * x.Y + along.Z * x.Z;
+            Vec3d z = new Vec3d(along.X - x.X * lean, along.Y - x.Y * lean, along.Z - x.Z * lean).Normalize();
+            Vec3d y = z.Cross(x);
+            if (y.Y < 0)
+            {
+                z = new Vec3d(-z.X, -z.Y, -z.Z);
+                y = new Vec3d(-y.X, -y.Y, -y.Z);
+            }
+
+            float[] transform =
+            {
+                (float)x.X, (float)x.Y, (float)x.Z, 0,
+                (float)y.X, (float)y.Y, (float)y.Z, 0,
+                (float)z.X, (float)z.Y, (float)z.Z, 0,
+                0, 0, 0, 1
+            };
+            // Точка (8, 0, 8) моделі, де стоїть важіль, це середина блока
+            Mat4f.Translate(transform, transform, -0.5f, 0f, -0.5f);
+            return transform;
         }
 
         // Ставить анімацію на кадр. Аніматор гри сам кадрів не гортає, якщо часу не минуло, тож час йому

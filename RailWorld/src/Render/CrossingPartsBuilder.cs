@@ -72,12 +72,12 @@ namespace RailWorld
                     RailFrame frame = rail.Frames[at];
                     var outer = new Vec3d(frame.Side.X * rail.Side, frame.Side.Y * rail.Side, frame.Side.Z * rail.Side);
                     var inner = new Vec3d(-outer.X, -outer.Y, -outer.Z);
-                    renderer.AddBolt(chunkCoord, material, frame.Center, outer);
+                    renderer.AddBolt(chunkCoord, material, frame.Center, outer, frame.Along);
 
                     // Модель болта стоїть на пів шийки від точки, куди її поставлено. Гайка сидить на шийці
                     // контррейки, а де її немає, на дальньому боці проставки
                     double nut = Lies(rail, RailPiece.GuardWeb, at) ? CrossingGeometry.GuardAxis : CrossingGeometry.GuardAxis - 2 * web;
-                    renderer.AddBolt(chunkCoord, material, new Vec3d(frame.Center.X + inner.X * nut, frame.Center.Y + inner.Y * nut, frame.Center.Z + inner.Z * nut), inner);
+                    renderer.AddBolt(chunkCoord, material, new Vec3d(frame.Center.X + inner.X * nut, frame.Center.Y + inner.Y * nut, frame.Center.Z + inner.Z * nut), inner, frame.Along);
                 }
             }
         }

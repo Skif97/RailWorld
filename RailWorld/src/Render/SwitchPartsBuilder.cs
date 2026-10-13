@@ -274,8 +274,8 @@ namespace RailWorld
                 // Вкладиш стягнутий з двома рейками наскрізним болтом: головка на ходовій рейці ззовні колії,
                 // гайка на контррейці з боку осі
                 var outward = new Vec3d(-frame.Side.X, -frame.Side.Y, -frame.Side.Z);
-                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, running), outward);
-                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, offset), frame.Side);
+                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, running), outward, frame.Along);
+                renderer.AddBolt(chunkCoord, material, Along(frame.Center, frame.Side, offset), frame.Side, frame.Along);
             }
 
             renderer.SetLoft(chunkCoord, section.IndexInChunk, !inner, "CR", material, parts);
@@ -538,8 +538,8 @@ namespace RailWorld
                 if (!first && !last && q % 2 == 0)
                 {
                     var outward = new Vec3d(-station.Side.X, -station.Side.Y, -station.Side.Z);
-                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingLeft), outward);
-                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingRight), station.Side);
+                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingLeft), outward, station.Along);
+                    renderer.AddBolt(chunkCoord, material, Along(station.Center, station.Side, wingRight), station.Side, station.Along);
                 }
 
                 wingsLeft.Add(Along(station.Center, station.Side, wingLeft));
@@ -668,7 +668,7 @@ namespace RailWorld
                         if (!NodeFastenings.Crosses(near, far, timber, out Vec3d at)) continue;
                         if (!NodeFastenings.NailsOnWood(at, along, wood, nails)) continue;
                         // Пара ставиться в місце самих костилів: за край підошви вусовика
-                        renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, material, Along(at, outward, NodeFastenings.SpikeAside), outward);
+                        renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, material, Along(at, outward, NodeFastenings.SpikeAside), outward, along);
                     }
                 }
             }

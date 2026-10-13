@@ -201,17 +201,13 @@ namespace RailWorld
         // увімкнена, видно з обох. Під час переведення йде разом з гостряками
         private void AddLever(Vec3i chunkCoord, Section section, bool atStart)
         {
-            Vec3d start = section.FullStartPosition;
-            Vec3d end = section.FullEndPosition;
-            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
-            float yaw = (float)Math.Atan2(dx, dz);
-            float pitch = (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
-
-            // У моделі колія лежить з боку +X від важеля. Після повороту на yaw цей бік дивиться проти нормалі
-            // секції, тож важіль з боку нормалі стоїть як є, а з протилежного розвернутий на пів оберта
+            // Важіль стоїть у площині колії, як і бруси під ним. Її задають ті самі два напрямки, з яких рахується
+            // його місце: нормаль колії на цьому кінці секції і напрямок, куди колія звідси йде. Обидва з ухилом
             int side = section.GetLeverSide(atStart);
-            if (side > 0) pitch = -pitch;
-            else yaw += GameMath.PI;
+            Vec3f normal = atStart ? section.StartNormal : section.EndNormal;
+            Vec3f outward = section.GetOutwardDirection(atStart);
+            var toTrack = new Vec3d(-normal.X * side, -normal.Y * side, -normal.Z * side);
+            var along = new Vec3d(outward.X, outward.Y, outward.Z);
 
             // Де стрілка між першою гілкою (0) і другою (1)
             double moved = animator.Progress(chunkCoord, section.IndexInChunk, atStart);
@@ -226,7 +222,7 @@ namespace RailWorld
             double thrown = secondAtLever ? value : 1 - value;
 
             string key = chunkCoord.X + "_" + chunkCoord.Y + "_" + chunkCoord.Z + "_" + section.IndexInChunk + (atStart ? "S" : "E");
-            renderer.SetLever(chunkCoord, key, SectionPicker.LeverPosition(section, atStart), yaw, pitch, thrown);
+            renderer.SetLever(chunkCoord, key, SectionPicker.LeverPosition(section, atStart), toTrack, along, thrown);
         }
 
         /// <summary>
@@ -361,14 +357,22 @@ namespace RailWorld
                 Section section = fastening.Section;
 
                 Vec3d along = fastening.Along;
-                float yaw = (float)Math.Atan2(along.X, along.Z);
-                float pitch = (float)Math.Atan2(along.Y, Math.Sqrt(along.X * along.X + along.Z * along.Z));
-                float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
+
+                // Упоперек рейки в площині колії, у бік, який NodeFastenings.NailsOnWood рахує додатним: для
+                // напрямку (x, z) це (z, -x). Нормаль секції лежить з протилежного боку: у секції, що йде на
+                // схід, вона дивиться на південь (перевірено на покладеній секції). Нахил береться з неї
+                Vec3f fromNormal = section.StartNormal, toNormal = section.EndNormal;
+                var right = new Vec3d(-fromNormal.X - toNormal.X, -fromNormal.Y - toNormal.Y, -fromNormal.Z - toNormal.Z);
+                if (right.X * along.Z - right.Z * along.X < 0) right = new Vec3d(-right.X, -right.Y, -right.Z);
+                double askew = right.X * along.X + right.Y * along.Y + right.Z * along.Z;
+                right = new Vec3d(right.X - along.X * askew, right.Y - along.Y * askew, right.Z - along.Z * askew);
+                if (right.Length() < 1e-9) continue;
+                right.Normalize();
 
                 // Як і на звичайній колії, під другою рейкою скріплення повернуте на пів оберта
                 bool first = fastening.Part == SectionPart.FirstRail;
-                var straight = new Vec3f(pitch, yaw, roll);
-                var reversed = new Vec3f(-pitch, yaw + GameMath.PI, -roll);
+                Vec3f straight = RailWayRendererSystem.InPlane(right, along);
+                Vec3f reversed = RailWayRendererSystem.InPlane(new Vec3d(-right.X, -right.Y, -right.Z), along);
                 string metal = section.GetMaterial(fastening.Part) ?? "iron";
 
                 // Підкладка, якщо їй є місце і до рейки нічого не прилягає; інакше прокладка завширшки з підошву
@@ -376,13 +380,7 @@ namespace RailWorld
                 string under = plate ? RailWayRendererSystem.PlatePart : RailWayRendererSystem.PadPart;
                 renderer.AddRailPart(chunkCoord, under, metal, fastening.Position, first ? straight : reversed);
 
-                // Бік рейки, який NodeFastenings.NailsOnWood рахує додатним: для напрямку (x, z) це (z, -x).
-                // Нормаль секції лежить з протилежного боку: у секції, що йде на схід, вона дивиться на південь
-                // (перевірено на покладеній секції). Перша рейка лежить з боку нормалі, тож назовні від колії
-                // в неї від'ємний бік, у другої додатний
-                var right = new Vec3d(along.Z, 0, -along.X);
-                if (right.Length() < 1e-9) continue;
-                right.Normalize();
+                // Перша рейка лежить з боку нормалі, тож назовні від колії в неї від'ємний бік, у другої додатний
                 int outer = first ? -1 : 1;
 
                 for (int side = -1; side <= 1; side += 2)
@@ -391,15 +389,15 @@ namespace RailWorld
                     bool inner = side != outer;
                     if (inner && (fastening.Kind == FasteningKind.GuardSpikes || fastening.Kind == FasteningKind.OuterSpikes)) continue;
 
-                    var away = new Vec3d(right.X * side, 0, right.Z * side);
+                    var away = new Vec3d(right.X * side, right.Y * side, right.Z * side);
                     AddSpikePair(chunkCoord, metal, fastening.Position, along, away, side, timbers, crossing);
                 }
 
                 // Біля контррейки ще одна пара з її боку, що дивиться на вісь колії
                 if (fastening.Kind == FasteningKind.GuardSpikes)
                 {
-                    var inward = new Vec3d(-right.X * outer, 0, -right.Z * outer);
-                    var guard = new Vec3d(fastening.Position.X + inward.X * CrossingGeometry.GuardAxis, fastening.Position.Y,
+                    var inward = new Vec3d(-right.X * outer, -right.Y * outer, -right.Z * outer);
+                    var guard = new Vec3d(fastening.Position.X + inward.X * CrossingGeometry.GuardAxis, fastening.Position.Y + inward.Y * CrossingGeometry.GuardAxis,
                         fastening.Position.Z + inward.Z * CrossingGeometry.GuardAxis);
                     // Лише якщо контррейка справді лежить у цьому місці: костилі мають щось тримати
                     if (crossing == null || crossing.Covers(guard)) AddSpikePair(chunkCoord, metal, guard, along, inward, -outer, timbers, crossing);
@@ -414,7 +412,7 @@ namespace RailWorld
         {
             if (!NodeFastenings.NailsOnWood(axis, along, timbers, side)) return;
 
-            var at = new Vec3d(axis.X + away.X * NodeFastenings.SpikeAside, axis.Y, axis.Z + away.Z * NodeFastenings.SpikeAside);
+            var at = new Vec3d(axis.X + away.X * NodeFastenings.SpikeAside, axis.Y + away.Y * NodeFastenings.SpikeAside, axis.Z + away.Z * NodeFastenings.SpikeAside);
             if (crossing != null)
             {
                 double length = Math.Sqrt(along.X * along.X + along.Z * along.Z);
@@ -425,7 +423,7 @@ namespace RailWorld
                     if (crossing.Covers(new Vec3d(at.X + along.X * forward, at.Y, at.Z + along.Z * forward))) return;
                 }
             }
-            renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, metal, at, away);
+            renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, metal, at, away, along);
         }
 
         // Чи біля цієї рейки секції стоїть контррейка стрілки (навпроти хрестовини, біля зовнішньої рейки гілки),
@@ -526,34 +524,25 @@ namespace RailWorld
         {
             if (timber.Length < 1e-6) return;
 
-            // Брус лежить уздовж across: шпала лежить уздовж нормалі колії, ліворуч від її напрямку, тож поворот
-            // відновлюється з неї так само
+            // Брус лежить у площині колії: уздовж across, з ухилом колії на цьому місці (дві гілки лежать в одній
+            // площині, тож ухил береться з секції, на місці шпали якої він лежить). Шпала лежить уздовж нормалі
+            // колії, віссю X моделі проти неї, і брус так само. Куди саме дивиться across і в який бік покладена
+            // секція, не важить: на розвилці й на щиті перетину across з нормаллю секції не збігається
             Vec3d across = timber.Across;
-            float yaw = (float)Math.Atan2(across.Z, -across.X);
-            float roll = (float)Math.Asin(GameMath.Clamp(across.Y, -1, 1));
-
-            // Ухил як у колії на цьому місці: дві гілки лежать в одній площині
-            float pitch = Pitch(timber.Owner);
+            Vec3d start = timber.Owner.FullStartPosition, end = timber.Owner.FullEndPosition;
+            Vec3f rotation = RailWayRendererSystem.InPlane(new Vec3d(-across.X, -across.Y, -across.Z), new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z));
 
             // Між брусом і рейкою лежить підкладка, тож брус нижчий за підошву рейки на її товщину, як і шпала
             var position = new Vec3d(timber.Position.X, timber.Position.Y - RailProfile.PlateThickness, timber.Position.Z);
-            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", position, new Vec3f(pitch, yaw, roll), (float)timber.Length);
+            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", position, rotation, (float)timber.Length);
 
             // Пластина під гостряки: на осі колії, упоперек неї, як сам брус. З металу рейки над нею
             if (timber.SlidePlate)
             {
                 Section owner = timber.Owner;
                 string metal = owner.GetMaterial(SectionPart.FirstRail) ?? owner.GetMaterial(SectionPart.SecondRail) ?? "iron";
-                renderer.AddRailPart(chunkCoord, RailWayRendererSystem.SlidePlatePart, metal, owner.GetGlobalPos(), new Vec3f(pitch, yaw, roll));
+                renderer.AddRailPart(chunkCoord, RailWayRendererSystem.SlidePlatePart, metal, owner.GetGlobalPos(), rotation);
             }
-        }
-
-        // Ухил секції: підйом її хорди
-        private static float Pitch(Section section)
-        {
-            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
-            double dx = end.X - start.X, dy = end.Y - start.Y, dz = end.Z - start.Z;
-            return (float)Math.Atan2(dy, Math.Sqrt(dx * dx + dz * dz));
         }
 
         // Чи місце цієї рейки секції займає деталь стрілки: гостряк або хрестовина
