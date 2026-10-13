@@ -189,9 +189,16 @@ namespace RailWorld.src.RailWay
                 }
             }
 
-            // Бруси кроком звичайних шпал уздовж бісектриси, в обидва боки від місця, де перетнулися осі
+            // Бруси кроком звичайних шпал уздовж бісектриси, в обидва боки від місця, де перетнулися осі.
+            // Усе вище пораховано в плані, а крок шпал міряється вздовж колії: на схилі в плані він коротший
             double step = main[mainCenter].FullStartPosition.DistanceTo(main[mainCenter].FullEndPosition);
             if (step < 1e-6) return;
+            const double probe = 0.25;
+            if (Deck(main, mainPlaces, Shifted(crossAt, middleLine, -probe), out double below) && Deck(main, mainPlaces, Shifted(crossAt, middleLine, probe), out double above))
+            {
+                double rise = (above - below) / (2 * probe);
+                step /= Math.Sqrt(1 + rise * rise);
+            }
             var back = new Vec3d(-sideways.X, 0, -sideways.Z);
             for (double at = step / 2; at <= reach + step / 2; at += step)
             {
@@ -206,14 +213,48 @@ namespace RailWorld.src.RailWay
                     double left = Clip(middle, back, 0, OuterEdge(middle, middleLine, back, ends, step), ownPlaces);
                     if (left + right < MinLength) continue;
 
-                    double center = (right - left) / 2;
+                    // Кінці бруса знайдено в плані. Лежить він на полотні основної колії: на схилі воно під
+                    // брусом піднімається, і рівний брус одним кінцем задерся б над рейками, а другим провалився
+                    Vec3d from = Shifted(middle, sideways, -left), to = Shifted(middle, sideways, right);
+                    if (Deck(main, mainPlaces, from, out double fromY)) from.Y = fromY;
+                    if (Deck(main, mainPlaces, to, out double toY)) to.Y = toY;
+
+                    var span = new Vec3d(to.X - from.X, to.Y - from.Y, to.Z - from.Z);
+                    double length = span.Length();
                     layout.Timbers.Add(new Timber
                     {
-                        Position = new Vec3d(middle.X + sideways.X * center, middle.Y, middle.Z + sideways.Z * center),
-                        Across = sideways, Length = left + right, Owner = main[nearest]
+                        Position = new Vec3d((from.X + to.X) / 2, (from.Y + to.Y) / 2, (from.Z + to.Z) / 2),
+                        Across = span.Normalize(), Length = length, Owner = main[nearest]
                     });
                 }
             }
+        }
+
+        // Точка за distance блоків від point у напрямку direction, на тій самій висоті
+        private static Vec3d Shifted(Vec3d point, Vec3d direction, double distance)
+        {
+            return new Vec3d(point.X + direction.X * distance, point.Y, point.Z + direction.Z * distance);
+        }
+
+        // Висота полотна колії над точкою. track це секції колії по порядку, places їхні шпали.
+        // false, якщо полотна над точкою немає
+        private static bool Deck(IList<Section> track, Place[] places, Vec3d p, out double height)
+        {
+            int nearest = Nearest(places, p);
+            Section section = track[nearest];
+
+            // Сусіди з боку початку й кінця секції: у списку вони йдуть підряд, але секції колії можуть бути
+            // покладені в різні боки
+            Section before = null, after = null;
+            for (int n = nearest - 1; n <= nearest + 1; n += 2)
+            {
+                if (n < 0 || n >= track.Count) continue;
+                Vec3d joint = track[n].FullStartPosition.SquareDistanceTo(section.GetGlobalPos()) < track[n].FullEndPosition.SquareDistanceTo(section.GetGlobalPos())
+                    ? track[n].FullStartPosition : track[n].FullEndPosition;
+                if (joint.SquareDistanceTo(section.FullStartPosition) < joint.SquareDistanceTo(section.FullEndPosition)) before = track[n];
+                else after = track[n];
+            }
+            return TrackSurface.At(section, before, after, p, 0, 0, out height, out _);
         }
 
         // Котрі шпали колії навколо перетнутої секції не кладуться: від неї в обидва боки, поки шпала ще
