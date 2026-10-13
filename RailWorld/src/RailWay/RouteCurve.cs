@@ -838,8 +838,10 @@ namespace RailWorld.src.RailWay
             // Остання точка, що лежить у площині основної колії. Після ділянки «ще кілька секцій тією ж площиною»
             // це і є невидима опорна точка, від якої починається перехід
             public int Virtual;
-            // Секція основної колії, над якою маршрут зійшов: її площина продовжується далі
+            // Секція основної колії, над якою маршрут зійшов: її полотно продовжується далі
             public Section Plane;
+            // Її сусіди з боку початку й кінця; null, якщо колії там немає
+            public Section PlaneBefore, PlaneAfter;
         }
 
         /// <summary>
@@ -1037,7 +1039,9 @@ namespace RailWorld.src.RailWay
                 }
 
                 follow.Plane = current;
-                if (!PutOnPlane(points, i, current, weight, trackCant, ref conflict)) break;
+                follow.PlaneBefore = enteredAtStart ? behind : ahead;
+                follow.PlaneAfter = enteredAtStart ? ahead : behind;
+                if (!PutOnPlane(points, i, current, follow.PlaneBefore, follow.PlaneAfter, weight, trackCant, ref conflict)) break;
                 follow.Virtual = i;
             }
 
@@ -1060,7 +1064,7 @@ namespace RailWorld.src.RailWay
             for (int i = follow.Exit; i >= 0 && i < points.Count && (stop - i) * step > 0; i += step)
             {
                 if (Math.Abs(run[i] - run[follow.Exit]) > length) break;
-                if (!PutOnPlane(points, i, follow.Plane, weight, trackCant, ref conflict)) break;
+                if (!PutOnPlane(points, i, follow.Plane, follow.PlaneBefore, follow.PlaneAfter, weight, trackCant, ref conflict)) break;
                 follow.Virtual = i;
             }
         }
@@ -1122,12 +1126,15 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        // Кладе точку на площину секції основної колії: висота з площини, нахил полотна такий, щоб шпала
-        // маршруту лежала в цій площині
-        private static bool PutOnPlane(List<PointOnBezierCurve> points, int i, Section section, double[] weight, double[] trackCant, ref string conflict)
+        // Кладе точку на полотно основної колії: висота з нього, нахил такий, щоб шпала маршруту лежала на ньому.
+        // Полотно це не площина секції, а поверхня, спільна для сусідніх секцій (TrackSurface): маршрут відходить
+        // від осі колії вбік, а там площини сусідніх секцій на крутій кривій розходяться по висоті, і точки
+        // маршруту лягли б сходинками. before і after це сусіди section з боку її початку й кінця
+        private static bool PutOnPlane(List<PointOnBezierCurve> points, int i, Section section, Section before, Section after,
+            double[] weight, double[] trackCant, ref string conflict)
         {
             Vec3d p = points[i].position;
-            if (!CrossPlane(section, p, points[i].tangent.X, points[i].tangent.Z, out double planeY, out double cant)) return false;
+            if (!TrackSurface.At(section, before, after, p, points[i].tangent.X, points[i].tangent.Z, out double planeY, out double cant)) return false;
 
             // Ділянки поверх двох різних колій можуть накластися. Обидві жорсткі: якщо вони хочуть
             // різної висоти в одній точці, виконати обидві не можна
@@ -1201,7 +1208,7 @@ namespace RailWorld.src.RailWay
         }
 
         // Поверх основної колії нахил полотна такий, як у неї; далі він переходить у власний нахил маршруту
-        // з тією самою вагою, що й висота. Нормаль точки будується так само, як у ModMath.ApplyCant
+        // з тією самою вагою, що й висота
         private static void BlendCant(List<PointOnBezierCurve> points, double[] weight, double[] trackCant)
         {
             for (int i = 0; i < points.Count; i++)
@@ -1210,19 +1217,41 @@ namespace RailWorld.src.RailWay
 
                 PointOnBezierCurve point = points[i];
                 Vec3f t = point.tangent;
-                double length = Math.Sqrt(t.X * t.X + t.Z * t.Z);
-                if (length < 1e-6) continue;
+                if (Math.Sqrt(t.X * t.X + t.Z * t.Z) < 1e-6) continue;
 
                 double own = Math.Asin(GameMath.Clamp(point.normal.Y, -1, 1));
-                double cant = own + (trackCant[i] - own) * weight[i];
+                double cant = own + (CantAbout(t, trackCant[i]) - own) * weight[i];
 
-                double nx = -t.Z / length, nz = t.X / length;
-                double ux = -nz * t.Y, uy = nz * t.X - nx * t.Z, uz = nx * t.Y;
-                double cos = Math.Cos(cant), sin = Math.Sin(cant);
-
-                point.normal = new Vec3f((float)(nx * cos + ux * sin), (float)(uy * sin), (float)(nz * cos + uz * sin));
+                point.normal = NormalWithCant(t, cant);
                 points[i] = point;
             }
+        }
+
+        /// <summary>
+        /// На який кут довкола дотичної треба повернути нормаль, щоб вона лягла на полотно, яке піднімається
+        /// ліворуч від руху під кутом rise. rise міряється впоперек руху в плані: так його дають CrossPlane
+        /// і TrackSurface. На рівній колії це той самий кут. На схилі ні: нормаль перпендикулярна до нахиленої
+        /// дотичної, тож повертається не у вертикальній площині впоперек руху, і той самий підйом полотна
+        /// вона дає меншим кутом. Що крутіший схил, то більша різниця.
+        /// </summary>
+        internal static double CantAbout(Vec3f tangent, double rise)
+        {
+            double flat = Math.Sqrt(tangent.X * tangent.X + tangent.Z * tangent.Z);
+            double length = Math.Sqrt(flat * flat + tangent.Y * tangent.Y);
+            return length < 1e-9 ? rise : Math.Atan(flat / length * Math.Tan(rise));
+        }
+
+        /// <summary>
+        /// Нормаль точки з нахилом полотна cant: горизонтальна нормаль ліворуч від руху, повернута на cant
+        /// довкола дотичної. Так само її будує ModMath.ApplyCant.
+        /// </summary>
+        internal static Vec3f NormalWithCant(Vec3f tangent, double cant)
+        {
+            double length = Math.Sqrt(tangent.X * tangent.X + tangent.Z * tangent.Z);
+            double nx = -tangent.Z / length, nz = tangent.X / length;
+            double ux = -nz * tangent.Y, uy = nz * tangent.X - nx * tangent.Z, uz = nx * tangent.Y;
+            double cos = Math.Cos(cant), sin = Math.Sin(cant);
+            return new Vec3f((float)(nx * cos + ux * sin), (float)(uy * sin), (float)(nz * cos + uz * sin));
         }
     }
 }
