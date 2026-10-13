@@ -143,11 +143,11 @@ namespace RailWorld
         // ── Сервер: отримали налаштування рейки від клієнта ──────────────────
         private void OnRailMenuPacketReceived(IServerPlayer fromPlayer, RailMenuPacket packet)
         {
-            ItemStack mystack = _sapi.World.PlayerByUid(fromPlayer.PlayerUID)
-                .InventoryManager.ActiveHotbarSlot.Itemstack;
+            // Поки пакет ішов, гравець міг перемкнути слот: у руці тоді інший предмет або нічого
+            ItemSlot slot = fromPlayer.InventoryManager?.ActiveHotbarSlot;
+            ItemStack mystack = slot?.Itemstack;
 
-            if (mystack != null && mystack.Attributes != null
-                && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (mystack?.Attributes != null && mystack.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") == true)
             {
                 mystack.Attributes.SetString("railMode", packet.railMode);
                 mystack.Attributes.SetInt("railLengRad", packet.railLengRad);
@@ -157,8 +157,7 @@ namespace RailWorld
                 mystack.Attributes.SetString("railMaterial", packet.railMaterial ?? "iron");
                 mystack.Attributes.SetString("ballastMaterial", packet.ballastMaterial ?? DontBuild);
                 mystack.Attributes.SetBool("replaceBlocks", packet.replaceBlocks);
-                _sapi.World.PlayerByUid(fromPlayer.PlayerUID)
-                    .InventoryManager.ActiveHotbarSlot.MarkDirty();
+                slot.MarkDirty();
             }
         }
 
@@ -270,8 +269,7 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Викликається з BlockRail після збереження секцій в чанк.
-        /// Надсилає оновлені дані чанку всім гравцям поблизу.
+        /// Надсилає оновлені дані колії чанка всім гравцям на сервері, після кожного збереження чанка.
         /// </summary>
         public static void SendChunkDataToClients(Vec3i chunkCoord, DataInChunk data)
         {
@@ -308,16 +306,23 @@ namespace RailWorld
 
         private bool ToggleGuiDialogRailMenu(KeyCombination keyCombination)
         {
-            ItemStack mystack = _capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
+            ItemStack mystack = _capi.World.Player.InventoryManager.ActiveHotbarSlot?.Itemstack;
 
-            if (mystack != null && mystack.ItemAttributes != null
-                && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (mystack?.ItemAttributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
             {
-                if (_dialog is null) _dialog = new GuiDialogRailMenu(_capi);
-                if (!_dialog.IsOpened()) return _dialog.TryOpen();
-                if (!_dialog.TryClose()) return true;
-                _dialog.Dispose();
-                _dialog = null;
+                if (_dialog != null && _dialog.IsOpened())
+                {
+                    if (!_dialog.TryClose()) return true;
+                    _dialog.Dispose();
+                    _dialog = null;
+                    return true;
+                }
+
+                // Меню читає налаштування інструмента, коли створюється. Закрите клавішею Esc воно лишалося б
+                // зі старими і переписало б ними інструмент, який гравець узяв після того: щоразу нове
+                _dialog?.Dispose();
+                _dialog = new GuiDialogRailMenu(_capi);
+                return _dialog.TryOpen();
             }
             return true;
         }

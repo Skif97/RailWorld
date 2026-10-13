@@ -48,8 +48,8 @@ namespace RailWorld
             // Деталі стрілок не викидаються наперед: незмінні лишаються з готовим мешем
             renderer.BeginParts(chunkCoord);
 
+            // Секції, на яких лежить хоч одна рейка
             var railSections = new List<Section>();
-            var bladeSections = new List<Section>();
             // Розкладки брусів стрілок, які знадобилися цій перебудові: стрілка може лежати і в сусідньому чанку
             var layouts = new Dictionary<string, TimberLayout>();
             crossingRails.Clear();
@@ -116,7 +116,6 @@ namespace RailWorld
                 if (section.FirstRailInstalled || section.SecondRailInstalled)
                 {
                     railSections.Add(section);
-                    bladeSections.Add(section);
                 }
             }
 
@@ -146,10 +145,10 @@ namespace RailWorld
             }
 
             if (railSections.Count > 0)
-                renderer.RebuildRails(chunkCoord, railSections, BladeShape);
+                renderer.RebuildRails(chunkCoord, railSections, ReplacedByNode);
 
             var wood = new Dictionary<string, IList<Timber>>();
-            foreach (Section section in bladeSections) builder.Build(chunkCoord, section, (chunk, record) => SwitchWood(layouts, wood, chunk, record));
+            foreach (Section section in railSections) builder.Build(chunkCoord, section, (chunk, record) => SwitchWood(layouts, wood, chunk, record));
             if (data != null)
             {
                 foreach (RailCrossing record in data.Crossings.Values) crossingBuilder.Build(chunkCoord, record, RailsOf(chunkCoord, record));
@@ -565,21 +564,17 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Каже рендеру рейок не малювати ту рейку, місце якої займає деталь стрілки чи перетину: внутрішню
-        /// рейку колії на секціях гостряка і хрестовини, рейку з жолобами у вузлі перетину. Для решти рейок
-        /// повертає null.
+        /// Чи місце цієї рейки секції займає деталь стрілки або перетину, і звичайну рейку там малювати не треба:
+        /// внутрішня рейка колії на секціях гостряка і хрестовини, рейка з жолобами у вузлі перетину.
         /// </summary>
-        private RailShape BladeShape(Section section, bool left)
+        private bool ReplacedByNode(Section section, bool left)
         {
-            if (ReplacedBySwitch(section, left)) return new RailShape { Hidden = true };
+            if (ReplacedBySwitch(section, left)) return true;
 
             // Рейку секції у вузлі перетину заміняє рейка перетину, з жолобами для реборд
-            if (track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at))
-            {
-                CrossingRails rails = RailsOf(at.Chunk, crossing);
-                if (rails != null && rails.Hides(section, left ? SectionPart.FirstRail : SectionPart.SecondRail)) return new RailShape { Hidden = true };
-            }
-            return null;
+            if (!track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at)) return false;
+            CrossingRails rails = RailsOf(at.Chunk, crossing);
+            return rails != null && rails.Hides(section, left ? SectionPart.FirstRail : SectionPart.SecondRail);
         }
     }
 }

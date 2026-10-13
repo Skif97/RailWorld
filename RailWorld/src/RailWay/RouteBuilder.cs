@@ -31,11 +31,11 @@ namespace RailWorld.src.RailWay
                     if (i == 0)
                     {
                         // Початок маршруту на краю блока позаду, щоб колія займала блок цілком
-                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone(), true);
+                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone());
                     }
                     else if (i == count - 1)
                     {
-                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone().Mul(-1), true);
+                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone().Mul(-1));
                     }
                     else
                     {

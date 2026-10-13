@@ -89,10 +89,6 @@ namespace RailWorld.src.Items
                 }
             };
         }
-        public static string GetCode(string type, string material)
-        {
-            return "sleeper-" + type + "-" + material;
-        }
 
         public virtual MeshData GetOrCreateMesh(string type, string material, ITexPositionSource overrideTexturesource = null)
         {

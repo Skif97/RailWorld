@@ -45,11 +45,6 @@ namespace RailWorld.src.RailWay
             return new RailEdge { Minus = at, Plus = at };
         }
 
-        /// <summary>Такий самий край, зсунутий уздовж лінії.</summary>
-        public RailEdge Moved(double by)
-        {
-            return new RailEdge { Minus = Minus + by, Plus = Plus + by };
-        }
     }
 
     /// <summary>
@@ -137,8 +132,11 @@ namespace RailWorld.src.RailWay
                 // Та сама рейка, а не рейка іншої колії, що проходить крізь цю точку: колії перетинаються
                 // щонайменше під п'ятнадцять градусів, тож напрямки тієї самої рейки розходяться значно менше
                 RailFrame frame = rail.Frames[GameMath.Clamp((int)Math.Round(at), 0, rail.Frames.Count - 1)];
+                // Обидва напрямки порівнюються в плані: у просторі вони одиничні, а в плані на схилі коротші,
+                // і без цього та сама рейка на крутому схилі здавалася б чужою
                 double length = Math.Sqrt(along.X * along.X + along.Z * along.Z);
-                if (length < 1e-9 || Math.Abs(frame.Along.X * along.X + frame.Along.Z * along.Z) / length < SameRailCos) continue;
+                double own = Math.Sqrt(frame.Along.X * frame.Along.X + frame.Along.Z * frame.Along.Z);
+                if (length < 1e-9 || own < 1e-9 || Math.Abs(frame.Along.X * along.X + frame.Along.Z * along.Z) / (length * own) < SameRailCos) continue;
 
                 List<RailSpan> feet = rail.Of(RailPiece.Foot);
                 if (feet.Count == 0) return true;

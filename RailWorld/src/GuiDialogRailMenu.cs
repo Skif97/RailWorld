@@ -134,8 +134,9 @@ namespace RailWorld
             SingleComposer.GetSwitch("ReplaceSwitch").SetValue(replaceBlocks);
             SingleComposer.GetSlider("RadiusLengthSlider").SetValues(railLengRad, 4, 150, 1);
             SingleComposer.GetSlider("ClimbDescentSlider").SetValues(railClimDes, -20, 20, 1);
-            SingleComposer.GetButton(railDirection + "Button").SetActive(true);
-            SingleComposer.GetButton(railMode + "Button").SetActive(true);
+            // У властивостях інструмента може лежати назва, якої меню не знає: тоді жодна кнопка не натиснута
+            SingleComposer.GetButton(railDirection + "Button")?.SetActive(true);
+            SingleComposer.GetButton(railMode + "Button")?.SetActive(true);
 
             if(railMode== "SingleBlock" || railMode == RoutePlanner.ModeCode) 
             {

@@ -137,7 +137,7 @@ namespace RailWorld.src.RailWay
         }
 
         // Де в моделі стоять костилі відносно середини скріплення, блоків: уздовж рейки і вбік від її осі
-        // (shapes/part/fastening.json і spikesside.json). Якщо костилі в моделі пересунуто, змінити й тут
+        // (shapes/part/fastening.json і spikepair.json). Якщо костилі в моделі пересунуто, змінити й тут
         public const double SpikeAlong = 0.75 / 16;
         public const double SpikeAside = 1.15 / 16;
 

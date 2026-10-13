@@ -9,8 +9,8 @@ using RailWorld.src.RailWay;
 namespace RailWorld
 {
     /// <summary>
-    /// Головна система рендеру рейок. Реєструється як IRenderer і рендерить
-    /// всі видимі секції через instanced rendering.
+    /// Головна система рендеру колії. Реєструється як IRenderer і малює всю колію, яку клієнт знає,
+    /// однаковими деталями пачками по чанках (instanced rendering). Що в полі зору, а що ні, не перевіряє.
     /// </summary>
     public class RailWayRendererSystem : IRenderer, IDisposable
     {
@@ -216,7 +216,7 @@ void main()
         }
 
         /// <summary>
-        /// Видаляє всі шпали чанка.
+        /// Прибирає всі деталі чанка, що малюються пачками: шпали, бруси, скріплення, болти.
         /// </summary>
         public void RemoveChunkParts(Vec3i chunkCoord)
         {
@@ -229,17 +229,16 @@ void main()
         /// <summary>
         /// Замінює рейки чанка. Кожна рейка малюється рендерером свого матеріалу.
         /// </summary>
-        /// <param name="shapeOf">Каже, чи рейка секції особлива (гостряк стрілки) і яка саме; null для звичайної.
-        /// Другий аргумент це котра рейка: true перша, з боку нормалі.</param>
-        internal void RebuildRails(Vec3i chunkCoord, List<Section> sections, System.Func<Section, bool, RailShape> shapeOf = null)
+        /// <param name="replaced">Каже, чи місце рейки секції займає деталь стрілки або перетину: така рейка
+        /// не малюється. Другий аргумент це котра рейка: true перша, з боку нормалі.</param>
+        internal void RebuildRails(Vec3i chunkCoord, List<Section> sections, System.Func<Section, bool, bool> replaced)
         {
             ClearRails(chunkCoord);
 
-            for (int i = 0; i < sections.Count; i++)
+            foreach (Section s in sections)
             {
-                Section s = sections[i];
-                if (s.FirstRailInstalled) AddRail(chunkCoord, i, s, true, shapeOf?.Invoke(s, true));
-                if (s.SecondRailInstalled) AddRail(chunkCoord, i, s, false, shapeOf?.Invoke(s, false));
+                if (s.FirstRailInstalled && !replaced(s, true)) AddRail(chunkCoord, s, true);
+                if (s.SecondRailInstalled && !replaced(s, false)) AddRail(chunkCoord, s, false);
             }
         }
 
@@ -270,10 +269,8 @@ void main()
             bladeRenderer.Set(chunkCoord, key, hash, mesh, basis, renderer.TextureId);
         }
 
-        private void AddRail(Vec3i chunkCoord, int index, Section section, bool left, RailShape shape)
+        private void AddRail(Vec3i chunkCoord, Section section, bool left)
         {
-            if (shape != null && shape.Hidden) return;
-
             string material = section.GetMaterial(left ? SectionPart.FirstRail : SectionPart.SecondRail) ?? "iron";
 
             // Два шматки секції беруть текстуру з різних її частин, а сусідня секція з двох наступних: уздовж
@@ -281,7 +278,7 @@ void main()
             for (int piece = 0; piece < 2; piece++)
             {
                 int variant = (section.IndexInChunk * 2 + piece) % RailSectionRenderer.Variants;
-                RailRenderer(material, variant)?.AddRailPiece(chunkCoord, section, left, shape, piece);
+                RailRenderer(material, variant)?.AddRailPiece(chunkCoord, section, left, piece);
             }
         }
 
@@ -370,7 +367,7 @@ void main()
             capi.Shader.RegisterFileShaderProgram("railinstanced", loaded);
             bool ok = loaded.Compile();
             chunkProg = ok ? loaded : null;
-            if (!ok) capi.Logger.Error("[RailWorld] шейдер railinstanced не зібрався: шпали не малюватимуться");
+            if (!ok) capi.Logger.Error("[RailWorld] шейдер railinstanced не зібрався: колія не малюватиметься");
             return ok && shadows;
         }
 

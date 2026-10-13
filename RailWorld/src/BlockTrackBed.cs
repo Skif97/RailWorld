@@ -51,6 +51,12 @@ namespace RailWorld
         {
         }
 
+        // І вибух теж: гра за замовчуванням ставить на місці блока повітря, і колія лишилася б у даних чанка
+        // без основи під собою
+        public override void OnBlockExploded(IWorldAccessor world, BlockPos pos, BlockPos explosionCenter, EnumBlastType blastType, string ignitedByPlayerUid)
+        {
+        }
+
         public override ItemStack[] GetDrops(IWorldAccessor world, BlockPos pos, IPlayer byPlayer, float dropQuantityMultiplier = 1)
         {
             return null;

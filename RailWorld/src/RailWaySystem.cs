@@ -134,12 +134,12 @@ namespace RailWorld
             clientTrack = new ClientTrack();
             switchAnimator = new SwitchAnimator(api);
 
-            // Плавне переведення стрілок: щокадру, поки котрась рухається
+            // Плавне переведення стрілок: кожні 15 мс гри, поки котрась рухається. На паузі такти не йдуть
             api.Event.RegisterGameTickListener(dt => chunkRenderer?.AnimateSwitches(), 15);
 
-            // Harmony патч для події вивантаження чанку
-            Harmony harmony = new Harmony("com.railworld.myMod");
-            MyChunkEvents.Init(harmony);
+            // Латки гри живуть, поки гравець у світі: при виході їх знімає DisposeRenderers
+            harmony = new Harmony(HarmonyId);
+            MyChunkEvents.Init(harmony, api.Logger);
             MyChunkEvents.ChunkUnloaded += OnChunkUnloaded;
 
             interaction = new SectionInteractionClient(api, this, harmony);
@@ -377,8 +377,17 @@ namespace RailWorld
             }
         }
 
+        private const string HarmonyId = "com.railworld.myMod";
+        private Harmony harmony;
+
         private void DisposeRenderers()
         {
+            // Викликається двічі, при виході зі світу і при вивантаженні мода: друге нічого вже не знаходить
+            MyChunkEvents.ChunkUnloaded -= OnChunkUnloaded;
+            harmony?.UnpatchAll(HarmonyId);
+            harmony = null;
+            TrolleyCameraPatch.Release();
+
             chunkRenderer?.Dispose();
             chunkRenderer = null;
             Renderer?.Dispose();

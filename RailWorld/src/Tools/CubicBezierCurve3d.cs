@@ -42,52 +42,6 @@ namespace RailWorld
             w3 = p3w;
         }
 
-        public CubicBezierCurve3d(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3)
-        {
-            x0 = p0.X;
-            y0 = p0.Y;
-            z0 = p0.Z;
-            w0 = 1f;
-
-            x1 = p1.X;
-            y1 = p1.Y;
-            z1 = p1.Z;
-            w1 = 1f;
-
-            x2 = p2.X;
-            y2 = p2.Y;
-            z2 = p2.Z;
-            w2 = 1f;
-
-            x3 = p3.X;
-            y3 = p3.Y;
-            z3 = p3.Z;
-            w3 = 1f;
-        }
-
-        public CubicBezierCurve3d(Vec4d p0, Vec4d p1, Vec4d p2, Vec4d p3)
-        {
-            x0 = p0.X;
-            y0 = p0.Y;
-            z0 = p0.Z;
-            w0 = p0.W;
-
-            x1 = p1.X;
-            y1 = p1.Y;
-            z1 = p1.Z;
-            w1 = p1.W;
-
-            x2 = p2.X;
-            y2 = p2.Y;
-            z2 = p2.Z;
-            w2 = p2.W;
-
-            x3 = p3.X;
-            y3 = p3.Y;
-            z3 = p3.Z;
-            w3 = p3.W;
-        }
-
         double InterpolationX(double t)
         {
             return Interpolation(t, x0, x1, x2, x3);
@@ -205,38 +159,6 @@ namespace RailWorld
             return new Vec3d(DerivativeX(t), DerivativeY(t), DerivativeZ(t)).Normalize();
         }
 
-
-        public double LengthFull(double timeStep = 0.00001f )
-        {
-            return LengthToEnd(timeStep, 0f);
-        }
-
-        public double LengthToEnd(double timeStep = 0.00001f, double starttime = 0f)
-        {
-            double xPrevious = x0;
-            double yPrevious = y0;
-            double zPrevious = z0;
-
-            double xNext = x0;
-            double yNext = y0;
-            double zNext = z0;
-            double leng = 0;
-
-
-            for (double time = starttime; time >= 0 && time <= 1; time += timeStep)
-            {
-                xNext = InterpolationX_WithWeight(time);
-                yNext = InterpolationY_WithWeight(time);
-                zNext = InterpolationZ_WithWeight(time);
-
-                leng += LenghtLine3D(xNext, yNext, zNext,xPrevious, yPrevious, zPrevious);
-                xPrevious = xNext;
-                yPrevious = yNext;
-                zPrevious = zNext;
-            }
-            leng += LenghtLine3D(xNext, yNext, zNext, x3, y3, z3); 
-            return leng;
-        }
 
         public double LenghtLine3D(double x0, double y0, double z0, double x1, double y1, double z1) 
         {

@@ -286,13 +286,15 @@ namespace RailWorld.src.RailWay
             return false;
         }
 
-        // Місце шпали посередині між двома сусідніми
+        // Місце шпали посередині між двома сусідніми. Секції колії можуть бути покладені в різні боки, тоді
+        // їхні нормалі дивляться назустріч і в сумі дали б нуль: другу спершу розвертаємо в бік першої
         private static Place Between(Place a, Place b)
         {
+            int same = a.Across.X * b.Across.X + a.Across.Z * b.Across.Z < 0 ? -1 : 1;
             return new Place
             {
                 Middle = new Vec3d((a.Middle.X + b.Middle.X) / 2, (a.Middle.Y + b.Middle.Y) / 2, (a.Middle.Z + b.Middle.Z) / 2),
-                Across = new Vec3d(a.Across.X + b.Across.X, a.Across.Y + b.Across.Y, a.Across.Z + b.Across.Z).Normalize(),
+                Across = new Vec3d(a.Across.X + b.Across.X * same, a.Across.Y + b.Across.Y * same, a.Across.Z + b.Across.Z * same).Normalize(),
                 Half = (a.Half + b.Half) / 2
             };
         }

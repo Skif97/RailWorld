@@ -19,22 +19,6 @@ namespace RailWorld
         // Те саме світло одним числом: за ним видно, чи воно змінилося
         public int LightKey;
         public float ScaleZ;
-        // Ширина шматка відносно звичайної рейки: гостряк стрілки до вістря звужується
-        public float ScaleX = 1f;
-    }
-
-    /// <summary>
-    /// Чим рейка секції відрізняється від звичайної: гостряк стрілки лежить не на своєму місці, а зсунутий
-    /// до осі колії, і до вістря звужується. Числа задані для трьох точок секції: початку, середини і кінця.
-    /// </summary>
-    internal class RailShape
-    {
-        // На скільки блоків рейка зсунута до осі колії
-        public double[] Inset = new double[3];
-        // Ширина відносно звичайної рейки
-        public float[] Width = new float[] { 1f, 1f, 1f };
-        // Рейку на цій секції не малювати зовсім: її місце займає гостряк стрілки, окрема деталь
-        public bool Hidden;
     }
 
     /// <summary>
@@ -84,7 +68,6 @@ namespace RailWorld
         private double railHalfWidth;
 
         private float[] tmpMat = Mat4f.Create();
-        private Vec3f tmp = new Vec3f();
 
         /// <summary>
         /// Меш рейки як є, без даних інстансів: з нього збираються гостряки стрілок.
@@ -198,26 +181,13 @@ namespace RailWorld
         }
 
         /// <summary>Ставить один з двох шматків рейки секції: piece 0 від початку до середини, 1 від середини до кінця.</summary>
-        public void AddRailPiece(Vec3i chunkCoord, Section section, bool left, RailShape shape, int piece)
+        public void AddRailPiece(Vec3i chunkCoord, Section section, bool left, int piece)
         {
-            float sign = left ? 1f : -1f;
-            float offset = section.TrackWidth / 2f * sign;
-            Vec3d start = section.FullStartPosition;
+            float offset = section.TrackWidth / 2f * (left ? 1f : -1f);
             Vec3d center = section.GetGlobalPos();
-            Vec3d end = section.FullEndPosition;
 
-            // Зсув убік у кожній із трьох точок секції. У звичайної рейки він скрізь однаковий
-            float[] offsets = { offset, offset, offset };
-            float[] widths = { 1f, 1f };
-            if (shape != null)
-            {
-                for (int k = 0; k < 3; k++) offsets[k] = (float)(offset - shape.Inset[k] * sign);
-                widths[0] = (shape.Width[0] + shape.Width[1]) / 2;
-                widths[1] = (shape.Width[1] + shape.Width[2]) / 2;
-            }
-
-            if (piece == 0) AddPiece(chunkCoord, BuildInstance(start, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offsets[0], offsets[1], widths[0]));
-            else AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, end, section.EndNormal, section.EndTangent, offsets[1], offsets[2], widths[1]));
+            if (piece == 0) AddPiece(chunkCoord, BuildInstance(section.FullStartPosition, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offset));
+            else AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, section.FullEndPosition, section.EndNormal, section.EndTangent, offset));
         }
 
         private void AddPiece(Vec3i chunkCoord, RailInstanceData piece)
@@ -246,22 +216,21 @@ namespace RailWorld
             order.Remove(batch);
         }
 
-        // Шматок рейки між двома точками осі колії. fromOffset і toOffset це зсув рейки вбік від осі на кінцях
-        // шматка, width його ширина відносно звичайної рейки
-        private RailInstanceData BuildInstance(Vec3d from, Vec3f fromNormal, Vec3f fromTangent, Vec3d to, Vec3f toNormal, Vec3f toTangent,
-            float fromOffset, float toOffset, float width)
+        // Шматок рейки між двома точками осі колії. offset це зсув рейки вбік від осі: пів ширини колії
+        // в один чи другий бік
+        private RailInstanceData BuildInstance(Vec3d from, Vec3f fromNormal, Vec3f fromTangent, Vec3d to, Vec3f toNormal, Vec3f toTangent, float offset)
         {
             // Кінці шматка зсуваємо кожен по своїй нормалі і тягнемо його по хорді між ними,
             // тоді кінець цього шматка збігається з початком наступного і сходинок не буде
             // Нормаль може бути нахилена (нахил полотна), тоді зовнішня рейка піднімається, а внутрішня опускається
             Vec3d pos = new Vec3d(
-                from.X + fromNormal.X * fromOffset,
-                from.Y + fromNormal.Y * fromOffset,
-                from.Z + fromNormal.Z * fromOffset);
+                from.X + fromNormal.X * offset,
+                from.Y + fromNormal.Y * offset,
+                from.Z + fromNormal.Z * offset);
 
-            double dx = to.X + toNormal.X * toOffset - pos.X;
-            double dy = to.Y + toNormal.Y * toOffset - pos.Y;
-            double dz = to.Z + toNormal.Z * toOffset - pos.Z;
+            double dx = to.X + toNormal.X * offset - pos.X;
+            double dy = to.Y + toNormal.Y * offset - pos.Y;
+            double dz = to.Z + toNormal.Z * offset - pos.Z;
 
             double length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             if (length < 1e-4) return null;
@@ -274,11 +243,8 @@ namespace RailWorld
             double startExt = JointExtension(fromTangent, yaw, pitch, atStart: true);
             double endExt   = JointExtension(toTangent, yaw, pitch, atStart: false);
 
-            if (length > 0)
-            {
-                double k = startExt / length;
-                pos.Add(-dx * k, -dy * k, -dz * k);
-            }
+            double back = startExt / length;
+            pos.Add(-dx * back, -dy * back, -dz * back);
 
             // Шматок жорсткий, тому крен беремо середній між його початком і кінцем
             double roll = (Math.Asin(GameMath.Clamp(fromNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(toNormal.Y, -1, 1))) / 2;
@@ -291,8 +257,7 @@ namespace RailWorld
                 Roll     = (float)roll,
                 Light    = GetLight(pos),
                 LightKey = LightKey(pos),
-                ScaleZ   = (float)(length + startExt + endExt),
-                ScaleX   = width
+                ScaleZ   = (float)(length + startExt + endExt)
             };
         }
 
@@ -410,7 +375,6 @@ namespace RailWorld
                 Mat4f.RotateY(tmpMat, tmpMat, d.Yaw);
                 Mat4f.RotateX(tmpMat, tmpMat, -d.Pitch);
                 Mat4f.RotateZ(tmpMat, tmpMat, -d.Roll);
-                scale[0] = d.ScaleX;
                 // Модель рейки це шматок звичайної довжини; шматок секції розтягує її рівно настільки,
                 // наскільки він довший чи коротший
                 scale[2] = railLength > 0 ? (float)(d.ScaleZ / railLength) : d.ScaleZ;

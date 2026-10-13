@@ -111,9 +111,14 @@
 		<!-- copy compiled output files -->
 		<Copy SourceFiles="@(OutFiles)" DestinationFiles="@(OutFiles->'$(BinaryDir)/%(RecursiveDir)%(Filename)%(Extension)')" />
 
-		<!-- copy assets folder into the game testing directory preserving folder structure
-		     Force all asset subfolder names to lower-case to avoid case-sensitivity issues on the game side -->
-		<Copy SourceFiles="@(Assets)" DestinationFiles="@(Assets-&gt;'$(BinaryDir)/$([System.String]::Copy('%(Assets.RecursiveDir)').ToLowerInvariant())%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+		<!-- Ресурси мода йдуть у збірку для випуску. У збірці для відладки їх немає навмисно: гра бере їх просто
+		     з папки проєкту через addOrigin (Properties/launchSettings.json), і дві копії заважали б одна одній.
+		     Назви папок у нижньому регістрі: гра шукає домен railworld. Заготовки для редактора моделей
+		     (shapes/reference) грі не потрібні -->
+		<ItemGroup Condition="'$(Configuration)'=='Release'">
+			<Assets Include="assets/**" Exclude="assets/**/shapes/reference/**" />
+		</ItemGroup>
+		<Copy SourceFiles="@(Assets)" DestinationFiles="@(Assets-&gt;'$(BinaryDir)/assets/$([System.String]::Copy('%(Assets.RecursiveDir)').ToLowerInvariant())%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
 	</Target>
 
 

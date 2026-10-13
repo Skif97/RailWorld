@@ -16,7 +16,6 @@ namespace RailWorld
     public class SectionInteractionClient
     {
         private static SectionInteractionClient instance;
-        private static bool patched;
         private static MethodInfo beginUseItem;
         private static MethodInfo beginUseItemTyped;
         private static MethodInfo startAttackAnimation;
@@ -68,20 +67,25 @@ namespace RailWorld
             this.system = system;
             instance = this;
 
-            if (patched) return;
-            patched = true;
-
             Type type = typeof(SystemMouseInWorldInteractions);
             beginUseItem = AccessTools.Method(type, "TryBeginUseActiveSlotItem", new Type[] { typeof(BlockSelection), typeof(EntitySelection) });
             beginUseItemTyped = AccessTools.Method(type, "TryBeginUseActiveSlotItem", new Type[] { typeof(BlockSelection), typeof(EntitySelection), typeof(EnumHandInteract), typeof(EnumHandHandling).MakeByRefType() });
             startAttackAnimation = AccessTools.Method(type, "StartAttackAnimation");
+            var updateSelection = AccessTools.Method(type, "UpdateCurrentSelection");
+            var noBlockSelected = AccessTools.Method(type, "HandleMouseInteractionsNoBlockSelected");
+            var blockSelected = AccessTools.Method(type, "HandleMouseInteractionsBlockSelected");
 
-            harmony.Patch(AccessTools.Method(type, "UpdateCurrentSelection"),
-                postfix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(UpdateCurrentSelectionPostfix)));
-            harmony.Patch(AccessTools.Method(type, "HandleMouseInteractionsNoBlockSelected"),
-                prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(NoBlockSelectedPrefix)));
-            harmony.Patch(AccessTools.Method(type, "HandleMouseInteractionsBlockSelected"),
-                prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(BlockSelectedPrefix)));
+            // Усі шість методів гри закриті, і оновлення може їх перейменувати. Без будь-котрого з них перехоплення
+            // кліків не працює як ціле, тож не ставимо жодного: колію тоді не виділити, але гра не падає
+            if (beginUseItem == null || beginUseItemTyped == null || startAttackAnimation == null || updateSelection == null || noBlockSelected == null || blockSelected == null)
+            {
+                capi.Logger.Error("[RailWorld] у грі змінилися методи SystemMouseInWorldInteractions: колію не можна буде виділити й розібрати");
+                return;
+            }
+
+            harmony.Patch(updateSelection, postfix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(UpdateCurrentSelectionPostfix)));
+            harmony.Patch(noBlockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(NoBlockSelectedPrefix)));
+            harmony.Patch(blockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(BlockSelectedPrefix)));
         }
 
         public void Dispose()

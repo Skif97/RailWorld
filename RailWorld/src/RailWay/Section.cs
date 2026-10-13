@@ -37,8 +37,7 @@ namespace RailWorld.src.RailWay
         [ProtoMember(8)]
         private Vec3f _centerNormal; //нормализированный вектор
 
-        [ProtoMember(9)]
-        private double _centerNormalCorrection;
+        // Номер 9 був у поля, якого вже немає; старі збереження його ще містять, іншим полям його не давати
 
         [ProtoMember(10)]
         private Vec3d _endPosition;
@@ -168,12 +167,6 @@ namespace RailWorld.src.RailWay
             _endTangent = endTangent;
             _endNormal = endNormal;
 
-            Vec3d centerToEnd = _endPosition.Clone().Sub(_centerPosition);
-            double centerToEndLength = centerToEnd.Length();
-            centerToEnd.Normalize();
-            double sin = _centerTangent.Cross(centerToEnd.ToVec3f()).Length() / _centerTangent.Length() * _centerTangent.Length();
-            _centerNormalCorrection = centerToEndLength * sin;
-            //по факту даже на довольно грубых углах это значение корекции очень маленькое около 1/8 части вокселя при чизле
         }
 
         public Vec3i ChunkAddres
@@ -185,12 +178,6 @@ namespace RailWorld.src.RailWay
         public float TrackWidth
         {
             get { return _trackWidth; }
-
-        }
-
-        public Vec3d StartPosition
-        {
-            get { return _startPosition; }
 
         }
 
@@ -218,12 +205,6 @@ namespace RailWorld.src.RailWay
 
         }
 
-        public Vec3d CenterPosition
-        {
-            get { return _centerPosition; }
-
-        }
-
         public Vec3f CenterTangent
         {
             get { return _centerTangent; }
@@ -236,12 +217,6 @@ namespace RailWorld.src.RailWay
 
         }
 
-        public Vec3d EndPosition
-        {
-            get { return _endPosition; }
-
-        }
-
         public Vec3f EndTangent
         {
             get { return _endTangent; }
@@ -251,20 +226,6 @@ namespace RailWorld.src.RailWay
         public Vec3f EndNormal
         {
             get { return _endNormal; }
-
-        }//наверное можно убрать
-
-        public bool FullyBuilt
-        {
-            get
-            {
-                if (_firstRailInstalled && _secondRailInstalled && _sleeperInstalled)
-                {
-                    return true;
-                }
-                return false;
-            }
-
 
         }
 
@@ -286,11 +247,6 @@ namespace RailWorld.src.RailWay
         public string SleeperMaterial
         {
             get { return _sleeperMaterial; }
-        }
-
-        public string RailMaterial
-        {
-            get { return _railMaterial; }
         }
 
 
@@ -430,9 +386,10 @@ namespace RailWorld.src.RailWay
         }
 
         // Коли стрілку на цьому кінці востаннє почали переводити, у мілісекундах роботи сервера. 0, якщо ніколи
-        [ProtoMember(37)]
+        // Коли стрілку востаннє перевели, за годинником сервера. Не зберігається: годинник сервера після
+        // перезапуску починає з нуля, і збережена мить знову «настала б». Номери 37 і 38 були в цих полів
+        // у старих збереженнях, іншим полям їх не давати
         private long _startSwitchMs;
-        [ProtoMember(38)]
         private long _endSwitchMs;
 
         // З якого боку колії стоїть важіль стрілки на цьому кінці: 1 з боку нормалі, -1 з протилежного,
@@ -625,8 +582,8 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Чи стрілку на цьому кінці саме зараз переводять. Час рахується від запуску сервера, тому після
-        /// перезапуску збережене значення виявляється «в майбутньому» і вважається давно минулим.
+        /// Чи стрілку на цьому кінці саме зараз переводять. Лише для сервера і лише поки чанк завантажений:
+        /// мить переведення живе в пам'яті.
         /// </summary>
         public bool IsSwitching(bool atStart, long nowMs)
         {

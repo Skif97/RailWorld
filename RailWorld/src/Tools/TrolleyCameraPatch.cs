@@ -15,18 +15,26 @@ namespace RailWorld
     public static class TrolleyCameraPatch
     {
         private static ICoreClientAPI capi;
-        private static bool patched;
         private static Matrixf tmp = new Matrixf();
         private static double[] axis = new double[3];
 
         public static void Init(Harmony harmony, ICoreClientAPI api)
         {
-            capi = api;
-            if (patched) return;
-            patched = true;
+            var update = AccessTools.Method(typeof(Camera), "Update");
+            if (update == null)
+            {
+                api.Logger.Error("[RailWorld] у грі немає методу Camera.Update: камера пасажира не нахилятиметься разом з вагонеткою");
+                return;
+            }
 
-            harmony.Patch(AccessTools.Method(typeof(Camera), "Update"),
-                postfix: new HarmonyMethod(typeof(TrolleyCameraPatch), nameof(UpdatePostfix)));
+            capi = api;
+            harmony.Patch(update, postfix: new HarmonyMethod(typeof(TrolleyCameraPatch), nameof(UpdatePostfix)));
+        }
+
+        /// <summary>Світ покинуто: латку знімає RailWaySystem, тут лише відпускаємо гру.</summary>
+        public static void Release()
+        {
+            capi = null;
         }
 
         public static void UpdatePostfix(Camera __instance)

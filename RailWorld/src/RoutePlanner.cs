@@ -481,7 +481,9 @@ namespace RailWorld
         private string BuildKey()
         {
             var sb = new System.Text.StringBuilder();
-            sb.Append(preview ? 'P' : 'M').Append(awaitingId).Append(serverRefusal);
+            // Номер зміни покладеної колії теж: маршрут рахується відносно неї, і те, що під ним щось поклали
+            // чи прибрали, міняє і картинку, і відповідь, чи його можна будувати
+            sb.Append(preview ? 'P' : 'M').Append(awaitingId).Append(serverRefusal).Append('#').Append(system.ClientRevision);
             foreach (RouteMarker marker in markers) AppendMarker(sb, marker);
             if (hover != null)
             {
