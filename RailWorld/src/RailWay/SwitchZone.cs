@@ -118,50 +118,6 @@ namespace RailWorld.src.RailWay
         private const int MaxPairWalk = 48;
 
         /// <summary>
-        /// На скільки блоків рейка гостряка має відійти від рамної рейки, щоб гостряк скінчився: ширина головки
-        /// рейки плюс жолоб для гребеня колеса. Так визначається довжина гостряка і на справжній залізниці:
-        /// що пологіше розходяться колії, то далі це місце і то довший гостряк.
-        /// </summary>
-        public const double BladeHeelSeparation = 0.125;
-
-        /// <summary>
-        /// Де осі двох гілок розійшлися на apartNeeded блоків, у блоках від стрілки. Внутрішня рейка гілки
-        /// відходить від рамної рейки сусідньої рівно на стільки ж, на скільки розійшлися осі.
-        /// Гілки проходяться парами секцій від стрілки.
-        /// </summary>
-        internal static double CrossingDistance(Section first, bool firstEntered, Section second, bool secondEntered,
-            Func<SectionLink, Section> resolve, double apartNeeded)
-        {
-            double previousApart = 0, previousAlong = 0;
-            if (first == null || second == null) return previousAlong;
-            TrackWalker a = TrackWalker.Entering(first, firstEntered, resolve), b = TrackWalker.Entering(second, secondEntered, resolve);
-
-            for (int n = 1; n <= MaxPairWalk; n++)
-            {
-                // Середина секції з номером n лежить за (n - 0.5) секції від стрілки, а секція це пів блока
-                double along = (n - 0.5) * 0.5;
-                Vec3d p = a.Section.GetGlobalPos(), q = b.Section.GetGlobalPos();
-                double apart = Math.Sqrt((p.X - q.X) * (p.X - q.X) + (p.Z - q.Z) * (p.Z - q.Z));
-                double width = apartNeeded;
-
-                if (apart >= width)
-                {
-                    double step = apart - previousApart;
-                    double t = step > 1e-9 ? (width - previousApart) / step : 0;
-                    return previousAlong + (along - previousAlong) * GameMath.Clamp(t, 0, 1);
-                }
-
-                previousApart = apart;
-                previousAlong = along;
-
-                if (!a.Next() || !b.Next()) break;
-            }
-
-            // Гілки скінчилися, так і не розійшовшись: гостряк на всю пройдену довжину
-            return previousAlong;
-        }
-
-        /// <summary>
         /// Скільки перших секцій двох гілок стоять у парі: габарити секцій з однаковим номером від стрілки
         /// перекриваються, і замість двох шпал малюється одна спільна. first і second це перші секції гілок.
         /// </summary>

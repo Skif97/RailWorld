@@ -43,7 +43,7 @@ namespace RailWorld.Tests
 
             string problem = SectionLinker.FindSwitchProblem(Through(side), SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
-            Assert.Contains("гостряку", problem);
+            Assert.Contains("гостряк не вміщається", problem);
         }
 
         [Fact]
@@ -83,6 +83,54 @@ namespace RailWorld.Tests
             string problem = SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
             Assert.Contains("одна через одну", problem);
+        }
+
+        // Відгалуження від прямої дугою такого радіуса на кут angle, градуси
+        private List<Section> ArcFromStraight(double radius, double angleDeg)
+        {
+            double angle = angleDeg * System.Math.PI / 180;
+            return Plan(Point(0, 0, 1, 0), Point(radius * System.Math.Sin(angle), radius * (1 - System.Math.Cos(angle)), System.Math.Cos(angle), System.Math.Sin(angle)));
+        }
+
+        [Fact]
+        public void TooGentleSwitchIsRefused()
+        {
+            List<Section> trunk = Trunk();
+            List<Section> straight = Lay(Point(0, 0, 1, 0), Point(30, 0, 1, 0));
+            Join(trunk[trunk.Count - 1], straight[0]);
+
+            // Дуга радіусом 200: гостряк найбільшої довжини не встигає відійти від рамної рейки на зазор
+            string problem = SectionLinker.FindSwitchProblem(ArcFromStraight(200, 9), SectionsIn, Resolve, out _);
+            Assert.NotNull(problem);
+            Assert.Contains("гостряк не вміщається", problem);
+        }
+
+        [Fact]
+        public void FrogWhereTheBranchWobblesIsRefused()
+        {
+            List<Section> trunk = Trunk();
+            List<Section> straight = Lay(Point(0, 0, 1, 0), Point(30, 0, 1, 0));
+            Join(trunk[trunk.Count - 1], straight[0]);
+
+            // Гілка відходить від прямої, а там, де її рейка перетинає рейку прямої, на кілька сантиметрів
+            // повертає назад і лише потім іде далі
+            List<Section> branch = Plan(Point(0, 0, 1, 0), Point(6, 0.62, 1, 0.16), Point(8, 0.92, 1, 0), Point(10, 0.84, 1, -0.03),
+                Point(15, 2.2, 0.9, 0.44));
+
+            string problem = SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _);
+            Assert.NotNull(problem);
+            Assert.Contains("кілька разів", problem);
+        }
+
+        [Fact]
+        public void GentleSwitchWithinTheLongestBladeIsAllowed()
+        {
+            List<Section> trunk = Trunk();
+            List<Section> straight = Lay(Point(0, 0, 1, 0), Point(30, 0, 1, 0));
+            Join(trunk[trunk.Count - 1], straight[0]);
+
+            // Дуга радіусом 100: гостряк ще вміщається
+            Assert.Null(SectionLinker.FindSwitchProblem(ArcFromStraight(100, 14), SectionsIn, Resolve, out _));
         }
 
         [Fact]

@@ -301,7 +301,7 @@ namespace RailWorld.src.RailWay
                 bool mineAtStart = links[k].AtStart, otherAtStart = links[1 - k].AtStart;
 
                 BranchGeometry geometry = SwitchGeometry.Branch(mine, mineAtStart, sides[k][0], other, otherAtStart, sides[1 - k][0], resolve);
-                double heelAt = SwitchZone.CrossingDistance(mine, mineAtStart, other, otherAtStart, resolve, SwitchZone.BladeHeelSeparation);
+                double heelAt = SwitchGeometry.HeelAt(geometry, mine.TrackWidth);
 
                 var branch = new SwitchBranch
                 {

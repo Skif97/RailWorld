@@ -607,8 +607,8 @@ namespace RailWorld.src.RailWay
 
         // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
         // і якщо ні, скільки блоків від краю тіла до її початку
-        // Чи гілки стрілки розходяться так, як це може стрілка: гостряку є куди лягти, і гілки розходяться
-        // один раз, кожна у свій бік. Причина відмови або null
+        // Чи гілки стрілки розходяться так, як це може стрілка: один раз, кожна у свій бік, гостряк доходить
+        // до свого кореня, а рейки в хрестовині перетинаються один раз. Причина відмови або null
         private static string BranchesProblem(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve)
         {
             List<SectionLink> links = trunk.GetLinks(atStart);
@@ -625,7 +625,9 @@ namespace RailWorld.src.RailWay
 
                 BranchGeometry geometry = SwitchGeometry.Branch(first[k], links[k].AtStart, mine.Value, first[1 - k], links[1 - k].AtStart, theirs.Value, resolve);
                 if (!SwitchGeometry.BladeFits(geometry, built.Branches[k].BladeSections, first[k].TrackWidth))
-                    return "гілки біля стрілки лежать одна на одній: гостряку нема куди лягти. Поставте стрілку там, де колії розходяться";
+                    return "гостряк не вміщається: гілки розходяться надто полого або надто довго лежать одна на одній";
+                if (!SwitchGeometry.FrogCrossesOnce(geometry))
+                    return "рейки гілок у хрестовині сходяться кілька разів: гілки виляють одна відносно одної";
             }
 
             return null;

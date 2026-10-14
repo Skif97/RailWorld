@@ -77,11 +77,35 @@ namespace RailWorld.src.RailWay
     {
         // Гостряк стрілки: початок внутрішньої рейки кожної з двох колій, окрема деталь зі своїм мешем.
         // Розміри взято зі справжніх стрілок і перераховано на нашу рейку, головка якої 0.075 блока.
-        // Довжина: до місця, де рейка гостряка відійшла від рамної рейки на головку плюс жолоб
-        // (SwitchZone.BladeHeelSeparation), але не коротше і не довше за ці межі в секціях: від 3.5 до 8 ширин
+        // Довжина: до кореня (HeelAt), але не коротше і не довше за ці межі в секціях: від 3.5 до 8 ширин
         // колії, як на справжній залізниці. При колії 0.78 це від 3 до 6 блоків
         public static readonly int MinBladeSections = (int)Math.Ceiling(TrackGauge.StandardWidth * 3.5 / 0.5);
         public static readonly int MaxBladeSections = (int)Math.Floor(TrackGauge.StandardWidth * 8.0 / 0.5);
+
+        /// <summary>
+        /// На скільки рамна рейка має відійти від лінії гостряка, щоб гостряк скінчився, блоків між осями рейок:
+        /// дві ширини головки. Одна це дві половинки головок, гостряка і рамної рейки; друга це зазор між
+        /// ними, де проходить гребінь колеса. Так визначається довжина гостряка і на справжній залізниці:
+        /// що пологіше розходяться колії, то далі це місце і то довший гостряк.
+        /// </summary>
+        public const double HeelGap = RailProfile.HeadHalfWidth * 4;
+
+        /// <summary>
+        /// Де корінь гостряка гілки: за скільки блоків від стрілки, уздовж його лінії, рамна рейка відійшла від
+        /// неї на HeelGap. double.MaxValue, якщо в межах перерізів гілки так і не відійшла.
+        /// </summary>
+        public static double HeelAt(BranchGeometry own, double trackWidth)
+        {
+            double[] stock = Stock(own, own.Frames.Count, trackWidth);
+            double at = Reaches(stock, HeelGap, out _);
+            if (at >= stock.Length) return double.MaxValue;
+
+            double along = 0;
+            int whole = (int)Math.Floor(at);
+            for (int q = 1; q <= whole; q++) along += own.Frames[q - 1].Center.DistanceTo(own.Frames[q].Center);
+            if (whole + 1 < own.Frames.Count) along += (at - whole) * own.Frames[whole].Center.DistanceTo(own.Frames[whole + 1].Center);
+            return along;
+        }
 
         // Скільки секцій завдовжки гостряк, якщо його корінь за heelAt блоків від стрілки
         public static int BladeSections(double heelAt)
@@ -192,10 +216,33 @@ namespace RailWorld.src.RailWay
             return Reaches(stock, BladeHeadFrom, out _);
         }
 
+        // На скільки відстань між внутрішніми рейками в хрестовині може зменшитися через похибку розрахунку, блоків
+        private const double FrogWobble = 0.01;
+
         /// <summary>
-        /// Чи гостряк гілки довжиною bladeSections секцій набирає повну головку до свого кореня: рамна рейка
-        /// встигає відійти від його лінії на ширину головки рейки. Ні, коли гілки майже на всю довжину
-        /// гостряка лежать одна на одній: тоді від гостряка лишається тонка смужка під рамною рейкою.
+        /// Чи внутрішні рейки двох гілок від початку до кінця хрестовини лише розходяться: перетинаються один
+        /// раз і більше не зближуються. Ні, коли гілки посередині хрестовини виляють одна відносно одної: тоді
+        /// рейки сходяться й розходяться кілька разів, і дно хрестовини то ширшає, то вужчає. true, якщо
+        /// хрестовини немає: про неї тоді інше правило.
+        /// </summary>
+        public static bool FrogCrossesOnce(BranchGeometry own)
+        {
+            if (own.Throat < 0) return true;
+
+            double widest = own.Across[own.Throat];
+            for (int q = own.Throat + 1; q <= own.Full && q < own.Across.Length; q++)
+            {
+                if (own.Across[q] < widest - FrogWobble) return false;
+                widest = Math.Max(widest, own.Across[q]);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Чи гостряк гілки довжиною bladeSections секцій доходить до свого кореня: рамна рейка встигає
+        /// відійти від його лінії на HeelGap. Ні, коли гостряк коротший, ніж треба, бо далі вже хрестовина
+        /// або найбільша довжина: тоді біля його кінця рамна рейка лежить на ньому. Так буває, коли гілки
+        /// довго лежать одна на одній або розходяться дуже полого.
         /// </summary>
         public static bool BladeFits(BranchGeometry own, int bladeSections, double trackWidth)
         {
@@ -203,7 +250,7 @@ namespace RailWorld.src.RailWay
             if (points < 2) return false;
 
             double[] stock = Stock(own, points, trackWidth);
-            return stock[points - 1] >= RailProfile.HeadHalfWidth * 2;
+            return stock[points - 1] >= HeelGap - 1e-6;
         }
 
         // Де рамна рейка відійшла на needed блоків, у перерізах колії від стрілки, дробом; stock.Length, якщо ніде
