@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using RailWorld.src.RailWay;
+using Vintagestory.API.MathTools;
 using Xunit;
 
 namespace RailWorld.Tests
@@ -24,7 +25,7 @@ namespace RailWorld.Tests
         {
             // Стрілка з тестового світу: кінці секцій обох гілок, як їх записала гра, відносно стику. Гілки
             // 2,8 блока лежать одна на одній ближче за сантиметр і переходять одна через одну, далі основна
-            // повертає в інший бік. Гостряк у грі так і не з'явився
+            // повертає в інший бік. Стрілка тут не на своєму місці: колії розходяться на 2,8 блока далі
             (double, double)[] main =
             {
                 (0, 0), (-0.425, -0.262), (-0.888, -0.466), (-1.365, -0.604), (-1.856, -0.675), (-2.366, -0.680),
@@ -43,7 +44,49 @@ namespace RailWorld.Tests
 
             string problem = SectionLinker.FindSwitchProblem(Through(side), SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
-            Assert.Contains("гостряк не вміщається", problem);
+            Assert.Contains("розходяться далі по ходу", problem);
+        }
+
+        [Fact]
+        public void SwitchMovesToWhereTheTracksPart()
+        {
+            List<Section> trunk = Trunk();
+            Section trunkEnd = trunk[trunk.Count - 1];
+            var far = new RouteMarker { Position = new Vec3d(12, 0, 6), Heading = new Vec3d(0.6, 0, 0.8).Normalize(), Block = new BlockPos(12, 0, 6, 0) };
+
+            // Основна колія перші три блоки йде точно по кривій майбутнього маршруту, а далі повертає в інший бік
+            List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(new List<RouteMarker> { RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve), far }));
+            var shared = new (double, double)[7];
+            for (int i = 0; i < shared.Length; i++) shared[i] = (route[i * 2].position.X, route[i * 2].position.Z);
+            List<Section> together = Lay(Through(shared));
+            Vec3d parting = route[12].position;
+            Vec3f heading = route[12].tangent;
+            List<Section> away = Lay(Point(parting.X, parting.Z, heading.X, heading.Z), Point(parting.X + 6, parting.Z - 3, 0.8, -0.6));
+            Join(trunkEnd, together[0]);
+            Join(together[together.Count - 1], away[0]);
+
+            var markers = new List<RouteMarker> { RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve), far };
+            List<RouteMarker> settled = RouteBuilder.SettleSwitches(markers, Resolve);
+
+            // Стрілка переїхала на стик основної колії там, де колії розходяться
+            Assert.NotSame(markers, settled);
+            Assert.True(settled[0].Snapped);
+            Assert.InRange(settled[0].Position.DistanceTo(parting), 0, 0.6);
+            Assert.NotNull(settled[0].Track);
+        }
+
+        [Fact]
+        public void SwitchLeavingRightAwayStaysWhereItIs()
+        {
+            List<Section> main = LayMainTurningAway();
+            Section trunkEnd = Resolve(main[0].GetLinks(true)[0]);
+            var markers = new List<RouteMarker>
+            {
+                RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve),
+                new RouteMarker { Position = new Vec3d(10, 0, 4), Heading = new Vec3d(0.8, 0, 0.6).Normalize(), Block = new BlockPos(10, 0, 4, 0) }
+            };
+
+            Assert.Same(markers, RouteBuilder.SettleSwitches(markers, Resolve));
         }
 
         [Fact]

@@ -253,7 +253,7 @@ namespace RailWorld
                 markers.Add(marker);
             }
 
-            List<RoutePoint> route = RouteBuilder.Build(markers);
+            List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(markers, lookup.GetSection));
             if (route == null) return "з цих точок маршрут не складається";
 
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict,

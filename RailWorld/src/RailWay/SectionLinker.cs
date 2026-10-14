@@ -615,8 +615,14 @@ namespace RailWorld.src.RailWay
             Section[] first = { resolve(links[0]), resolve(links[1]) };
             if (first[0] == null || first[1] == null) return null;
 
-            if (SwitchSides.CrossOver(SwitchSides.Walk(first[0], links[0].AtStart, resolve), SwitchSides.Walk(first[1], links[1].AtStart, resolve)))
+            List<Section> one = SwitchSides.Walk(first[0], links[0].AtStart, resolve), other = SwitchSides.Walk(first[1], links[1].AtStart, resolve);
+            if (SwitchSides.CrossOver(one, other))
                 return "гілки стрілки переходять одна через одну: стрілка розводить колії лише раз, кожну у свій бік";
+
+            // Стрілка починається там, звідки гілки лише розходяться. Прокладання саме переносить її туди
+            // (RouteBuilder.SettleSwitches); якщо не вийшло, бо це далі за наступну точку маршруту, будувати не можна
+            if (SwitchSides.DivergesFrom(one, other) > 1)
+                return "колії розходяться далі по ходу, ніж стоїть стрілка: поставте її там, де вони розходяться";
 
             for (int k = 0; k < 2; k++)
             {

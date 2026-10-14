@@ -14,6 +14,108 @@ namespace RailWorld.src.RailWay
         /// З точок розмітки робить маршрут: кінці виносить на край блока, проміжні точки вирівнює по сусідах
         /// і скруглює кути. null, якщо точок менше двох.
         /// </summary>
+        /// <summary>
+        /// Ставить стрілки маршруту туди, де вони справді починаються. Маршрут, що відходить від колії (або
+        /// вливається в неї), часто ще якийсь час лежить на ній: гілки біля стику йдуть одна по одній і
+        /// розходяться далі. Стрілка ж починається там, звідки вони лише розходяться (SwitchSides.DivergesFrom).
+        /// Тоді перша (остання) точка маршруту переїжджає на стик колії перед цим місцем, а шматок до нього,
+        /// що лежить на самій колії, вдруге не кладеться; точки маршруту на ньому відпадають. Повертає нові
+        /// точки або ті самі, якщо переносити нічого. Клієнт і сервер роблять це однаково, тож показ
+        /// маршруту одразу показує стрілку там, де її поставить сервер.
+        /// </summary>
+        public static List<RouteMarker> SettleSwitches(List<RouteMarker> markers, Func<SectionLink, Section> resolve)
+        {
+            if (resolve == null || markers == null || markers.Count < 2) return markers;
+            List<RouteMarker> result = Settle(markers, true, resolve);
+            return Settle(result, false, resolve);
+        }
+
+        // Найдальший стик колії від точки, де стрілка мала б початися, при якому стрілку ще можна перенести, блоків
+        private const double JointReach = 0.3;
+
+        private static List<RouteMarker> Settle(List<RouteMarker> markers, bool first, Func<SectionLink, Section> resolve)
+        {
+            RouteMarker marker = first ? markers[0] : markers[markers.Count - 1];
+            if (marker.Track == null) return markers;
+
+            List<RoutePoint> route = Build(markers);
+            if (route == null) return markers;
+            if (!first) route.Reverse();
+
+            // Маршрут від стрілки, точками нарізки, і де в них стоїть кожна його точка
+            var points = new List<PointOnBezierCurve>();
+            var at = new List<int> { 0 };
+            for (int i = 0; i + 1 < route.Count && points.Count < SwitchSides.MaxSections * 2; i++)
+            {
+                RoutePoint a = route[i], b = route[i + 1];
+                List<PointOnBezierCurve> leg = first ? RouteCurve.Leg(a, b) : RouteCurve.Leg(Reversed(b), Reversed(a));
+                if (leg == null) return markers;
+                if (!first) leg.Reverse();
+                if (points.Count > 0) leg.RemoveAt(0);
+                points.AddRange(leg);
+                at.Add(points.Count - 1);
+            }
+
+            var branch = new List<Section>();
+            for (int i = 0; i + 2 < points.Count && branch.Count < SwitchSides.MaxSections; i += 2)
+            {
+                branch.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+            }
+            var track = new List<Section>();
+            var entered = new List<bool>();
+            TrackWalker walk = TrackWalker.Entering(marker.Track, marker.TrackJointAtStart, resolve);
+            do
+            {
+                track.Add(walk.Section);
+                entered.Add(walk.Entered);
+            }
+            while (track.Count < SwitchSides.MaxSections && walk.Next());
+
+            int from = SwitchSides.DivergesFrom(branch, track);
+            if (from <= 0) return markers;
+
+            // Стик колії, найближчий до місця, де стрілка мала б початися
+            Vec3d start = branch[from].FullStartPosition;
+            int joint = -1;
+            double best = JointReach;
+            for (int j = 1; j < track.Count; j++)
+            {
+                double distance = track[j].GetEndPosition(entered[j]).DistanceTo(start);
+                if (distance >= best) continue;
+                best = distance;
+                joint = j;
+            }
+            if (joint < 0) return markers;
+
+            // Точки маршруту, що лежать до нового стику, відпадають; кінцева лишається завжди
+            int dropped = 0;
+            while (dropped + 1 < at.Count - 1 && at[dropped + 1] <= from * 2) dropped++;
+
+            RouteMarker moved = RouteMarker.OnJoint(track[joint - 1], !entered[joint - 1], first ? 1 : -1, first, resolve);
+            var result = new List<RouteMarker>(markers);
+            if (first)
+            {
+                result.RemoveRange(0, dropped + 1);
+                result.Insert(0, moved);
+            }
+            else
+            {
+                result.RemoveRange(result.Count - 1 - dropped, dropped + 1);
+                result.Add(moved);
+            }
+            return result.Count >= 2 ? result : markers;
+        }
+
+        // Та сама точка маршруту, пройдена в інший бік
+        private static RoutePoint Reversed(RoutePoint point)
+        {
+            return new RoutePoint
+            {
+                Position = point.Position, Tangent = point.Tangent.Clone().Mul(-1), Cant = point.Cant,
+                Track = point.Track, TrackJointAtStart = point.TrackJointAtStart
+            };
+        }
+
         public static List<RoutePoint> Build(List<RouteMarker> points)
         {
             int count = points.Count;

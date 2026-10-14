@@ -110,6 +110,36 @@ namespace RailWorld.src.RailWay
             return false;
         }
 
+        /// <summary>
+        /// З якої секції гілки mine (номер з нуля) друга гілка лише відходить від неї, аж до кореня гостряка,
+        /// де вони розійшлися на SwitchGeometry.HeelGap. Тут стрілка справді починається: звідси зазор між
+        /// гостряком і рамною рейкою росте до кореня, і відведений гостряк утворює з рамною рейкою гострий
+        /// кут, що сходиться до хрестовини. Секції перед нею лежать на другій колії, і їхня відстань до неї
+        /// то росте, то меншає. 0, якщо гілки розходяться від самої стрілки, як і має бути.
+        /// </summary>
+        public static int DivergesFrom(IList<Section> mine, IList<Section> partner)
+        {
+            if (mine.Count == 0 || partner.Count == 0) return 0;
+
+            List<bool> innerFirst = InnerFirst(mine, partner);
+            var apart = new double[mine.Count];
+            int heel = mine.Count - 1;
+            for (int n = 0; n < mine.Count; n++)
+            {
+                apart[n] = Toward(mine[n], partner, Normal(mine[n]).Mul(innerFirst[n] ? 1 : -1));
+                if (apart[n] >= SwitchGeometry.HeelGap)
+                {
+                    heel = n;
+                    break;
+                }
+            }
+
+            // Від кореня до стрілки, поки відстань лише меншає
+            int from = heel;
+            while (from > 0 && apart[from - 1] < apart[from]) from--;
+            return from;
+        }
+
         // Де від середини секції лежить найближча точка осі колії track, у плані: відстань до неї в бік side.
         // Від'ємна, якщо колія з протилежного боку
         private static double Toward(Section section, IList<Section> track, Vec3d side)
