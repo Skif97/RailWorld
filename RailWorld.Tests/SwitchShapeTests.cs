@@ -54,9 +54,13 @@ namespace RailWorld.Tests
         {
             List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(markers));
             if (atEnd) route.Reverse();
-            var shared = new (double, double)[7];
-            for (int i = 0; i < shared.Length; i++) shared[i] = (route[i * 2].position.X, route[i * 2].position.Z);
-            List<Section> together = Lay(Through(shared));
+            // Ті самі секції, на які маршрут поріже планувальник
+            var shared = new List<Section>();
+            for (int i = 0; i < 12; i += 2)
+            {
+                shared.Add(new Section(route[i], route[i + 1], route[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+            }
+            List<Section> together = Lay(shared);
             Vec3d parting = route[12].position;
             Vec3f heading = route[12].tangent;
             if (atEnd) heading = new Vec3f(-heading.X, -heading.Y, -heading.Z);
@@ -86,7 +90,7 @@ namespace RailWorld.Tests
             Assert.NotSame(markers, settled);
             Assert.Equal(2, settled.Count);
             Assert.True(settled[0].Snapped);
-            Assert.InRange(settled[0].Position.DistanceTo(parting), 0, 0.6);
+            Assert.Equal(0, settled[0].Position.DistanceTo(parting), 3);
             Assert.NotNull(settled[0].Track);
         }
 
@@ -102,11 +106,9 @@ namespace RailWorld.Tests
             markers[markers.Count - 1] = RouteMarker.OnJoint(trunkEnd, false, -1, false, Resolve);
             List<RouteMarker> settled = RouteBuilder.SettleSwitches(markers, Resolve);
 
-            // Колія тут складена з прямих відрізків, а маршрут крива: між ними кілька міліметрів то в один бік, то
-            // в інший, і на такому шумі розходження видно на секцію-дві раніше. Стрілка там уже вістря леза
             Assert.Equal(markers.Count, settled.Count);
             Assert.True(settled[settled.Count - 1].Snapped);
-            Assert.InRange(settled[settled.Count - 1].Position.DistanceTo(parting), 0, 1.2);
+            Assert.Equal(0, settled[settled.Count - 1].Position.DistanceTo(parting), 3);
         }
 
         [Fact]

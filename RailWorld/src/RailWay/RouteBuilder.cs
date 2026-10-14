@@ -30,20 +30,23 @@ namespace RailWorld.src.RailWay
             return Settle(result, false, resolve);
         }
 
-        // Найдальший стик колії від точки, де стрілка мала б початися, при якому стрілку ще можна перенести, блоків
-        private const double JointReach = 0.3;
-
         private static List<RouteMarker> Settle(List<RouteMarker> markers, bool first, Func<SectionLink, Section> resolve)
         {
             RouteMarker marker = first ? markers[0] : markers[markers.Count - 1];
             if (marker.Track == null) return markers;
 
-            List<RoutePoint> route = Build(markers);
+            var sources = new List<int>();
+            List<RoutePoint> route = Build(markers, sources);
             if (route == null) return markers;
-            if (!first) route.Reverse();
+            if (!first)
+            {
+                route.Reverse();
+                sources.Reverse();
+            }
 
-            // Маршрут від стрілки, точками нарізки
+            // Маршрут від стрілки, точками нарізки, і де в них стоїть кожна точка маршруту
             var points = new List<PointOnBezierCurve>();
+            var at = new List<int> { 0 };
             for (int i = 0; i + 1 < route.Count && points.Count < SwitchSides.MaxSections * 2; i++)
             {
                 RoutePoint a = route[i], b = route[i + 1];
@@ -53,6 +56,7 @@ namespace RailWorld.src.RailWay
                 if (!first) leg.Reverse();
                 if (points.Count > 0) leg.RemoveAt(0);
                 points.AddRange(leg);
+                at.Add(points.Count - 1);
             }
 
             var branch = new List<Section>();
@@ -73,27 +77,33 @@ namespace RailWorld.src.RailWay
             int from = SwitchSides.DivergesFrom(branch, track);
             if (from <= 0) return markers;
 
-            // Стик колії, найближчий до місця, де стрілка мала б початися
-            Vec3d start = branch[from].FullStartPosition;
-            int joint = -1;
-            double best = JointReach;
-            for (int j = 1; j < track.Count; j++)
+            // Стрілка стає на стик колії. Гілка до місця, де стрілка мала б початися, лежить на колії, тож відстань
+            // до нього вздовж гілки це відстань і вздовж колії. Береться останній стик, що не далі за це місце:
+            // справжній початок тоді лежить у першій секції за ним
+            double reach = 0;
+            for (int n = 0; n < from; n++) reach += branch[n].FullStartPosition.DistanceTo(branch[n].FullEndPosition);
+            int joint = 0;
+            double run = 0;
+            for (int j = 0; j + 1 < track.Count; j++)
             {
-                double distance = track[j].GetEndPosition(entered[j]).DistanceTo(start);
-                if (distance >= best) continue;
-                best = distance;
-                joint = j;
+                run += track[j].FullStartPosition.DistanceTo(track[j].FullEndPosition);
+                if (run > reach + 1e-6) break;
+                joint = j + 1;
             }
-            if (joint < 0) return markers;
+            if (joint == 0) return markers;
 
-            // Точки, поставлені гравцем, що лежать до нового стику, відпадають; протилежний кінець маршруту
-            // лишається завжди. Складений маршрут має більше точок, ніж гравець поставив (на кутах він додає
-            // свої), тож де лежить кожна, шукаємо на самому маршруті
+            // Точки, поставлені гравцем, усі точки маршруту з яких лежать до нового стику, відпадають;
+            // протилежний кінець маршруту лишається завжди
             int dropped = 0;
             for (int m = 1; m < markers.Count - 1; m++)
             {
-                RouteMarker passed = first ? markers[m] : markers[markers.Count - 1 - m];
-                if (Nearest(points, passed.Position) > from * 2) break;
+                int placed = first ? m : markers.Count - 1 - m;
+                int last = -1;
+                for (int k = 0; k < sources.Count && k < at.Count; k++)
+                {
+                    if (sources[k] == placed) last = at[k];
+                }
+                if (last < 0 || last > from * 2) break;
                 dropped++;
             }
 
@@ -112,22 +122,16 @@ namespace RailWorld.src.RailWay
             return result.Count >= 2 ? result : markers;
         }
 
-        // Номер точки нарізки, найближчої в плані до place
-        private static int Nearest(List<PointOnBezierCurve> points, Vec3d place)
+        public static List<RoutePoint> Build(List<RouteMarker> points)
         {
-            int best = 0;
-            double bestDistance = double.MaxValue;
-            for (int i = 0; i < points.Count; i++)
-            {
-                double distance = points[i].position.HorizontalSquareDistanceTo(place.X, place.Z);
-                if (distance >= bestDistance) continue;
-                bestDistance = distance;
-                best = i;
-            }
-            return best;
+            return Build(points, null);
         }
 
-        public static List<RoutePoint> Build(List<RouteMarker> points)
+        /// <summary>
+        /// Те саме, але ще каже про кожну точку маршруту, з якої точки гравця (номер у points) її зроблено:
+        /// кут маршрут заміняє двома точками, початком і кінцем дуги, і додає свої точки на сході з колії.
+        /// </summary>
+        internal static List<RoutePoint> Build(List<RouteMarker> points, List<int> sources)
         {
             int count = points.Count;
             if (count < 2) return null;
@@ -198,7 +202,7 @@ namespace RailWorld.src.RailWay
                 });
             }
 
-            return RoundCorners(points, route);
+            return RoundCorners(points, route, sources);
         }
 
         // Дуга, якою маршрут скруглює кут, не тісніша за найменший радіус із невеликим запасом: крива Безьє
@@ -223,6 +227,8 @@ namespace RailWorld.src.RailWay
             // а в маршрут не потрапляє: кут з'єднується з крайньою точкою однією кривою
             public bool Hidden;
             public RoutePoint Point;
+            // З якої точки гравця вузол: її номер. Кінець дуги сходу належить крайній точці, від якої вона
+            public int Marker;
             // Скільки дуга кута забирає від кожної з двох прямих
             public double Cut;
             public double Turn;
@@ -249,17 +255,21 @@ namespace RailWorld.src.RailWay
         /// Якби висота йшла прямими між точками, увесь перехід від рівного кінця маршруту до ухилу дістався б
         /// короткому шматку прямої перед першою дугою: там виходив злам, а за ним горбок.
         /// </summary>
-        private static List<RoutePoint> RoundCorners(List<RouteMarker> markers, List<RoutePoint> route)
+        private static List<RoutePoint> RoundCorners(List<RouteMarker> markers, List<RoutePoint> route, List<int> sources)
         {
             int count = route.Count;
-            if (count < 3) return route;
+            if (count < 3)
+            {
+                for (int i = 0; i < count; i++) sources?.Add(i);
+                return route;
+            }
 
             var nodes = new List<Node>();
             for (int i = 0; i < count; i++)
             {
                 nodes.Add(new Node
                 {
-                    Position = route[i].Position, Tangent = route[i].Tangent, Point = route[i],
+                    Position = route[i].Position, Tangent = route[i].Tangent, Point = route[i], Marker = i,
                     Corner = i > 0 && i < count - 1 && !markers[i].Exact && !markers[i].Snapped
                 });
             }
@@ -268,12 +278,20 @@ namespace RailWorld.src.RailWay
             if (nodes[1].Corner)
             {
                 Node lead = LeadIn(nodes[0], nodes[1].Position, 1);
-                if (lead != null) nodes.Insert(1, lead);
+                if (lead != null)
+                {
+                    lead.Marker = 0;
+                    nodes.Insert(1, lead);
+                }
             }
             if (nodes[nodes.Count - 2].Corner)
             {
                 Node lead = LeadIn(nodes[nodes.Count - 1], nodes[nodes.Count - 2].Position, -1);
-                if (lead != null) nodes.Insert(nodes.Count - 1, lead);
+                if (lead != null)
+                {
+                    lead.Marker = count - 1;
+                    nodes.Insert(nodes.Count - 1, lead);
+                }
             }
 
             int n = nodes.Count;
@@ -385,6 +403,7 @@ namespace RailWorld.src.RailWay
             }
 
             var result = new List<RoutePoint>();
+            var from = new List<int>();
             // Точки, через які маршрут має пройти точно: їх не можна ні зсувати, ні зливати з сусідами
             var keep = new HashSet<RoutePoint>();
 
@@ -396,6 +415,7 @@ namespace RailWorld.src.RailWay
                 {
                     RoutePoint point = node.Point ?? new RoutePoint { Position = node.Position, Tangent = node.Tangent };
                     result.Add(point);
+                    from.Add(node.Marker);
                     keep.Add(point);
                     continue;
                 }
@@ -407,6 +427,7 @@ namespace RailWorld.src.RailWay
                 if (need[i] <= 0 || 2 * cut / Math.Tan(node.Turn / 2) * Math.Sin(node.Turn / 2) < RouteCurve.MinSpan)
                 {
                     result.Add(node.Point);
+                    from.Add(node.Marker);
                     continue;
                 }
 
@@ -428,6 +449,8 @@ namespace RailWorld.src.RailWay
                     Position = new Vec3d(corner.X + outX * outPart, outY, corner.Z + outZ * outPart),
                     Tangent = WithSlope(outX, outZ, outSlope)
                 });
+                from.Add(node.Marker);
+                from.Add(node.Marker);
             }
 
             // Дві точки ближче одна до одної, ніж дозволяє нарізка: між ними не вийшло б жодної секції.
@@ -439,21 +462,38 @@ namespace RailWorld.src.RailWay
                 if (HorizontalDistance(a.Position, b.Position) >= RouteCurve.MinSpan) continue;
 
                 if (keep.Contains(a) && keep.Contains(b)) continue;
-                if (keep.Contains(b)) result.RemoveAt(k);
-                else if (keep.Contains(a)) result.RemoveAt(k + 1);
+                if (keep.Contains(b))
+                {
+                    result.RemoveAt(k);
+                    from.RemoveAt(k);
+                }
+                else if (keep.Contains(a))
+                {
+                    result.RemoveAt(k + 1);
+                    from.RemoveAt(k + 1);
+                }
                 else
                 {
+                    // Точка посередині між кінцем однієї дуги і початком наступної: вона вже на шляху до другої
                     result[k] = new RoutePoint
                     {
                         Position = new Vec3d((a.Position.X + b.Position.X) / 2, (a.Position.Y + b.Position.Y) / 2, (a.Position.Z + b.Position.Z) / 2),
                         Tangent = new Vec3d(a.Tangent.X + b.Tangent.X, a.Tangent.Y + b.Tangent.Y, a.Tangent.Z + b.Tangent.Z).Normalize()
                     };
+                    from[k] = from[k + 1];
                     result.RemoveAt(k + 1);
+                    from.RemoveAt(k + 1);
                 }
                 k--;
             }
 
-            return result.Count < 2 ? route : result;
+            if (result.Count < 2)
+            {
+                for (int i = 0; i < count; i++) sources?.Add(i);
+                return route;
+            }
+            sources?.AddRange(from);
+            return result;
         }
 
         /// <summary>
