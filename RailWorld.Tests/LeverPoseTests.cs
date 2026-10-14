@@ -33,8 +33,8 @@ namespace RailWorld.Tests
             int arcSide = SideOfArc(trunk);
 
             // Важіль з боку дуги: з його боку дуга, положення 1. З протилежного: пряма, положення 0
-            Assert.Equal(1, SectionLinker.BranchToward(trunk, false, arcSide, Resolve));
-            Assert.Equal(0, SectionLinker.BranchToward(trunk, false, -arcSide, Resolve));
+            Assert.Equal(1, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), arcSide, Resolve));
+            Assert.Equal(0, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), -arcSide, Resolve));
         }
 
         [Fact]
@@ -43,7 +43,7 @@ namespace RailWorld.Tests
             Section trunk = LaySwitch();
             Forget(Resolve(trunk.GetLinks(false)[1]));
 
-            Assert.Equal(-1, SectionLinker.BranchToward(trunk, false, 1, Resolve));
+            Assert.Equal(-1, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), 1, Resolve));
         }
 
         [Theory]
@@ -66,8 +66,8 @@ namespace RailWorld.Tests
 
             // Увімкнена дуга. Важіль з її боку стоїть на останньому кадрі, з протилежного на першому:
             // тяга в обох випадках відводить гостряки від дуги
-            double beside = LeverPose.Thrown(1, 1, SectionLinker.BranchToward(trunk, false, arcSide, Resolve));
-            double across = LeverPose.Thrown(1, 1, SectionLinker.BranchToward(trunk, false, -arcSide, Resolve));
+            double beside = LeverPose.Thrown(1, 1, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), arcSide, Resolve));
+            double across = LeverPose.Thrown(1, 1, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), -arcSide, Resolve));
             Assert.Equal(1, beside, 6);
             Assert.Equal(0, across, 6);
         }

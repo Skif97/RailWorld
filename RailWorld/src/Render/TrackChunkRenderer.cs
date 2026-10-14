@@ -210,7 +210,10 @@ namespace RailWorld
 
             // Важіль стоїть в останньому положенні, коли увімкнена гілка з його боку (LeverPose). Якщо гілок
             // не знайти (сусідній чанк ще не прийшов), він стоїть як для першої, доки чанк не збереться знову
-            int branchAtLever = SectionLinker.BranchToward(section, atStart, side, track.FindSection);
+            DataInChunk data = DataInChunk.GetClient(chunkCoord);
+            RailSwitch record = null;
+            data?.Switches.TryGetValue(RailSwitch.KeyOf(section.IndexInChunk, atStart), out record);
+            int branchAtLever = record == null ? -1 : SectionLinker.BranchToward(section, atStart, record, side, track.FindSection);
             bool thrown = LeverPose.Thrown(section.GetSwitchPosition(atStart), 1, branchAtLever) > 0.5;
 
             string key = chunkCoord.X + "_" + chunkCoord.Y + "_" + chunkCoord.Z + "_" + section.IndexInChunk + (atStart ? "S" : "E");
@@ -256,7 +259,7 @@ namespace RailWorld
             List<Section>[] branches = SwitchBranches(chunk, record, out Section trunk);
             if (branches == null) return layout;
 
-            layout = NodeTimbers.Lay(branches[0], branches[1], SectionPicker.LeverPosition(trunk, record.AtStart));
+            layout = NodeTimbers.Lay(branches[0], branches[1], record.Shape, SectionPicker.LeverPosition(trunk, record.AtStart));
             known[key] = layout;
             return layout;
         }

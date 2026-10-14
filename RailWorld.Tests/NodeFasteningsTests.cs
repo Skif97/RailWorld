@@ -46,7 +46,7 @@ namespace RailWorld.Tests
             List<Section> straight = Straight();
             double angle = Math.PI / 3, radius = 10;
             List<Section> arc = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(angle), radius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-            TimberLayout layout = NodeTimbers.Lay(straight, arc);
+            TimberLayout layout = NodeTimbers.Lay(straight, arc, SwitchShape.MainFirst);
             List<NodeFastening> fastenings = NodeFastenings.Lay(layout.Timbers, Rails(straight, arc));
 
             // Кожне стоїть на брусі і дивиться вздовж своєї рейки
@@ -76,7 +76,7 @@ namespace RailWorld.Tests
             List<Section> straight = Straight();
             double angle = Math.PI / 3;
             List<Section> arc = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(angle), radius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-            TimberLayout layout = NodeTimbers.Lay(straight, arc);
+            TimberLayout layout = NodeTimbers.Lay(straight, arc, SwitchShape.MainFirst);
             List<NodeFastening> fastenings = NodeFastenings.Lay(layout.Timbers, Rails(straight, arc));
             Assert.True(fastenings.Count >= layout.Timbers.Count * 2);
 
@@ -102,7 +102,7 @@ namespace RailWorld.Tests
             List<Section> straight = Straight();
             double angle = Math.PI / 3, radius = 10;
             List<Section> arc = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(angle), radius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-            TimberLayout layout = NodeTimbers.Lay(straight, arc);
+            TimberLayout layout = NodeTimbers.Lay(straight, arc, SwitchShape.MainFirst);
             List<NodeFastening> fastenings = NodeFastenings.Lay(layout.Timbers, Rails(straight, arc));
 
             // Біля стику рейки двох гілок ідуть майже одна по одній: підкладкам там місця немає
@@ -134,7 +134,7 @@ namespace RailWorld.Tests
             List<Section> straight = Straight();
             double angle = Math.PI / 3, radius = 10;
             List<Section> arc = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(angle), radius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-            TimberLayout layout = NodeTimbers.Lay(straight, arc);
+            TimberLayout layout = NodeTimbers.Lay(straight, arc, SwitchShape.MainFirst);
 
             // Контррейка стоїть біля другої рейки прямої колії на кількох секціях
             // На крайніх секціях лежать її відігнуті кінці: вони до бруса не кріпляться

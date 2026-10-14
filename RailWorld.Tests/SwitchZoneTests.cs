@@ -289,7 +289,8 @@ namespace RailWorld.Tests
             Section last = trunk[trunk.Count - 1];
 
             // Спершу важіль стає із зовнішнього боку прямої гілки, не між коліями
-            int preferred = SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn);
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            int preferred = SectionLinker.ChooseLeverSide(last, false, record, Resolve, SectionsIn);
             Assert.NotEqual(0, preferred);
             Vec3d there = SectionPicker.LeverPosition(last, false, preferred);
             Vec3d opposite = SectionPicker.LeverPosition(last, false, -preferred);
@@ -298,15 +299,15 @@ namespace RailWorld.Tests
 
             // На тому місці вже лежить інша колія: важіль переходить на другий бік
             Lay(Point(there.X - 4, there.Z - 0.3, 1, 0), Point(there.X + 4, there.Z - 0.3, 1, 0));
-            Assert.Equal(-preferred, SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn));
+            Assert.Equal(-preferred, SectionLinker.ChooseLeverSide(last, false, record, Resolve, SectionsIn));
 
             // Перенести важіль на зайнятий бік не можна, на вільний можна
-            Assert.False(SectionLinker.LeverSideFree(last, false, preferred, Resolve, SectionsIn));
-            Assert.True(SectionLinker.LeverSideFree(last, false, -preferred, Resolve, SectionsIn));
+            Assert.False(SectionLinker.LeverSideFree(last, false, preferred, record, SectionsIn));
+            Assert.True(SectionLinker.LeverSideFree(last, false, -preferred, record, SectionsIn));
 
             // І з другого боку теж колія: важелю стати ніде
             Lay(High(opposite.X - 4, 0, opposite.Z + 0.3, 1, 0), High(opposite.X + 4, 0, opposite.Z + 0.3, 1, 0));
-            Assert.Equal(0, SectionLinker.ChooseLeverSide(last, false, Resolve, SectionsIn));
+            Assert.Equal(0, SectionLinker.ChooseLeverSide(last, false, record, Resolve, SectionsIn));
         }
 
         [Fact]

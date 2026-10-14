@@ -426,7 +426,7 @@ namespace RailWorld.src.RailWay
                 }
 
                 // Важелю має бути де стати: якщо з обох боків від стрілки вже лежать інші колії, будувати її не можна
-                if (ChooseLeverSide(join.Copy, join.Other.AtStart, Find, track) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
+                if (built != null && ChooseLeverSide(join.Copy, join.Other.AtStart, built, Find, track) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
 
                 // Стрілку не перетинає інша колія: це правило діє в обидва боки. Маршрут не може перетнути
                 // стрілку, що вже лежить, і так само не може поставити стрілку там, де колію вже перетинає інша
@@ -764,19 +764,16 @@ namespace RailWorld.src.RailWay
             // порахує SwitchRegistry, коли сесія зберігатиме зміни
         }
 
-        // Як далеко вздовж гілок дивитися, щоб зрозуміти, котра з них пряміша, у секціях
-        private const int LeverLookAhead = 8;
-
         /// <summary>
         /// Ставить важіль стрілки з того боку, який вибрав ChooseLeverSide. Якщо вільного боку немає,
         /// важіль лишається де був: побудувати таку стрілку не дає FindSwitchProblem.
         /// </summary>
-        internal static void PlaceLever(RailDataSession session, Section trunk, bool atStart)
+        internal static void PlaceLever(RailDataSession session, Section trunk, bool atStart, RailSwitch record)
         {
             // Гравець переставив важіль сам: його вибір лишається
             if (trunk.IsLeverManual(atStart)) return;
 
-            int side = ChooseLeverSide(trunk, atStart, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values));
+            int side = ChooseLeverSide(trunk, atStart, record, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values));
             if (side == 0) return;
 
             if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;
@@ -786,26 +783,19 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Вибирає бік для важеля стрілки: 1 з боку нормалі спільної секції, -1 з протилежного.
-        /// Найкраще йому із зовнішнього боку прямішої з двох колій, тобто з протилежного від того, куди
-        /// відхиляється друга: тоді він не стоїть між коліями. Але якщо там уже лежить інша колія і важіль
-        /// опинився б під її шпалами, береться другий бік. Повертає 0, якщо зайняті обидва.
+        /// Найкраще йому із зовнішнього боку основної гілки (RailSwitch.Shape), тобто з протилежного від того,
+        /// куди відходить друга: тоді він не стоїть між коліями. На розвилці так само від першої гілки.
+        /// Але якщо там уже лежить інша колія і важіль опинився б під її шпалами, береться другий бік.
+        /// Повертає 0, якщо зайняті обидва або гілок не прочитати.
         /// </summary>
-        public static int ChooseLeverSide(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve,
+        public static int ChooseLeverSide(Section trunk, bool atStart, RailSwitch record, System.Func<SectionLink, Section> resolve,
             TrackIndex track)
         {
-            // Секції самої стрілки: вони лежать поруч із важелем, але це не чужа колія
-            var own = new HashSet<string>();
-            own.Add(SectionKey(trunk));
+            int other = OtherSide(trunk, atStart, record, record.Main, resolve);
+            if (other == 0) return 0;
 
-            double[] sideways = BranchSideways(trunk, atStart, resolve, own);
-            if (sideways == null) return 0;
-
-            // Пряміша та, що відійшла менше. Друга відхиляється від неї в цей бік, а важіль стає з протилежного
-            int straighter = Math.Abs(sideways[0]) <= Math.Abs(sideways[1]) ? 0 : 1;
-            double diverging = sideways[1 - straighter] - sideways[straighter];
-            int preferred = diverging > 0 ? -1 : 1;
-
-            foreach (int side in new[] { preferred, -preferred })
+            HashSet<string> own = OwnSections(trunk, record);
+            foreach (int side in new[] { -other, other })
             {
                 if (LeverSideFree(trunk, atStart, side, own, track)) return side;
             }
@@ -813,69 +803,53 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// На скільки кожна з двох гілок стрілки відходить убік від стику, якщо міряти вздовж нормалі спільної
-        /// колії: додатне в бік нормалі. Номер гілки це номер зв'язку, він же положення стрілки. Біля самого
-        /// стику гілки ще лежать разом, тож дивимося на кілька секцій далі. own, якщо заданий, збирає пройдені
-        /// секції. null, якщо гілок не дві або котрусь не знайти.
-        /// </summary>
-        public static double[] BranchSideways(Section trunk, bool atStart, System.Func<SectionLink, Section> resolve, HashSet<string> own = null)
-        {
-            List<SectionLink> links = trunk.GetLinks(atStart);
-            if (links.Count < 2) return null;
-
-            Vec3d joint = trunk.GetEndPosition(atStart);
-            Vec3f normal = atStart ? trunk.StartNormal : trunk.EndNormal;
-
-            double[] sideways = new double[2];
-            for (int i = 0; i < 2; i++)
-            {
-                Section first = resolve(links[i]);
-                if (first == null) return null;
-                own?.Add(SectionKey(first));
-
-                TrackWalker walk = TrackWalker.Entering(first, links[i].AtStart, resolve);
-                for (int step = 1; step < LeverLookAhead && walk.Next(); step++) own?.Add(SectionKey(walk.Section));
-
-                Vec3d far = walk.Section.GetEndPosition(!walk.Entered);
-                sideways[i] = (far.X - joint.X) * normal.X + (far.Z - joint.Z) * normal.Z;
-            }
-            return sideways;
-        }
-
-        /// <summary>
         /// Котра з двох гілок стрілки відходить від другої в бік side: 1 це бік нормалі спільної секції,
-        /// -1 протилежний. Номер гілки це положення стрілки, в якому вона увімкнена. -1, якщо гілок не дві
-        /// або котрусь не знайти.
+        /// -1 протилежний. Номер гілки це положення стрілки, в якому вона увімкнена. -1, якщо в записі
+        /// стрілки боки гілок невідомі.
         /// </summary>
-        public static int BranchToward(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve)
+        public static int BranchToward(Section trunk, bool atStart, RailSwitch record, int side, System.Func<SectionLink, Section> resolve)
         {
-            double[] sideways = BranchSideways(trunk, atStart, resolve);
-            if (sideways == null) return -1;
-            return (sideways[1] > sideways[0]) == (side > 0) ? 1 : 0;
+            // Перша гілка лежить з протилежного боку від того, де від неї друга
+            int other = OtherSide(trunk, atStart, record, 0, resolve);
+            if (other == 0) return -1;
+            return -other == side ? 0 : 1;
         }
 
         /// <summary>
         /// Чи може важіль стрілки стати з цього боку: чи не заходить у його місце інша колія.
         /// </summary>
-        public static bool LeverSideFree(Section trunk, bool atStart, int side, System.Func<SectionLink, Section> resolve,
-            TrackIndex track)
+        public static bool LeverSideFree(Section trunk, bool atStart, int side, RailSwitch record, TrackIndex track)
         {
-            // Секції самої стрілки лежать поруч із важелем, але це не чужа колія
-            var own = new HashSet<string>();
-            own.Add(SectionKey(trunk));
-            foreach (SectionLink link in trunk.GetLinks(atStart))
-            {
-                Section first = resolve(link);
-                if (first == null) continue;
+            return LeverSideFree(trunk, atStart, side, OwnSections(trunk, record), track);
+        }
 
-                TrackWalker walk = TrackWalker.Entering(first, link.AtStart, resolve);
-                for (int step = 0; step < LeverLookAhead; step++)
-                {
-                    own.Add(SectionKey(walk.Section));
-                    if (!walk.Next()) break;
-                }
+        // З якого боку нормалі спільної секції від гілки from лежить друга гілка: 1 з боку нормалі, -1 з
+        // протилежного, 0 якщо невідомо. Бік гілки записаний для її першої секції (SwitchBranch.InnerFirst),
+        // а нормаль тієї секції може дивитися в інший бік, ніж нормаль спільної
+        private static int OtherSide(Section trunk, bool atStart, RailSwitch record, int from, System.Func<SectionLink, Section> resolve)
+        {
+            if (record == null || record.Branches.Count != 2) return 0;
+            SwitchBranch branch = record.Branches[from];
+            bool? innerFirst = branch.InnerIsFirst(1);
+            SectionLink link = branch.Member(1);
+            Section first = link == null ? null : resolve(link);
+            if (innerFirst == null || first == null) return 0;
+
+            Vec3f trunkNormal = atStart ? trunk.StartNormal : trunk.EndNormal;
+            Vec3f normal = link.AtStart ? first.StartNormal : first.EndNormal;
+            bool same = trunkNormal.X * normal.X + trunkNormal.Z * normal.Z >= 0;
+            return innerFirst.Value == same ? 1 : -1;
+        }
+
+        // Секції самої стрілки: вони лежать поруч із важелем, але це не чужа колія
+        private static HashSet<string> OwnSections(Section trunk, RailSwitch record)
+        {
+            var own = new HashSet<string> { SectionKey(trunk) };
+            foreach (SwitchBranch branch in record.Branches)
+            {
+                foreach (SectionLink member in branch.Members) own.Add(member.ChunkX + "_" + member.ChunkY + "_" + member.ChunkZ + "_" + member.Index);
             }
-            return LeverSideFree(trunk, atStart, side, own, track);
+            return own;
         }
 
         private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<string> own, TrackIndex track)

@@ -16,16 +16,18 @@ namespace RailWorld.Tests
         private const double Sleeper = TrackGauge.StandardSleeperLength;
         private List<Section> straight, arc;
 
-        private TimberLayout LaySwitch(double radius = ArcRadius, Vec3d lever = null)
+        // arcFirst: дуга стоїть у записі стрілки першою гілкою, а не другою
+        private TimberLayout LaySwitch(double radius = ArcRadius, Vec3d lever = null, bool arcFirst = false)
         {
             List<Section> trunk = Trunk();
             Section last = trunk[trunk.Count - 1];
             straight = Straight();
             double angle = Math.PI / 3;
             arc = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(angle), radius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
-            Join(last, straight[0]);
-            Join(last, arc[0]);
-            return NodeTimbers.Lay(straight, arc, lever);
+            Join(last, arcFirst ? arc[0] : straight[0]);
+            Join(last, arcFirst ? straight[0] : arc[0]);
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            return arcFirst ? NodeTimbers.Lay(arc, straight, record.Shape, lever) : NodeTimbers.Lay(straight, arc, record.Shape, lever);
         }
 
         private static Vec3d End(Timber timber, int sign)
@@ -144,12 +146,13 @@ namespace RailWorld.Tests
         public void MainTrackIsTheStraighterOneWhicheverComesFirst()
         {
             TimberLayout layout = LaySwitch();
-            TimberLayout swapped = NodeTimbers.Lay(arc, straight);
+            TimberLayout swapped = LaySwitch(arcFirst: true);
 
+            // Секції тут нові, тож порівнюємо, де вони лежать
             Assert.Equal(layout.Timbers.Count, swapped.Timbers.Count);
             for (int i = 0; i < layout.Timbers.Count; i++)
             {
-                Assert.Same(layout.Timbers[i].Owner, swapped.Timbers[i].Owner);
+                Assert.Equal(0, layout.Timbers[i].Position.DistanceTo(swapped.Timbers[i].Position), 6);
                 Assert.Equal(layout.Timbers[i].Length, swapped.Timbers[i].Length, 6);
             }
         }
@@ -192,7 +195,9 @@ namespace RailWorld.Tests
             Join(last, left[0]);
             Join(last, right[0]);
 
-            TimberLayout layout = NodeTimbers.Lay(left, right);
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            Assert.Equal(SwitchShape.Fork, record.Shape);
+            TimberLayout layout = NodeTimbers.Lay(left, right, record.Shape);
             Assert.True(layout.Timbers.Count >= 4);
 
             // Обидві гілки віддали початок під бруси, порівну
@@ -226,6 +231,21 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void CrossoverBranchThatTurnsBackParallelIsStillTheBranch()
+        {
+            // З'їзд: гілка відходить від прямої і далі знову йде паралельно їй. Від початку до кінця вона не
+            // повертає зовсім, але в тілі стрілки вона повертає, а пряма ні: основна пряма
+            List<Section> trunk = Trunk();
+            Section last = trunk[trunk.Count - 1];
+            List<Section> crossover = Lay(Point(0, 0, 1, 0), Point(10, 4, 1, 0));
+            List<Section> line = Straight();
+            Join(last, crossover[0]);
+            Join(last, line[0]);
+
+            Assert.Equal(SwitchShape.MainSecond, SwitchBuilder.Build(last, false, Resolve).Shape);
+        }
+
+        [Fact]
         public void GentleCurveAgainstASteepOneIsATurnoutNotAFork()
         {
             // Основна колія ледь відвертає в один бік, відгалуження круто в інший: шпали основної лишаються впоперек неї
@@ -237,7 +257,9 @@ namespace RailWorld.Tests
             Join(last, main[0]);
             Join(last, branch[0]);
 
-            TimberLayout layout = NodeTimbers.Lay(branch, main);
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            Assert.Equal(SwitchShape.MainFirst, record.Shape);
+            TimberLayout layout = NodeTimbers.Lay(main, branch, record.Shape);
             Assert.True(layout.Timbers.Count >= 4);
             foreach (Timber timber in layout.Timbers)
             {

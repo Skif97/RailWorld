@@ -47,8 +47,6 @@ namespace RailWorld.src.RailWay
         public const double ClipGap = 0.06;
         // На скільки брус має виступати за вісь рейки, щоб її тримати: підошва рейки і місце на кріплення
         public const double RailTail = 0.1;
-        // У скільки разів одна гілка може відвертати крутіше за другу, щоб це ще була розвилка без основної колії
-        public const double ForkTurnRatio = 1.5;
         /// <summary>Найменший кут між коліями перетину, за якого під ним кладеться щит, градуси.</summary>
         public const double DeckAngleDeg = 60;
         // Як далеко від свого кінця шпала щита шукає першу шпалу другої колії, щоб дотягнутися до неї
@@ -68,23 +66,19 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// first і second це секції двох гілок по порядку від стику. lever це місце важеля стрілки або null:
-        /// бруси біля нього подовжуються в його бік.
+        /// first і second це секції двох гілок по порядку від стику, у порядку гілок запису стрілки; shape
+        /// каже, котра з них основна, або що це розвилка (RailSwitch.Shape). lever це місце важеля стрілки
+        /// або null: бруси біля нього подовжуються в його бік.
         /// </summary>
-        public static TimberLayout Lay(IList<Section> first, IList<Section> second, Vec3d lever = null)
+        public static TimberLayout Lay(IList<Section> first, IList<Section> second, SwitchShape shape, Vec3d lever = null)
         {
             var layout = new TimberLayout();
             if (first.Count == 0 || second.Count == 0) return layout;
 
-            int compared = Math.Min(first.Count, second.Count);
-            double firstTurn = Turn(first, compared), secondTurn = Turn(second, compared);
-            double gentle = Math.Min(Math.Abs(firstTurn), Math.Abs(secondTurn)), steep = Math.Max(Math.Abs(firstTurn), Math.Abs(secondTurn));
-
             List<Timber> beams;
-            if (firstTurn * secondTurn < 0 && steep <= gentle * ForkTurnRatio) beams = LayFork(first, second, layout);
-            // Основна колія та, що менше відвертає від спільного напрямку
-            else if (Math.Abs(firstTurn) <= Math.Abs(secondTurn)) beams = LayTurnout(first, second, layout);
-            else beams = LayTurnout(second, first, layout);
+            if (shape == SwitchShape.Fork) beams = LayFork(first, second, layout);
+            else if (shape == SwitchShape.MainSecond) beams = LayTurnout(second, first, layout);
+            else beams = LayTurnout(first, second, layout);
 
             if (lever != null) ExtendToLever(beams, lever);
             layout.Timbers.AddRange(beams);
@@ -442,15 +436,6 @@ namespace RailWorld.src.RailWay
                 });
             }
             return beams;
-        }
-
-        // На скільки колія відвернула від свого початкового напрямку за перші count секцій, радіани зі знаком
-        private static double Turn(IList<Section> track, int count)
-        {
-            Vec3d a = track[0].FullStartPosition, b = track[0].FullEndPosition;
-            Vec3d c = track[count - 1].FullStartPosition, d = track[count - 1].FullEndPosition;
-            double ax = b.X - a.X, az = b.Z - a.Z, cx = d.X - c.X, cz = d.Z - c.Z;
-            return Math.Atan2(ax * cz - az * cx, ax * cx + az * cz);
         }
 
         private static Place[] Places(IList<Section> track)

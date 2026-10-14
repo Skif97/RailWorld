@@ -91,7 +91,7 @@ namespace RailWorld.src.RailWay
 
                     int key = RailSwitch.KeyOf(section.IndexInChunk, atStart);
                     // Запису немає, він не дорахований або зроблений старою версією мода
-                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.LacksSides) missing.Add(key);
+                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.Outdated) missing.Add(key);
                 }
             }
 
@@ -110,7 +110,7 @@ namespace RailWorld.src.RailWay
             if (data == null) return null;
 
             int key = RailSwitch.KeyOf(trunkIndex, atStart);
-            if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.LacksSides) Update(session, chunk, trunkIndex, atStart);
+            if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.Outdated) Update(session, chunk, trunkIndex, atStart);
 
             data.Switches.TryGetValue(key, out known);
             return known;
@@ -165,7 +165,7 @@ namespace RailWorld.src.RailWay
             }
 
             // Бік важеля залежить від того, куди йдуть гілки, а вони могли подовжитися
-            SectionLinker.PlaceLever(session, trunk, atStart);
+            SectionLinker.PlaceLever(session, trunk, atStart, built);
         }
 
         // Пам'ятає чанк, поки в ньому є недорахована стрілка

@@ -1,4 +1,5 @@
 using ProtoBuf;
+using Vintagestory.API.MathTools;
 using System;
 using System.Collections.Generic;
 
@@ -20,7 +21,7 @@ namespace RailWorld.src.RailWay
         [ProtoMember(6)] public int Number;
 
         /// <summary>Чанк, у якому лежить запис про стрілку.</summary>
-        public Vintagestory.API.MathTools.Vec3i Chunk => new Vintagestory.API.MathTools.Vec3i(ChunkX, ChunkY, ChunkZ);
+        public Vec3i Chunk => new Vec3i(ChunkX, ChunkY, ChunkZ);
 
         public bool SameAs(SwitchRef other)
         {
@@ -28,7 +29,7 @@ namespace RailWorld.src.RailWay
                 && Key == other.Key && Branch == other.Branch && Number == other.Number;
         }
 
-        public bool PointsTo(Vintagestory.API.MathTools.Vec3i chunk, int key)
+        public bool PointsTo(Vec3i chunk, int key)
         {
             return ChunkX == chunk.X && ChunkY == chunk.Y && ChunkZ == chunk.Z && Key == key;
         }
@@ -145,6 +146,21 @@ namespace RailWorld.src.RailWay
     }
 
     /// <summary>
+    /// Яка стрілка за формою: котра гілка основна, або це розвилка, де основної немає.
+    /// </summary>
+    public enum SwitchShape
+    {
+        /// <summary>Запис зроблено до того, як записи стрілок знали форму: його треба перерахувати.</summary>
+        Unknown = 0,
+        /// <summary>Основна перша гілка: друга з неї відходить.</summary>
+        MainFirst = 1,
+        /// <summary>Основна друга гілка.</summary>
+        MainSecond = 2,
+        /// <summary>Гілки розходяться в різні боки приблизно однаково: основної немає.</summary>
+        Fork = 3
+    }
+
+    /// <summary>
     /// Стрілка: кінець секції, з якого колія розходиться на дві гілки. Зберігається в чанку своєї спільної
     /// секції разом із тим, що про неї можна порахувати наперед, щоб ніхто не шукав цього щоразу ходінням
     /// по зв'язках. Рахує її SwitchBuilder, коли стрілка з'являється або коли колія в її зоні змінюється.
@@ -160,9 +176,19 @@ namespace RailWorld.src.RailWay
         [ProtoMember(2)]
         public bool AtStart;
 
-        /// <summary>Дві гілки в тому самому порядку, що й зв'язки спільної секції: перша це основна.</summary>
+        /// <summary>
+        /// Дві гілки в тому самому порядку, що й зв'язки спільної секції; номер гілки це положення стрілки,
+        /// в якому вона увімкнена. Котра з них основна, каже Shape.
+        /// </summary>
         [ProtoMember(3)]
         public List<SwitchBranch> Branches = new List<SwitchBranch>();
+
+        /// <summary>
+        /// Котра гілка основна, або це розвилка. Основна та, що менше відвертає від напрямку колії на стику
+        /// до кінця тіла стрілки (SwitchBuilder.ShapeOf). Від цього залежить і розкладка брусів, і бік важеля.
+        /// </summary>
+        [ProtoMember(6)]
+        public SwitchShape Shape;
 
         /// <summary>
         /// Стрілку зібрано: на обох гілках у її зоні на кожній секції стоять обидві рейки і шпала. Лише тоді
@@ -191,7 +217,7 @@ namespace RailWorld.src.RailWay
         public bool SameAs(RailSwitch other)
         {
             if (other == null || TrunkIndex != other.TrunkIndex || AtStart != other.AtStart || Complete != other.Complete
-                || Resolved != other.Resolved || Branches.Count != other.Branches.Count) return false;
+                || Resolved != other.Resolved || Shape != other.Shape || Branches.Count != other.Branches.Count) return false;
             for (int k = 0; k < Branches.Count; k++)
             {
                 if (!Branches[k].SameAs(other.Branches[k])) return false;
@@ -214,8 +240,16 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
-        /// <summary>Запис зроблено до того, як записи стрілок знали боки гілок: його треба перерахувати.</summary>
-        public bool LacksSides => Branches.Exists(branch => branch.LacksSides);
+        /// <summary>
+        /// Номер основної гілки; на розвилці основною вважається перша, коли треба вибрати одну (бік важеля).
+        /// </summary>
+        public int Main => Shape == SwitchShape.MainSecond ? 1 : 0;
+
+        /// <summary>
+        /// Запис зроблено старішою версією мода, яка ще не знала форми стрілки чи боків гілок: його треба
+        /// перерахувати.
+        /// </summary>
+        public bool Outdated => Shape == SwitchShape.Unknown || Branches.Exists(branch => branch.LacksSides);
 
         /// <summary>
         /// Гілка, на яку вказує посилання секції, або null, якщо такої в записі немає: стрілку пораховано
@@ -265,7 +299,7 @@ namespace RailWorld.src.RailWay
         public static RailSwitch Rebuild(RailSwitch previous, Section trunk, bool atStart, Func<SectionLink, Section> resolve)
         {
             RailSwitch built = Build(trunk, atStart, resolve, out bool partsInPlace);
-            if (built == null || built.Resolved || previous == null || previous.LacksSides || !previous.Covers(built)) return built;
+            if (built == null || built.Resolved || previous == null || previous.Outdated || !previous.Covers(built)) return built;
 
             built.Branches = previous.Branches;
             built.Complete = previous.Complete && partsInPlace;
@@ -335,8 +369,50 @@ namespace RailWorld.src.RailWay
                 result.Branches.Add(branch);
             }
 
+            result.Shape = ShapeOf(trunk, atStart, result.Branches, resolve);
             result.Complete = partsInPlace && result.Resolved;
             return result;
+        }
+
+        /// <summary>
+        /// У скільки разів одна гілка може відвертати крутіше за другу, щоб це ще була розвилка без основної колії.
+        /// </summary>
+        public const double ForkTurnRatio = 1.5;
+
+        /// <summary>
+        /// Форма стрілки: наскільки кожна гілка відвернула від напрямку колії на стику до кінця тіла стрілки
+        /// (ZoneSections, а якщо гілку прочитано не всю, до останньої прочитаної секції). Основна та, що менше.
+        /// Розвилка, коли вони відвертають у різні боки і одна не більш ніж у ForkTurnRatio разів крутіше.
+        /// Міряється по тілу стрілки, а не по шпалах чи довільній кількості секцій: тоді форма не залежить
+        /// від того, де закінчуються шпали за стрілкою.
+        /// </summary>
+        internal static SwitchShape ShapeOf(Section trunk, bool atStart, List<SwitchBranch> branches, Func<SectionLink, Section> resolve)
+        {
+            if (branches.Count != 2) return SwitchShape.Unknown;
+
+            Vec3f outward = trunk.GetOutwardDirection(atStart);
+            double[] turn = new double[2];
+            for (int k = 0; k < 2; k++)
+            {
+                SwitchBranch branch = branches[k];
+                Section far = null;
+                bool entered = true;
+                for (int n = Math.Min(Math.Max(branch.ZoneSections, 1), branch.Members.Count); n >= 1 && far == null; n--)
+                {
+                    SectionLink member = branch.Member(n);
+                    far = resolve(member);
+                    entered = member.AtStart;
+                }
+                if (far == null) return SwitchShape.Unknown;
+
+                Vec3d from = far.GetEndPosition(entered), to = far.GetEndPosition(!entered);
+                double dx = to.X - from.X, dz = to.Z - from.Z;
+                turn[k] = Math.Atan2(outward.X * dz - outward.Z * dx, outward.X * dx + outward.Z * dz);
+            }
+
+            double gentle = Math.Min(Math.Abs(turn[0]), Math.Abs(turn[1])), steep = Math.Max(Math.Abs(turn[0]), Math.Abs(turn[1]));
+            if (turn[0] * turn[1] < 0 && steep <= gentle * ForkTurnRatio) return SwitchShape.Fork;
+            return Math.Abs(turn[0]) <= Math.Abs(turn[1]) ? SwitchShape.MainFirst : SwitchShape.MainSecond;
         }
     }
 }
