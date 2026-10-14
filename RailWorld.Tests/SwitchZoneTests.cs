@@ -103,8 +103,8 @@ namespace RailWorld.Tests
         {
             // Довга пряма без стрілок. Маршрут відходить від неї на пів блока і тут же повертається:
             // шпали двох колій весь час перекриваються, і дві його стрілки стоять одна в одній
-            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
-            List<Section> loop = Plan(Point(10, 0, 1, 0), Point(13, 0.5, 1, 0), Point(16, 0, 1, 0));
+            List<Section> line = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> loop = Plan(Point(JointNear(line, 10), 0, 1, 0), Point(13, 0.5, 1, 0), Point(JointNear(line, 16), 0, 1, 0));
 
             Assert.NotNull(SectionLinker.FindSwitchProblem(loop, SectionsIn, Resolve, out _));
         }
@@ -242,21 +242,22 @@ namespace RailWorld.Tests
         [Fact]
         public void SwitchWithoutAFrogIsRefused()
         {
-            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> line = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            double at = JointNear(line, 20);
 
             // Гілка відходить дугою, але обривається за два блоки: рейки двох колій ще не перетнулися,
             // і хрестовині стати ніде
             double angle = 2.0 / ArcRadius;
-            List<Section> stub = Plan(Point(20, 0, 1, 0),
-                Point(20 + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+            List<Section> stub = Plan(Point(at, 0, 1, 0),
+                Point(at + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
             string problem = SectionLinker.FindSwitchProblem(stub, SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
             Assert.Contains("хрестовини", problem);
 
             // Та сама дуга, доведена до кінця: хрестовина є
             double full = Math.PI / 3;
-            List<Section> branch = Plan(Point(20, 0, 1, 0),
-                Point(20 + ArcRadius * Math.Sin(full), ArcRadius * (1 - Math.Cos(full)), Math.Cos(full), Math.Sin(full)));
+            List<Section> branch = Plan(Point(at, 0, 1, 0),
+                Point(at + ArcRadius * Math.Sin(full), ArcRadius * (1 - Math.Cos(full)), Math.Cos(full), Math.Sin(full)));
             Assert.Null(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
         }
 
@@ -264,21 +265,22 @@ namespace RailWorld.Tests
         public void SwitchOnACrossingIsRefused()
         {
             // Довга колія на схід, і друга перетинає її навскіс у точці (30, 0)
-            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> line = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
             double k = Math.Sqrt(0.5);
             Lay(Point(30 - 8 * k, -8 * k, 1, 1), Point(30 + 8 * k, 8 * k, 1, 1));
 
             // Відгалуження від першої за два блоки до перетину: стрілка стала б просто на ньому
             double angle = Math.PI / 3;
-            List<Section> near = Plan(Point(28, 0, 1, 0),
-                Point(28 + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
+            double close = JointNear(line, 28), away = JointNear(line, 5);
+            List<Section> near = Plan(Point(close, 0, 1, 0),
+                Point(close + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
             string problem = SectionLinker.FindSwitchProblem(near, SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
             Assert.Contains("перетину", problem);
 
             // Те саме відгалуження далеко від перетину будується
-            List<Section> far = Plan(Point(5, 0, 1, 0),
-                Point(5 + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
+            List<Section> far = Plan(Point(away, 0, 1, 0),
+                Point(away + ArcRadius * Math.Sin(angle), -ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), -Math.Sin(angle)));
             Assert.Null(SectionLinker.FindSwitchProblem(far, SectionsIn, Resolve, out _));
         }
 
@@ -363,13 +365,13 @@ namespace RailWorld.Tests
         public void SwitchOverAStrayPieceOfTrackIsRefused()
         {
             // Поруч з колією лежить окремий шматочок: ні з чим не з'єднаний і нічого не перетинає
-            Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
+            List<Section> line = Lay(Point(0, 0, 1, 0), Point(60, 0, 1, 0));
             Lay(Point(23, 1.3, 1, 0), Point(26, 1.3, 1, 0));
 
             // Відгалуження в його бік: тіло стрілки лягло б просто на нього
-            double angle = Math.PI / 3;
-            List<Section> branch = Plan(Point(20, 0, 1, 0),
-                Point(20 + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+            double angle = Math.PI / 3, at = JointNear(line, 20);
+            List<Section> branch = Plan(Point(at, 0, 1, 0),
+                Point(at + ArcRadius * Math.Sin(angle), ArcRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
 
             Assert.NotNull(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
         }

@@ -166,7 +166,7 @@ namespace RailWorld.src.RailWay
         // Ті самі кінці, в будь-якому з двох напрямків
         private static bool SameEnds(Vec3d start, Vec3d end, Vec3d otherStart, Vec3d otherEnd)
         {
-            double tolerance = SectionLinker.DuplicateTolerance;
+            double tolerance = SectionLinker.PositionTolerance;
             return (otherStart.DistanceTo(start) <= tolerance && otherEnd.DistanceTo(end) <= tolerance)
                 || (otherStart.DistanceTo(end) <= tolerance && otherEnd.DistanceTo(start) <= tolerance);
         }

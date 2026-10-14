@@ -116,6 +116,21 @@ namespace RailWorld.Tests
             return track;
         }
 
+        /// <summary>
+        /// X стику колії, що йде на схід уздовж z = 0, найближчого до x. Маршрут у грі чіпляється до колії
+        /// на її стику, а стики через нарізку стоять не на круглих числах.
+        /// </summary>
+        protected static double JointNear(List<Section> track, double x)
+        {
+            double best = track[0].FullStartPosition.X;
+            foreach (Section section in track)
+            {
+                double end = section.FullEndPosition.X;
+                if (Math.Abs(end - x) < Math.Abs(best - x)) best = end;
+            }
+            return best;
+        }
+
         // Зв'язує кінець однієї секції з початком наступної в обидва боки
         protected static void Join(Section from, Section to)
         {

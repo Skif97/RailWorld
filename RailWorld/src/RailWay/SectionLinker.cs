@@ -159,20 +159,18 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class SectionLinker
     {
-        // Кінці ділянок лягають на край блока з похибкою нарізки, тому збіг шукаємо з допуском
-        public const double PositionTolerance = 0.1;
+        /// <summary>
+        /// Наскільки близько мають лежати кінці двох секцій, щоб вважати їх одним стиком, а обидва кінці двох
+        /// секцій, щоб вважати їх однією і тією самою. Маршрут, що чіпляється до колії, бере положення стику з
+        /// самої колії, тож кінці збігаються точно; допуск лише на похибку обчислень. Більший був би діркою,
+        /// в яку провалюється колесо, а перші секції відгалуження, що відходять від основної колії на частки
+        /// сантиметра, викидало б як повтори.
+        /// </summary>
+        public const double PositionTolerance = 0.001;
 
         // Наскільки напрямки двох кінців мають бути протилежні (косинус кута між ними).
         // Напрямки колії кратні 22.5°, тож сусідній напрямок сюди вже не проходить
         public const double DirectionTolerance = -0.95;
-
-        /// <summary>
-        /// Наскільки близько мають лежати обидва кінці двох секцій, щоб вважати їх однією і тією самою.
-        /// Навмисно набагато тісніше за PositionTolerance: перші секції відгалуження відходять від основної
-        /// колії на частки сантиметра, і з грубішою міркою їх викидало як повтори, а стрілка зсувалася далі.
-        /// Справжній повтор (той самий маршрут прокладено вдруге) збігається точно.
-        /// </summary>
-        public const double DuplicateTolerance = 0.001;
 
         /// <summary>
         /// Скільки сусідів може бути в одного кінця секції. Один це звичайна колія, два це стрілка:
@@ -199,8 +197,8 @@ namespace RailWorld.src.RailWay
                 Vec3d otherStart = other.FullStartPosition;
                 Vec3d otherEnd = other.FullEndPosition;
 
-                bool same = otherStart.DistanceTo(start) <= DuplicateTolerance && otherEnd.DistanceTo(end) <= DuplicateTolerance;
-                bool reversed = otherStart.DistanceTo(end) <= DuplicateTolerance && otherEnd.DistanceTo(start) <= DuplicateTolerance;
+                bool same = otherStart.DistanceTo(start) <= PositionTolerance && otherEnd.DistanceTo(end) <= PositionTolerance;
+                bool reversed = otherStart.DistanceTo(end) <= PositionTolerance && otherEnd.DistanceTo(start) <= PositionTolerance;
                 if (same || reversed) return true;
             }
             return false;

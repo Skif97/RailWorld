@@ -85,7 +85,7 @@ namespace RailWorld.src.RailWay
             atJoint = byStart ? Of(start, neighbour.StartNormal) : Of(end, neighbour.EndNormal);
             middle = Of(neighbour.GetGlobalPos(), neighbour.CenterNormal);
             // Сусід справді прилягає: колія могла обірватися, а посилання лишитися
-            return atJoint.Axis.SquareDistanceTo(joint) < 1e-4;
+            return atJoint.Axis.DistanceTo(joint) <= SectionLinker.PositionTolerance;
         }
 
         // Нормаль другої лінії, повернута в той самий бік, що й перша: у сусідніх секцій вони можуть дивитися
