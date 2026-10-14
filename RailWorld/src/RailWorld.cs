@@ -253,11 +253,11 @@ namespace RailWorld
                 markers.Add(marker);
             }
 
-            List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(markers, lookup.GetSection));
+            var laid = new TrackIndex(chunk => lookup.Get(chunk)?.RailWaySections.Values);
+            List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(RouteBuilder.SnapToOpenEnds(markers, laid, lookup.GetSection), lookup.GetSection));
             if (route == null) return "з цих точок маршрут не складається";
 
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict,
-                new TrackIndex(chunk => lookup.Get(chunk)?.RailWaySections.Values));
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict, laid);
 
             // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
             // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден

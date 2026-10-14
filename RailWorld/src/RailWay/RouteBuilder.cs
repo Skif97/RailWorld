@@ -15,6 +15,69 @@ namespace RailWorld.src.RailWay
         /// і скруглює кути. null, якщо точок менше двох.
         /// </summary>
         /// <summary>
+        /// Як далеко від відкритого кінця покладеної колії вільна крайня точка маршруту стає на сам цей кінець,
+        /// блоків. Вільна точка стоїть посередині блока, а кінець колії може бути в сусідньому блоці навскоси,
+        /// тобто до √2 блока від неї; півтора блока це покривають. Так кінець маршруту, поставлений на блок біля
+        /// кінця колії, з нею з'єднується, а не лишає дірку, в яку провалиться колесо.
+        /// </summary>
+        public const double SnapReach = 1.5;
+
+        /// <summary>
+        /// Вільна крайня точка маршруту, що лягла ближче за SnapReach до відкритого кінця покладеної колії,
+        /// на тій самій висоті, стає на цей кінець, як точка, взята з колії: маршрут продовжує колію (або
+        /// закінчується, впираючись у неї). Лише відкритий кінець: там, де колія йде далі, вийшла б стрілка, а її
+        /// ставлять навмисно, клацнувши на стик. І лише якщо маршрут не повертає назад уздовж колії.
+        /// Повертає нові точки або ті самі, якщо притягувати нічого.
+        /// </summary>
+        public static List<RouteMarker> SnapToOpenEnds(List<RouteMarker> markers, TrackIndex track, Func<SectionLink, Section> resolve)
+        {
+            if (track == null || resolve == null || markers == null || markers.Count < 2) return markers;
+            List<RoutePoint> route = Build(markers);
+            if (route == null) return markers;
+
+            List<RouteMarker> result = markers;
+            for (int end = 0; end < 2; end++)
+            {
+                bool first = end == 0;
+                RouteMarker marker = first ? markers[0] : markers[markers.Count - 1];
+                if (marker.Snapped) continue;
+
+                RoutePoint point = first ? route[0] : route[route.Count - 1];
+                // Напрямок від точки в бік, куди маршрут іде від колії
+                Vec3d away = first ? point.Tangent : point.Tangent.Clone().Mul(-1);
+
+                Section best = null;
+                bool bestAtStart = false;
+                double bestDistance = SnapReach;
+                foreach (Section section in track.Around(point.Position, SnapReach + TrackGauge.StandardSleeperLength, TrackSurvey.SamePlane))
+                {
+                    for (int side = 0; side < 2; side++)
+                    {
+                        bool atStart = side == 0;
+                        if (section.GetLinks(atStart).Count > 0) continue;
+
+                        Vec3d tip = section.GetEndPosition(atStart);
+                        if (Math.Abs(tip.Y - point.Position.Y) > TrackSurvey.SamePlane) continue;
+                        double distance = HorizontalDistance(tip, point.Position);
+                        if (distance >= bestDistance) continue;
+
+                        Vec3f outward = section.GetOutwardDirection(atStart);
+                        if (outward.X * away.X + outward.Z * away.Z <= 0) continue;
+
+                        best = section;
+                        bestAtStart = atStart;
+                        bestDistance = distance;
+                    }
+                }
+                if (best == null) continue;
+
+                if (result == markers) result = new List<RouteMarker>(markers);
+                result[first ? 0 : result.Count - 1] = RouteMarker.OnJoint(best, bestAtStart, first ? 1 : -1, first, resolve);
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Ставить стрілки маршруту туди, де вони справді починаються. Маршрут, що відходить від колії (або
         /// вливається в неї), часто ще якийсь час лежить на ній: гілки біля стику йдуть одна по одній і
         /// розходяться далі. Стрілка ж починається там, звідки вони лише розходяться (SwitchSides.DivergesFrom).

@@ -532,8 +532,9 @@ namespace RailWorld
                 cache.Clear();
                 cacheRevision = system.ClientRevision;
             }
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(RouteBuilder.SettleSwitches(shown, FindClientSection)), FindClientSection, out string conflict,
-                new TrackIndex(system.ClientSectionsIn), conflictAt, cache);
+            var laid = new TrackIndex(system.ClientSectionsIn);
+            List<RouteMarker> settled = RouteBuilder.SettleSwitches(RouteBuilder.SnapToOpenEnds(shown, laid, FindClientSection), FindClientSection);
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
 
             RouteCheck check = RouteRules.Check(points);
             bool[] problems = check.Problems;

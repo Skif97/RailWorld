@@ -236,5 +236,42 @@ namespace RailWorld.Tests
 
             Assert.Null(SectionLinker.FindSwitchProblem(crossover, SectionsIn, Resolve, out _));
         }
+
+        [Fact]
+        public void RouteEndNearAnOpenEndOfTrackJoinsIt()
+        {
+            // Колія закінчується в (0, 0); маршрут починається з точки на 40 см далі і йде на схід
+            List<Section> track = Lay(Point(-6, 0, 1, 0), Point(0, 0, 1, 0));
+            var markers = new List<RouteMarker> { Free(0.4, 0, 1, 0), Free(10, 3, 1, 0) };
+
+            List<RouteMarker> snapped = RouteBuilder.SnapToOpenEnds(markers, SectionsIn, Resolve);
+
+            Assert.True(snapped[0].Snapped);
+            Assert.Equal(0, snapped[0].Position.DistanceTo(track[track.Count - 1].FullEndPosition), 6);
+        }
+
+        [Fact]
+        public void RouteEndFarFromTrackOrGoingBackStaysWhereItIs()
+        {
+            Lay(Point(-6, 0, 1, 0), Point(0, 0, 1, 0));
+
+            // Далі за радіус притягування
+            var far = new List<RouteMarker> { Free(0.4 + RouteBuilder.SnapReach + 0.5, 0, 1, 0), Free(10, 3, 1, 0) };
+            Assert.Same(far, RouteBuilder.SnapToOpenEnds(far, SectionsIn, Resolve));
+
+            // Поруч, але маршрут іде назад уздовж колії
+            var back = new List<RouteMarker> { Free(0.4, 0.5, -1, 0), Free(-10, 3, -1, 0) };
+            Assert.Same(back, RouteBuilder.SnapToOpenEnds(back, SectionsIn, Resolve));
+        }
+
+        [Fact]
+        public void RouteEndNearAJointWhereTrackGoesOnIsNotSnapped()
+        {
+            // Посеред колії кінці секцій зв'язані: притягнувшись туди, маршрут поставив би стрілку, а її ставлять навмисно
+            List<Section> line = Lay(Point(-6, 0, 1, 0), Point(6, 0, 1, 0));
+            double at = JointNear(line, 0);
+            var markers = new List<RouteMarker> { Free(at + 0.3, 0.3, 1, 0.3), Free(10, 4, 1, 0.3) };
+            Assert.Same(markers, RouteBuilder.SnapToOpenEnds(markers, SectionsIn, Resolve));
+        }
     }
 }
