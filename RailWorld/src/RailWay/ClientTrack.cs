@@ -91,12 +91,5 @@ namespace RailWorld
             DataInChunk data = DataInChunk.GetClient(place.Chunk);
             return data != null && data.Crossings.TryGetValue(place.Key, out record) && record.TrackOf(place) != null;
         }
-
-        /// <summary>Секція другої гілки тієї самої стрілки під тим самим номером, або null, якщо клієнт її не знає.</summary>
-        public Section Opposite(RailSwitch record, SwitchRef place)
-        {
-            SectionLink link = record.Opposite(place);
-            return link == null ? null : FindSection(link);
-        }
     }
 }

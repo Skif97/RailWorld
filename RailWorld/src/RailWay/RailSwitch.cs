@@ -66,6 +66,13 @@ namespace RailWorld.src.RailWay
         [ProtoMember(6)]
         public int FrogTo;
 
+        /// <summary>
+        /// Для кожної секції з Members: чи друга гілка лежить з боку її першої рейки (з боку нормалі). Там
+        /// у гілки внутрішня рейка. Див. SwitchSides.
+        /// </summary>
+        [ProtoMember(7)]
+        public List<bool> InnerFirst = new List<bool>();
+
         /// <summary>До якої секції включно гілка це ще стрілка: тут рейки мають стояти, щоб стрілка працювала.</summary>
         public int ZoneSections => Math.Max(Math.Max(PairSections, OverlapSections), FrogTo);
 
@@ -74,6 +81,18 @@ namespace RailWorld.src.RailWay
         {
             return number >= 1 && number <= Members.Count ? Members[number - 1] : null;
         }
+
+        /// <summary>
+        /// Чи внутрішня рейка секції з таким номером це її перша рейка (з боку нормалі); null, якщо такої
+        /// секції в записі немає.
+        /// </summary>
+        public bool? InnerIsFirst(int number)
+        {
+            return number >= 1 && number <= InnerFirst.Count ? InnerFirst[number - 1] : (bool?)null;
+        }
+
+        /// <summary>Запис зроблено до того, як записи стрілок знали боки гілок: його треба перерахувати.</summary>
+        public bool LacksSides => InnerFirst.Count != Members.Count;
 
         /// <summary>Чи шпала секції з таким номером спільна із секцією другої гілки під тим самим номером.</summary>
         public bool SharesSleeper(int number)
@@ -96,7 +115,11 @@ namespace RailWorld.src.RailWay
         {
             if (other == null || PairSections != other.PairSections || OverlapSections != other.OverlapSections
                 || BladeSections != other.BladeSections || FrogFrom != other.FrogFrom || FrogTo != other.FrogTo
-                || Members.Count != other.Members.Count) return false;
+                || Members.Count != other.Members.Count || InnerFirst.Count != other.InnerFirst.Count) return false;
+            for (int n = 0; n < InnerFirst.Count; n++)
+            {
+                if (InnerFirst[n] != other.InnerFirst[n]) return false;
+            }
             return StartsWith(other);
         }
 
@@ -117,6 +140,7 @@ namespace RailWorld.src.RailWay
         private void OnDeserialized()
         {
             if (Members == null) Members = new List<SectionLink>();
+            if (InnerFirst == null) InnerFirst = new List<bool>();
         }
     }
 
@@ -190,6 +214,9 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
+        /// <summary>Запис зроблено до того, як записи стрілок знали боки гілок: його треба перерахувати.</summary>
+        public bool LacksSides => Branches.Exists(branch => branch.LacksSides);
+
         /// <summary>
         /// Гілка, на яку вказує посилання секції, або null, якщо такої в записі немає: стрілку пораховано
         /// неповністю або посилання застаріле.
@@ -238,7 +265,7 @@ namespace RailWorld.src.RailWay
         public static RailSwitch Rebuild(RailSwitch previous, Section trunk, bool atStart, Func<SectionLink, Section> resolve)
         {
             RailSwitch built = Build(trunk, atStart, resolve, out bool partsInPlace);
-            if (built == null || built.Resolved || previous == null || !previous.Covers(built)) return built;
+            if (built == null || built.Resolved || previous == null || previous.LacksSides || !previous.Covers(built)) return built;
 
             built.Branches = previous.Branches;
             built.Complete = previous.Complete && partsInPlace;
@@ -264,12 +291,16 @@ namespace RailWorld.src.RailWay
                 return result;
             }
 
+            // З якого боку від кожної секції гілки лежить друга: від цього залежить уся геометрія стрілки
+            var sides = new List<bool>[2];
+            SwitchSides.Of(first[0], links[0].AtStart, first[1], links[1].AtStart, resolve, out sides[0], out sides[1]);
+
             for (int k = 0; k < 2; k++)
             {
                 Section mine = first[k], other = first[1 - k];
                 bool mineAtStart = links[k].AtStart, otherAtStart = links[1 - k].AtStart;
 
-                BranchGeometry geometry = SwitchGeometry.Branch(mine, mineAtStart, other, otherAtStart, resolve);
+                BranchGeometry geometry = SwitchGeometry.Branch(mine, mineAtStart, sides[k][0], other, otherAtStart, sides[1 - k][0], resolve);
                 double heelAt = SwitchZone.CrossingDistance(mine, mineAtStart, other, otherAtStart, resolve, SwitchZone.BladeHeelSeparation);
 
                 var branch = new SwitchBranch
@@ -299,6 +330,7 @@ namespace RailWorld.src.RailWay
                     if (walk.Stop == WalkStop.Unread && number < length) result.Resolved = false;
                     break;
                 }
+                branch.InnerFirst = sides[k].GetRange(0, Math.Min(branch.Members.Count, sides[k].Count));
 
                 result.Branches.Add(branch);
             }

@@ -90,7 +90,8 @@ namespace RailWorld.src.RailWay
                     if (!section.HasSwitch(atStart)) continue;
 
                     int key = RailSwitch.KeyOf(section.IndexInChunk, atStart);
-                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved) missing.Add(key);
+                    // Запису немає, він не дорахований або зроблений старою версією мода
+                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.LacksSides) missing.Add(key);
                 }
             }
 
@@ -109,7 +110,7 @@ namespace RailWorld.src.RailWay
             if (data == null) return null;
 
             int key = RailSwitch.KeyOf(trunkIndex, atStart);
-            if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved) Update(session, chunk, trunkIndex, atStart);
+            if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.LacksSides) Update(session, chunk, trunkIndex, atStart);
 
             data.Switches.TryGetValue(key, out known);
             return known;

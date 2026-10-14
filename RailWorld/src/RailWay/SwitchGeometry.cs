@@ -83,14 +83,6 @@ namespace RailWorld.src.RailWay
         public static readonly int MinBladeSections = (int)Math.Ceiling(TrackGauge.StandardWidth * 3.5 / 0.5);
         public static readonly int MaxBladeSections = (int)Math.Floor(TrackGauge.StandardWidth * 8.0 / 0.5);
 
-        // Котра рейка секції лежить з боку сусідньої колії стрілки: 1 перша (з боку нормалі), -1 друга
-        public static double TowardPartner(Section section, Section partner)
-        {
-            Vec3d center = Middle(section), partnerCenter = Middle(partner);
-            Vec3f normal = section.CenterNormal;
-            return (partnerCenter.X - center.X) * normal.X + (partnerCenter.Z - center.Z) * normal.Z >= 0 ? 1 : -1;
-        }
-
         // Скільки секцій завдовжки гостряк, якщо його корінь за heelAt блоків від стрілки
         public static int BladeSections(double heelAt)
         {
@@ -226,14 +218,14 @@ namespace RailWorld.src.RailWay
         /// тоді є лише лінія своєї рейки, без хрестовини.
         /// Результат однаковий, з котрої з двох гілок не рахуй: межі хрестовини в обох ті самі.
         /// </summary>
-        public static BranchGeometry Branch(Section first, bool switchAtStart, Section partnerFirst, bool? partnerSwitchAtStart,
-            Func<SectionLink, Section> resolve)
+        public static BranchGeometry Branch(Section first, bool switchAtStart, bool innerFirst, Section partnerFirst, bool? partnerSwitchAtStart,
+            bool partnerInnerFirst, Func<SectionLink, Section> resolve)
         {
             BranchGeometry result = new BranchGeometry();
-            result.Frames = RailFrames(first, switchAtStart, TowardPartner(first, partnerFirst), MaxFrogSections, resolve);
+            result.Frames = RailFrames(first, switchAtStart, innerFirst ? 1 : -1, MaxFrogSections, resolve);
             if (partnerSwitchAtStart == null) return result;
 
-            result.Other = RailFrames(partnerFirst, partnerSwitchAtStart.Value, TowardPartner(partnerFirst, first), MaxFrogSections, resolve);
+            result.Other = RailFrames(partnerFirst, partnerSwitchAtStart.Value, partnerInnerFirst ? 1 : -1, MaxFrogSections, resolve);
             int count = Math.Min(result.Frames.Count, result.Other.Count);
             result.Across = new double[count];
 
@@ -293,12 +285,6 @@ namespace RailWorld.src.RailWay
             result.HideFrom = Math.Max(result.Throat - 1, 0) / 2 + 1;
             result.HideTo = Math.Max(full - 1, 0) / 2 + 1;
             return result;
-        }
-
-        private static Vec3d Middle(Section section)
-        {
-            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
-            return new Vec3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2);
         }
     }
 }

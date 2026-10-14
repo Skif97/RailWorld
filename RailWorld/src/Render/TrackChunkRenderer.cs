@@ -438,8 +438,8 @@ namespace RailWorld
                 if (branch.FrogFrom <= 0 || place.Number < branch.FrogFrom || place.Number > branch.FrogTo) continue;
 
                 // Зовнішня рейка це та, що не з боку сусідньої гілки
-                Section partner = track.Opposite(record, place);
-                if (partner == null || left == SwitchGeometry.TowardPartner(section, partner) > 0) continue;
+                bool? innerFirst = branch.InnerIsFirst(place.Number);
+                if (innerFirst == null || left == innerFirst.Value) continue;
 
                 bool flared = place.Number == branch.FrogFrom || place.Number == branch.FrogTo;
                 return flared ? FasteningKind.OuterSpikes : FasteningKind.GuardSpikes;
@@ -556,9 +556,7 @@ namespace RailWorld
                 if (!record.Complete || !record.BranchOf(place).ReplacesInnerRail(place.Number)) continue;
 
                 // Внутрішня рейка це та, що з боку сусідньої гілки
-                Section partner = track.Opposite(record, place);
-                if (partner == null) continue;
-                if (left == SwitchGeometry.TowardPartner(section, partner) > 0) return true;
+                if (record.BranchOf(place).InnerIsFirst(place.Number) == left) return true;
             }
             return false;
         }

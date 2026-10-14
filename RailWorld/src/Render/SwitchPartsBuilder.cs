@@ -62,7 +62,10 @@ namespace RailWorld
             DataInChunk switchData = DataInChunk.GetClient(switchChunk);
             if (switchData == null || !switchData.RailWaySections.TryGetValue(record.TrunkIndex, out Section trunk)) return;
 
-            bool left = SwitchGeometry.TowardPartner(section, partner) > 0;
+            // Внутрішня рейка, з боку другої гілки: її місце займають гостряк і хрестовина
+            bool? innerFirst = record.BranchOf(place)?.InnerIsFirst(place.Number), partnerInnerFirst = record.Branches[1 - place.Branch].InnerIsFirst(place.Number);
+            if (innerFirst == null || partnerInnerFirst == null) return;
+            bool left = innerFirst.Value;
             SectionPart part = left ? SectionPart.FirstRail : SectionPart.SecondRail;
             if (!section.IsInstalled(part)) return;
 
@@ -71,7 +74,7 @@ namespace RailWorld
             bool primary = place.Branch == 0;
             bool active = trunk.GetSwitchPosition(record.AtStart) == place.Branch;
             // Перерізи внутрішньої рейки потрібні лише для меша, тому рахуються тут, а не зберігаються
-            BranchGeometry own = SwitchGeometry.Branch(section, switchAtStart, partner, partnerLink.AtStart, track.FindSection);
+            BranchGeometry own = SwitchGeometry.Branch(section, switchAtStart, left, partner, partnerLink.AtStart, partnerInnerFirst.Value, track.FindSection);
 
             // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
             // Під час переведення стрілки він між цими положеннями

@@ -12,12 +12,20 @@ namespace RailWorld.Tests
     /// </summary>
     public class SwitchGeometryTests : TrackTestBase
     {
+        // Геометрія гілки mine стрілки, обидві гілки якої виходять зі стику своїм початком. withPartner: чи
+        // друга гілка відома
+        private BranchGeometry Branch(List<Section> mine, List<Section> partner, bool withPartner)
+        {
+            SwitchSides.Of(mine[0], true, partner[0], true, Resolve, out List<bool> mineSides, out List<bool> partnerSides);
+            return SwitchGeometry.Branch(mine[0], true, mineSides[0], partner[0], withPartner ? true : (bool?)null, partnerSides[0], Resolve);
+        }
+
         [Fact]
         public void InnerRailRunsOnTheSideOfTheOtherBranch()
         {
             List<Section> straight = Straight(), arc = Arc();
 
-            BranchGeometry geometry = SwitchGeometry.Branch(straight[0], true, arc[0], true, Resolve);
+            BranchGeometry geometry = Branch(straight, arc, true);
 
             // Дуга відходить у бік +Z, тож внутрішня рейка прямої лежить за пів колії в той самий бік
             RailFrame first = geometry.Frames[0];
@@ -31,7 +39,7 @@ namespace RailWorld.Tests
         {
             List<Section> straight = Straight(), arc = Arc();
 
-            BranchGeometry geometry = SwitchGeometry.Branch(straight[0], true, arc[0], true, Resolve);
+            BranchGeometry geometry = Branch(straight, arc, true);
 
             Assert.True(geometry.Throat >= 0, "хрестовину не знайдено");
             Assert.True(geometry.Throat < geometry.Tip, "осердя має починатися після горла");
@@ -51,8 +59,8 @@ namespace RailWorld.Tests
         {
             List<Section> straight = Straight(), arc = Arc();
 
-            BranchGeometry fromStraight = SwitchGeometry.Branch(straight[0], true, arc[0], true, Resolve);
-            BranchGeometry fromArc = SwitchGeometry.Branch(arc[0], true, straight[0], true, Resolve);
+            BranchGeometry fromStraight = Branch(straight, arc, true);
+            BranchGeometry fromArc = Branch(arc, straight, true);
 
             Assert.Equal(fromStraight.Throat, fromArc.Throat);
             Assert.Equal(fromStraight.Tip, fromArc.Tip);
@@ -66,7 +74,7 @@ namespace RailWorld.Tests
         public void CommonStationIsTheSameFromEitherRail()
         {
             List<Section> straight = Straight(), arc = Arc();
-            BranchGeometry geometry = SwitchGeometry.Branch(straight[0], true, arc[0], true, Resolve);
+            BranchGeometry geometry = Branch(straight, arc, true);
 
             for (int q = 0; q < geometry.Across.Length; q += 5)
             {
@@ -88,7 +96,7 @@ namespace RailWorld.Tests
         {
             List<Section> straight = Straight(), arc = Arc();
 
-            BranchGeometry geometry = SwitchGeometry.Branch(straight[0], true, arc[0], null, Resolve);
+            BranchGeometry geometry = Branch(straight, arc, false);
 
             Assert.NotEmpty(geometry.Frames);
             Assert.Null(geometry.Other);
