@@ -110,12 +110,18 @@ namespace RailWorld.src.RailWay
             return false;
         }
 
+        // На скільки крок, на який гілки відходять одна від одної за секцію, може бути меншим за наступний через
+        // похибку вимірювання, блоків: як кут у 1° на пів блока
+        private static readonly double TurnSlack = 0.5 * Math.Tan(Math.PI / 180);
+
         /// <summary>
-        /// З якої секції гілки mine (номер з нуля) друга гілка лише відходить від неї, аж до кореня гостряка,
-        /// де вони розійшлися на SwitchGeometry.HeelGap. Тут стрілка справді починається: звідси зазор між
-        /// гостряком і рамною рейкою росте до кореня, і відведений гостряк утворює з рамною рейкою гострий
-        /// кут, що сходиться до хрестовини. Секції перед нею лежать на другій колії, і їхня відстань до неї
-        /// то росте, то меншає. 0, якщо гілки розходяться від самої стрілки, як і має бути.
+        /// З якої секції гілки mine (номер з нуля) друга гілка відходить від неї так, як у стрілці: лише
+        /// відходить, і дедалі швидше, аж поки гілка не вийде за другу колію обома рейками. Тут стрілка
+        /// справді починається: звідси зазор між гостряком і рамною рейкою росте до кореня, відведений
+        /// гостряк утворює з рамною рейкою гострий кут, що сходиться до хрестовини, а кут між гілками до
+        /// хрестовини лише більшає. Перед цим місцем гілки лежать одна на одній або йдуть поруч паралельно:
+        /// відстань між ними то росте, то меншає або стоїть. 0, якщо гілки розходяться від самої стрілки,
+        /// як і має бути.
         /// </summary>
         public static int DivergesFrom(IList<Section> mine, IList<Section> partner)
         {
@@ -123,20 +129,26 @@ namespace RailWorld.src.RailWay
 
             List<bool> innerFirst = InnerFirst(mine, partner);
             var apart = new double[mine.Count];
-            int heel = mine.Count - 1;
+            int parted = mine.Count - 1;
             for (int n = 0; n < mine.Count; n++)
             {
                 apart[n] = Toward(mine[n], partner, Normal(mine[n]).Mul(innerFirst[n] ? 1 : -1));
-                if (apart[n] >= SwitchGeometry.HeelGap)
+                if (apart[n] >= mine[n].TrackWidth + RailProfile.HeadHalfWidth * 2)
                 {
-                    heel = n;
+                    parted = n;
                     break;
                 }
             }
 
-            // Від кореня до стрілки, поки відстань лише меншає
-            int from = heel;
-            while (from > 0 && apart[from - 1] < apart[from]) from--;
+            // Від місця, де розійшлися, до стрілки: поки відстань меншає, і крок, на який вона меншає, теж
+            int from = parted;
+            while (from > 0)
+            {
+                double step = apart[from] - apart[from - 1];
+                if (step <= 0) break;
+                if (from < parted && step > apart[from + 1] - apart[from] + TurnSlack) break;
+                from--;
+            }
             return from;
         }
 

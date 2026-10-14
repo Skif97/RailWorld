@@ -42,18 +42,17 @@ namespace RailWorld.src.RailWay
             if (route == null) return markers;
             if (!first) route.Reverse();
 
-            // Маршрут від стрілки, точками нарізки, і де в них стоїть кожна його точка
+            // Маршрут від стрілки, точками нарізки
             var points = new List<PointOnBezierCurve>();
-            var at = new List<int> { 0 };
             for (int i = 0; i + 1 < route.Count && points.Count < SwitchSides.MaxSections * 2; i++)
             {
                 RoutePoint a = route[i], b = route[i + 1];
-                List<PointOnBezierCurve> leg = first ? RouteCurve.Leg(a, b) : RouteCurve.Leg(Reversed(b), Reversed(a));
+                // Маршрут розвернуто, щоб іти від стрілки; сама крива відрізка та сама, що й у маршруті, лише навпаки
+                List<PointOnBezierCurve> leg = first ? RouteCurve.Leg(a, b) : RouteCurve.Leg(b, a);
                 if (leg == null) return markers;
                 if (!first) leg.Reverse();
                 if (points.Count > 0) leg.RemoveAt(0);
                 points.AddRange(leg);
-                at.Add(points.Count - 1);
             }
 
             var branch = new List<Section>();
@@ -87,9 +86,16 @@ namespace RailWorld.src.RailWay
             }
             if (joint < 0) return markers;
 
-            // Точки маршруту, що лежать до нового стику, відпадають; кінцева лишається завжди
+            // Точки, поставлені гравцем, що лежать до нового стику, відпадають; протилежний кінець маршруту
+            // лишається завжди. Складений маршрут має більше точок, ніж гравець поставив (на кутах він додає
+            // свої), тож де лежить кожна, шукаємо на самому маршруті
             int dropped = 0;
-            while (dropped + 1 < at.Count - 1 && at[dropped + 1] <= from * 2) dropped++;
+            for (int m = 1; m < markers.Count - 1; m++)
+            {
+                RouteMarker passed = first ? markers[m] : markers[markers.Count - 1 - m];
+                if (Nearest(points, passed.Position) > from * 2) break;
+                dropped++;
+            }
 
             RouteMarker moved = RouteMarker.OnJoint(track[joint - 1], !entered[joint - 1], first ? 1 : -1, first, resolve);
             var result = new List<RouteMarker>(markers);
@@ -106,14 +112,19 @@ namespace RailWorld.src.RailWay
             return result.Count >= 2 ? result : markers;
         }
 
-        // Та сама точка маршруту, пройдена в інший бік
-        private static RoutePoint Reversed(RoutePoint point)
+        // Номер точки нарізки, найближчої в плані до place
+        private static int Nearest(List<PointOnBezierCurve> points, Vec3d place)
         {
-            return new RoutePoint
+            int best = 0;
+            double bestDistance = double.MaxValue;
+            for (int i = 0; i < points.Count; i++)
             {
-                Position = point.Position, Tangent = point.Tangent.Clone().Mul(-1), Cant = point.Cant,
-                Track = point.Track, TrackJointAtStart = point.TrackJointAtStart
-            };
+                double distance = points[i].position.HorizontalSquareDistanceTo(place.X, place.Z);
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = i;
+            }
+            return best;
         }
 
         public static List<RoutePoint> Build(List<RouteMarker> points)

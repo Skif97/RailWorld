@@ -216,28 +216,6 @@ namespace RailWorld.src.RailWay
             return Reaches(stock, BladeHeadFrom, out _);
         }
 
-        // На скільки відстань між внутрішніми рейками в хрестовині може зменшитися через похибку розрахунку, блоків
-        private const double FrogWobble = 0.01;
-
-        /// <summary>
-        /// Чи внутрішні рейки двох гілок від початку до кінця хрестовини лише розходяться: перетинаються один
-        /// раз і більше не зближуються. Ні, коли гілки посередині хрестовини виляють одна відносно одної: тоді
-        /// рейки сходяться й розходяться кілька разів, і дно хрестовини то ширшає, то вужчає. true, якщо
-        /// хрестовини немає: про неї тоді інше правило.
-        /// </summary>
-        public static bool FrogCrossesOnce(BranchGeometry own)
-        {
-            if (own.Throat < 0) return true;
-
-            double widest = own.Across[own.Throat];
-            for (int q = own.Throat + 1; q <= own.Full && q < own.Across.Length; q++)
-            {
-                if (own.Across[q] < widest - FrogWobble) return false;
-                widest = Math.Max(widest, own.Across[q]);
-            }
-            return true;
-        }
-
         /// <summary>
         /// Чи гостряк гілки довжиною bladeSections секцій доходить до свого кореня: рамна рейка встигає
         /// відійти від його лінії на HeelGap. Ні, коли гостряк коротший, ніж треба, бо далі вже хрестовина

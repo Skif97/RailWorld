@@ -47,32 +47,66 @@ namespace RailWorld.Tests
             Assert.Contains("розходяться далі по ходу", problem);
         }
 
-        [Fact]
-        public void SwitchMovesToWhereTheTracksPart()
+        // Колія, що від стику trunkEnd перші три блоки йде точно по кривій маршруту з цих точок, а далі
+        // повертає в інший бік. atEnd: стик це остання точка маршруту, а не перша. Повертає місце, де вони
+        // розходяться
+        private Vec3d LayAlongThenAway(Section trunkEnd, List<RouteMarker> markers, bool atEnd = false)
         {
-            List<Section> trunk = Trunk();
-            Section trunkEnd = trunk[trunk.Count - 1];
-            var far = new RouteMarker { Position = new Vec3d(12, 0, 6), Heading = new Vec3d(0.6, 0, 0.8).Normalize(), Block = new BlockPos(12, 0, 6, 0) };
-
-            // Основна колія перші три блоки йде точно по кривій майбутнього маршруту, а далі повертає в інший бік
-            List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(new List<RouteMarker> { RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve), far }));
+            List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(markers));
+            if (atEnd) route.Reverse();
             var shared = new (double, double)[7];
             for (int i = 0; i < shared.Length; i++) shared[i] = (route[i * 2].position.X, route[i * 2].position.Z);
             List<Section> together = Lay(Through(shared));
             Vec3d parting = route[12].position;
             Vec3f heading = route[12].tangent;
+            if (atEnd) heading = new Vec3f(-heading.X, -heading.Y, -heading.Z);
             List<Section> away = Lay(Point(parting.X, parting.Z, heading.X, heading.Z), Point(parting.X + 6, parting.Z - 3, 0.8, -0.6));
             Join(trunkEnd, together[0]);
             Join(together[together.Count - 1], away[0]);
+            return parting;
+        }
+
+        private static RouteMarker Free(double x, double z, double headingX, double headingZ, bool exact = false)
+        {
+            return new RouteMarker { Position = new Vec3d(x, 0, z), Heading = new Vec3d(headingX, 0, headingZ).Normalize(), Block = new BlockPos((int)x, 0, (int)z, 0), Exact = exact };
+        }
+
+        [Fact]
+        public void SwitchMovesToWhereTheTracksPart()
+        {
+            List<Section> trunk = Trunk();
+            Section trunkEnd = trunk[trunk.Count - 1];
+            RouteMarker far = Free(12, 6, 0.6, 0.8);
+            Vec3d parting = LayAlongThenAway(trunkEnd, new List<RouteMarker> { RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve), far });
 
             var markers = new List<RouteMarker> { RouteMarker.OnJoint(trunkEnd, false, 1, true, Resolve), far };
             List<RouteMarker> settled = RouteBuilder.SettleSwitches(markers, Resolve);
 
             // Стрілка переїхала на стик основної колії там, де колії розходяться
             Assert.NotSame(markers, settled);
+            Assert.Equal(2, settled.Count);
             Assert.True(settled[0].Snapped);
             Assert.InRange(settled[0].Position.DistanceTo(parting), 0, 0.6);
             Assert.NotNull(settled[0].Track);
+        }
+
+        [Fact]
+        public void SwitchAtTheEndOfARouteWithACornerMovesToo()
+        {
+            // Маршрут іде з вільної точки через кут і закінчується, вливаючись у колію; на кутах складений
+            // маршрут має більше точок, ніж поставив гравець
+            List<Section> trunk = Trunk();
+            Section trunkEnd = trunk[trunk.Count - 1];
+            var markers = new List<RouteMarker> { Free(30, 4, -1, 0), Free(20, 9, -1, 0), Free(12, 6, -0.6, -0.8, true), RouteMarker.OnJoint(trunkEnd, false, -1, false, Resolve) };
+            Vec3d parting = LayAlongThenAway(trunkEnd, markers, true);
+            markers[markers.Count - 1] = RouteMarker.OnJoint(trunkEnd, false, -1, false, Resolve);
+            List<RouteMarker> settled = RouteBuilder.SettleSwitches(markers, Resolve);
+
+            // Колія тут складена з прямих відрізків, а маршрут крива: між ними кілька міліметрів то в один бік, то
+            // в інший, і на такому шумі розходження видно на секцію-дві раніше. Стрілка там уже вістря леза
+            Assert.Equal(markers.Count, settled.Count);
+            Assert.True(settled[settled.Count - 1].Snapped);
+            Assert.InRange(settled[settled.Count - 1].Position.DistanceTo(parting), 0, 1.2);
         }
 
         [Fact]
@@ -87,6 +121,20 @@ namespace RailWorld.Tests
             };
 
             Assert.Same(markers, RouteBuilder.SettleSwitches(markers, Resolve));
+        }
+
+        [Fact]
+        public void BranchRunningAlongsideBeforeItPartsIsRefused()
+        {
+            List<Section> trunk = Trunk();
+            List<Section> straight = Lay(Point(0, 0, 1, 0), Point(30, 0, 1, 0));
+            Join(trunk[trunk.Count - 1], straight[0]);
+
+            // Гілка відходить на пів колії і йде поруч з прямою кілька блоків, рейки через одну, і лише потім
+            // розходиться з нею: кут між гілками біля стрілки більший, ніж далі
+            List<Section> branch = Plan(Point(0, 0, 1, 0), Point(3, 0.4, 1, 0), Point(9, 0.4, 1, 0), Point(15, 3, 0.8, 0.6));
+
+            Assert.NotNull(SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _));
         }
 
         [Fact]
@@ -162,7 +210,7 @@ namespace RailWorld.Tests
 
             string problem = SectionLinker.FindSwitchProblem(branch, SectionsIn, Resolve, out _);
             Assert.NotNull(problem);
-            Assert.Contains("кілька разів", problem);
+            Assert.Contains("розходяться далі по ходу", problem);
         }
 
         [Fact]
