@@ -198,5 +198,45 @@ namespace RailWorld.Tests
             // Рейки основної колії на кожному брусі щита
             Assert.Equal(layout.Timbers.Count * 2, across);
         }
+
+        // Брус упоперек діагональної рейки, що проходить через початок координат на схід-північ
+        private static Timber AcrossDiagonal(Vec3d at)
+        {
+            double h = Math.Sqrt(0.5);
+            return new Timber { Position = at, Across = new Vec3d(-h, 0, h), Length = TrackGauge.StandardSleeperLength };
+        }
+
+        [Fact]
+        public void RailCrossingATimberExactlyAtAPieceBoundaryGetsOneFastening()
+        {
+            // Діагональна рейка з двох секцій; брус лежить рівно на межі двох шматків першої секції і ще один
+            // рівно на стику секцій. На діагоналі арифметика неточна, і межа дає похибку в обидва боки
+            double h = Math.Sqrt(0.5);
+            Vec3d Along(double d) => new Vec3d(d * h, 0, d * h);
+            var rails = new List<RailRun>
+            {
+                new RailRun { From = Along(0), Middle = Along(0.25), To = Along(0.5) },
+                new RailRun { From = Along(0.5), Middle = Along(0.75), To = Along(1) }
+            };
+            var timbers = new List<Timber> { AcrossDiagonal(Along(0.25)), AcrossDiagonal(Along(0.5)) };
+
+            List<NodeFastening> found = NodeFastenings.Lay(timbers, rails);
+
+            Assert.Equal(2, found.Count);
+            Assert.Equal(0, found[0].Position.DistanceTo(Along(0.25)), 6);
+            Assert.Equal(0, found[1].Position.DistanceTo(Along(0.5)), 6);
+        }
+
+        [Fact]
+        public void PointPastTheEndOfATiltedTimberIsNotOverIt()
+        {
+            // Брус довжиною 2 нахилений уздовж себе на 6°: у плані він коротший, його кінець на x = 0.9945
+            double tilt = 6 * Math.PI / 180;
+            var timber = new Timber { Position = new Vec3d(0, 0, 0), Across = new Vec3d(Math.Cos(tilt), Math.Sin(tilt), 0), Length = 2 };
+
+            Assert.True(NodeFastenings.Under(timber, new Vec3d(0.99 * Math.Cos(tilt), 0.99 * Math.Sin(tilt), 0)));
+            // За кінцем бруса, на його ж лінії: у плані x = 0.999, тобто ще в межах довжини 2, але вже не над брусом
+            Assert.False(NodeFastenings.Under(timber, new Vec3d(1.0045 * Math.Cos(tilt), 1.0045 * Math.Sin(tilt), 0)));
+        }
     }
 }

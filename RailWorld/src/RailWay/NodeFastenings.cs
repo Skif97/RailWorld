@@ -65,6 +65,10 @@ namespace RailWorld.src.RailWay
         public const double PlateHalfLength = 1.6 / 16;
         public const double PlateHalfWidth = 2.4 / 16;
 
+        // Два влучання рейки в той самий брус ближче за це, блоків, це одне місце: рейка це ланцюжок шматків,
+        // і на межі двох шматків чи двох секцій той самий перетин знаходиться двічі, з похибкою обчислень
+        private const double SamePoint = 1e-6;
+
         /// <summary>
         /// guardBeside каже, чи біля рейки в цьому місці стоїть контррейка і як тоді рейку кріпити: GuardSpikes,
         /// якщо костилі потрібні і з боку контррейки, OuterSpikes, якщо лише ззовні (відігнутий кінець контррейки
@@ -73,6 +77,7 @@ namespace RailWorld.src.RailWay
         public static List<NodeFastening> Lay(IList<Timber> timbers, IList<RailRun> rails, Func<RailRun, Vec3d, FasteningKind?> guardBeside = null)
         {
             var found = new List<NodeFastening>();
+            var hit = new Dictionary<Timber, List<Vec3d>>();
             double along = Math.Cos(AlongTimberDeg * Math.PI / 180);
 
             foreach (RailRun rail in rails)
@@ -90,6 +95,9 @@ namespace RailWorld.src.RailWay
                         // Рейка майже вздовж бруса: перетином це не вважається
                         if (Math.Abs(rx * timber.Across.X + rz * timber.Across.Z) / length > along) continue;
                         if (!Crosses(from, to, timber, out Vec3d position)) continue;
+                        if (!hit.TryGetValue(timber, out List<Vec3d> places)) hit[timber] = places = new List<Vec3d>();
+                        if (places.Exists(place => place.DistanceTo(position) < SamePoint)) continue;
+                        places.Add(position);
 
                         found.Add(Fastening(rail, position, Direction(from, to), guardBeside, timber));
                     }
@@ -142,8 +150,8 @@ namespace RailWorld.src.RailWay
         public const double SpikeAside = 1.15 / 16;
 
         /// <summary>
-        /// Де відрізок рейки від from до to перетинає в плані вісь бруса. Кінець відрізка належить наступному
-        /// відрізку: на стику скріплення одне.
+        /// Де відрізок рейки від from до to перетинає в плані вісь бруса. Кінці відрізка рахуються: на межі
+        /// двох відрізків той самий перетин знаходиться в обох, і Lay зливає їх в одне скріплення.
         /// </summary>
         public static bool Crosses(Vec3d from, Vec3d to, Timber timber, out Vec3d at)
         {
@@ -153,7 +161,7 @@ namespace RailWorld.src.RailWay
             double ax = timber.Position.X - timber.Across.X * half, az = timber.Position.Z - timber.Across.Z * half;
             double sx = timber.Across.X * timber.Length, sz = timber.Across.Z * timber.Length;
             if (!PlanLines.Meet(from.X, from.Z, rx, rz, ax, az, sx, sz, out double t, out double u)) return false;
-            if (t < 0 || t >= 1 || u < 0 || u > 1) return false;
+            if (t < 0 || t > 1 || u < 0 || u > 1) return false;
 
             at = new Vec3d(from.X + rx * t, from.Y + (to.Y - from.Y) * t, from.Z + rz * t);
             return true;
@@ -217,12 +225,16 @@ namespace RailWorld.src.RailWay
             return direction.Length() < 1e-9 ? new Vec3d(1, 0, 0) : direction.Normalize();
         }
 
-        // Чи точка лежить у плані над брусом
-        private static bool Under(Timber timber, Vec3d p)
+        // Чи точка лежить над брусом. Уздовж бруса міряється в його площині: похилий брус у плані коротший
+        // за свою довжину, і точка за його кінцем у плані ще вкладалася б у довжину. Упоперек у плані
+        internal static bool Under(Timber timber, Vec3d p)
         {
-            double dx = p.X - timber.Position.X, dz = p.Z - timber.Position.Z;
-            double lengthwise = dx * timber.Across.X + dz * timber.Across.Z;
-            double sideways = -dx * timber.Across.Z + dz * timber.Across.X;
+            Vec3d across = timber.Across.Clone().Normalize();
+            double dx = p.X - timber.Position.X, dy = p.Y - timber.Position.Y, dz = p.Z - timber.Position.Z;
+            double lengthwise = dx * across.X + dy * across.Y + dz * across.Z;
+
+            double flat = Math.Sqrt(across.X * across.X + across.Z * across.Z);
+            double sideways = flat < 1e-9 ? 0 : (-dx * across.Z + dz * across.X) / flat;
             return Math.Abs(lengthwise) <= timber.Length / 2 && Math.Abs(sideways) <= SectionBox.SleeperHalfWidth;
         }
     }
