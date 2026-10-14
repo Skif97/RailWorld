@@ -66,18 +66,69 @@ namespace RailWorld.src.RailWay
         public static void Of(Section first, bool firstEntered, Section second, bool secondEntered, Func<SectionLink, Section> resolve,
             out List<bool> firstSides, out List<bool> secondSides)
         {
-            List<Section> a = Branch(first, firstEntered, resolve), b = Branch(second, secondEntered, resolve);
+            List<Section> a = Walk(first, firstEntered, resolve), b = Walk(second, secondEntered, resolve);
             firstSides = InnerFirst(a, b);
             secondSides = InnerFirst(b, a);
         }
 
-        private static List<Section> Branch(Section first, bool entered, Func<SectionLink, Section> resolve)
+        /// <summary>Секції гілки по порядку від стрілки, не більше MaxSections; first це перша з них.</summary>
+        public static List<Section> Walk(Section first, bool entered, Func<SectionLink, Section> resolve)
         {
             var sections = new List<Section>();
             TrackWalker walk = TrackWalker.Entering(first, entered, resolve);
             do sections.Add(walk.Section);
             while (sections.Count < MaxSections && walk.Next());
             return sections;
+        }
+
+        /// <summary>
+        /// Чи гілки стрілки розходяться не так, як стрілка: один раз, кожна у свій бік. Бік гілки mine це той,
+        /// з якого від неї лежить друга гілка там, де вони розійшлися (InnerFirst). Ні, якщо до того, як
+        /// розійтися, друга гілка заходить на протилежний бік далі, ніж на пів головки рейки: гілки переходять
+        /// одна через одну, і гостряк ліг би криво. Міліметрові переходи на ділянці, де гілки лежать одна
+        /// на одній, сюди не рахуються. І ні, якщо, розійшовшись обома рейками, гілки знову лягають одна на
+        /// одну раніше, ніж відійдуть на габарит: так буває, коли гілку прокладено вздовж колії, що виляє.
+        /// Що далі, ніж габарит, то вже не стрілка: там гілка може перетнути колію звичайним перетином.
+        /// </summary>
+        public static bool CrossOver(IList<Section> mine, IList<Section> partner)
+        {
+            List<bool> innerFirst = InnerFirst(mine, partner);
+            bool parted = false;
+            for (int n = 0; n < mine.Count; n++)
+            {
+                Vec3d side = Normal(mine[n]).Mul(innerFirst[n] ? 1 : -1);
+                double apart = Toward(mine[n], partner, side);
+                if (!parted)
+                {
+                    if (apart < -RailProfile.HeadHalfWidth) return true;
+                    parted = apart >= mine[n].TrackWidth + RailProfile.HeadHalfWidth * 2;
+                    continue;
+                }
+                if (apart >= Footprint.Width(mine[n])) return false;
+                if (apart < mine[n].TrackWidth) return true;
+            }
+            return false;
+        }
+
+        // Де від середини секції лежить найближча точка осі колії track, у плані: відстань до неї в бік side.
+        // Від'ємна, якщо колія з протилежного боку
+        private static double Toward(Section section, IList<Section> track, Vec3d side)
+        {
+            Vec3d p = Middle(section);
+            double best = double.MaxValue, bx = 0, bz = 0;
+            foreach (Section other in track)
+            {
+                Vec3d a = other.FullStartPosition, b = other.FullEndPosition;
+                double dx = b.X - a.X, dz = b.Z - a.Z, length = dx * dx + dz * dz;
+                double t = length < 1e-12 ? 0 : GameMath.Clamp(((p.X - a.X) * dx + (p.Z - a.Z) * dz) / length, 0, 1);
+                double x = a.X + dx * t - p.X, z = a.Z + dz * t - p.Z;
+                if (x * x + z * z >= best) continue;
+                best = x * x + z * z;
+                bx = x;
+                bz = z;
+            }
+            double distance = Math.Sqrt(best);
+            return bx * side.X + bz * side.Z >= 0 ? distance : -distance;
         }
 
         // На скільки середина секції partner зсунута від середини mine убік, у бік її нормалі

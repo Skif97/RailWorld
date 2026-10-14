@@ -82,6 +82,40 @@ namespace RailWorld.Tests
             return planned;
         }
 
+        /// <summary>
+        /// Секції колії, що проходить точно через ці кінці секцій, як колія, знята з гри: кожна секція це
+        /// відрізок між двома сусідніми кінцями, з нормаллю впоперек нього. Нічого не кладуть і не зв'язують.
+        /// </summary>
+        protected static List<Section> Through(params (double X, double Z)[] ends)
+        {
+            var sections = new List<Section>();
+            for (int i = 0; i + 1 < ends.Length; i++)
+            {
+                double dx = ends[i + 1].X - ends[i].X, dz = ends[i + 1].Z - ends[i].Z, length = Math.Sqrt(dx * dx + dz * dz);
+                var tangent = new Vec3f((float)(dx / length), 0, (float)(dz / length));
+                var normal = new Vec3f(-tangent.Z, 0, tangent.X);
+                PointOnBezierCurve At(double x, double z) => new PointOnBezierCurve { position = new Vec3d(x, 0, z), tangent = tangent, normal = normal };
+                sections.Add(new Section(At(ends[i].X, ends[i].Z), At(ends[i].X + dx / 2, ends[i].Z + dz / 2), At(ends[i + 1].X, ends[i + 1].Z),
+                    TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+            }
+            return sections;
+        }
+
+        /// <summary>Кладе секції, як Lay: дає їм номери, ставить рейки й шпали і зв'язує сусідні між собою.</summary>
+        protected List<Section> Lay(List<Section> track)
+        {
+            for (int i = 0; i < track.Count; i++)
+            {
+                Section section = track[i];
+                section.IndexInChunk = nextIndex++;
+                section.InstallationSleeper("oak");
+                section.InstallationRails("iron");
+                sections[Key(section.ChunkAddres, section.IndexInChunk)] = section;
+                if (i > 0) Join(track[i - 1], section);
+            }
+            return track;
+        }
+
         // Зв'язує кінець однієї секції з початком наступної в обидва боки
         protected static void Join(Section from, Section to)
         {

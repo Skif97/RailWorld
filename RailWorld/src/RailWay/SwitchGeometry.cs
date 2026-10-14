@@ -147,6 +147,73 @@ namespace RailWorld.src.RailWay
         // Хрестовина. Розміри зі справжніх стрілок, перераховані на нашу рейку.
         // Жолоб для гребеня колеса між вусовиком і осердям, блоків
         public const double FrogFlangeway = 0.05;
+
+        // Ширина головки гостряка, блоків, від якої рахується його початок, і на скільки перерізів колії
+        // ближче до стрілки він починається насправді. Два перерізи це одна секція
+        private const double BladeMinHead = 0.01;
+        private const double BladeLead = 2;
+        // Найменша ширина головки гостряка, блоків: з такої вона починається, сходинкою
+        private const double BladeHeadFrom = 0.005;
+
+        /// <summary>
+        /// Де в кожному з перших points перерізів гілки лежить рамна рейка: зовнішня рейка сусідньої колії,
+        /// до якої прилягає гостряк. Відстань від лінії гостряка, блоків. Біля стрілки вона лежить на лінії
+        /// гостряка, далі відходить убік. Якщо сусідньої колії не знайдено, вважаємо, що вона відходить
+        /// рівномірно і біля кореня гостряк уже повний.
+        /// </summary>
+        public static double[] Stock(BranchGeometry own, int points, double trackWidth)
+        {
+            double[] stock = new double[points];
+            for (int i = 0; i < points; i++)
+            {
+                stock[i] = points > 1 ? (double)i / (points - 1) * RailProfile.HeadHalfWidth * 4 : 0;
+                if (own.Other != null && StockOffset(own.Frames[i], own.Other, trackWidth, i, out double offset)) stock[i] = offset;
+            }
+            return stock;
+        }
+
+        /// <summary>
+        /// Де починається тіло гостряка, підошва з шийкою, у перерізах колії від стрілки, дробом: на секцію
+        /// ближче до стрілки, ніж місце, де головка набирає ширину BladeMinHead. Далі за сам стик стрілки воно
+        /// не йде: там рейка ще одна на обидві колії. firstFull це перший переріз, де головка вже така.
+        /// </summary>
+        public static double BladeBegin(double[] stock, out int firstFull)
+        {
+            return Math.Max(0, Reaches(stock, BladeMinHead, out firstFull) - BladeLead);
+        }
+
+        /// <summary>
+        /// Де починається головка гостряка: там, де від неї лишається ширина BladeHeadFrom; вужча була б лезом.
+        /// Сходинкою, а до цього місця гостряк це лише тіло. Номер перерізу дробом; stock.Length, якщо
+        /// рамна рейка так далеко й не відійшла.
+        /// </summary>
+        public static double HeadFrom(double[] stock)
+        {
+            return Reaches(stock, BladeHeadFrom, out _);
+        }
+
+        /// <summary>
+        /// Чи гостряк гілки довжиною bladeSections секцій набирає повну головку до свого кореня: рамна рейка
+        /// встигає відійти від його лінії на ширину головки рейки. Ні, коли гілки майже на всю довжину
+        /// гостряка лежать одна на одній: тоді від гостряка лишається тонка смужка під рамною рейкою.
+        /// </summary>
+        public static bool BladeFits(BranchGeometry own, int bladeSections, double trackWidth)
+        {
+            int points = Math.Min(bladeSections * 2 + 1, own.Frames.Count);
+            if (points < 2) return false;
+
+            double[] stock = Stock(own, points, trackWidth);
+            return stock[points - 1] >= RailProfile.HeadHalfWidth * 2;
+        }
+
+        // Де рамна рейка відійшла на needed блоків, у перерізах колії від стрілки, дробом; stock.Length, якщо ніде
+        private static double Reaches(double[] stock, double needed, out int index)
+        {
+            index = 0;
+            while (index < stock.Length && stock[index] < needed) index++;
+            if (index == 0 || index >= stock.Length) return index;
+            return index - 1 + (needed - stock[index - 1]) / (stock[index] - stock[index - 1]);
+        }
         // Як далеко від стрілки шукати хрестовину, у секціях. Стрілку, для якої хрестовини не знайшлося,
         // збудувати не можна: див. SectionLinker.FindSwitchProblem
         public const int MaxFrogSections = 40;

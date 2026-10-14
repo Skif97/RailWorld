@@ -85,16 +85,7 @@ namespace RailWorld
             int bladePoints = Math.Min(record.BranchOf(place).BladeSections * 2 + 1, own.Frames.Count);
             if (bladePoints >= 2)
             {
-                // Де в кожному перерізі рамна рейка: зовнішня рейка сусідньої колії. Біля стрілки вона лежить
-                // на лінії гостряка, далі відходить убік. Якщо сусідньої колії не знайдено, вважаємо,
-                // що вона відходить рівномірно і біля кореня гостряк уже повний
-                double[] stock = new double[bladePoints];
-                for (int i = 0; i < bladePoints; i++)
-                {
-                    RailFrame frame = own.Frames[i];
-                    stock[i] = (double)i / (bladePoints - 1) * BladeMesh.HeadHalfWidth * 4;
-                    if (own.Other != null && SwitchGeometry.StockOffset(frame, own.Other, section.TrackWidth, i, out double stockOffset)) stock[i] = stockOffset;
-                }
+                double[] stock = SwitchGeometry.Stock(own, bladePoints, section.TrackWidth);
 
                 var blade = new LoftPart();
                 LoftPoint[][] ends = null;
@@ -115,24 +106,10 @@ namespace RailWorld
                     if (blade.Stations.Count == 1) blade.StartCaps.AddRange(ends);
                 }
 
-                // Де рамна рейка відійшла на stockNeeded блоків, у перерізах колії від стрілки, дробом
-                double Reaches(double stockNeeded, out int index)
-                {
-                    index = 0;
-                    while (index < bladePoints && stock[index] < stockNeeded) index++;
-                    if (index == 0 || index >= bladePoints) return index;
-                    return index - 1 + (stockNeeded - stock[index - 1]) / (stock[index] - stock[index - 1]);
-                }
-
-                // Тіло гостряка, підошва з шийкою, починається на секцію ближче до стрілки, ніж місце, де
-                // головка набирає ширину BladeMinHead. Далі за сам стик стрілки воно не йде: там рейка
-                // ще одна на обидві колії
-                double begin = Math.Max(0, Reaches(BladeMinHead, out int firstFull) - BladeLead);
-                // І не пізніше, ніж за пів секції до тяги: тяга тримається за тіло обох гостряків
-                begin = Math.Min(begin, TieBarAt - 1);
-                // Головка починається пізніше, сходинкою, там, де від неї лишається ширина BladeHeadFrom:
-                // вужча була б лезом. До цього місця гостряк це лише тіло, врівень з низом головки
-                double headFrom = Math.Max(begin, Reaches(BladeHeadFrom, out _));
+                // Тіло гостряка і його головка: див. SwitchGeometry.BladeBegin. Тіло починається не пізніше,
+                // ніж за пів секції до тяги: тяга тримається за тіло обох гостряків
+                double begin = Math.Min(SwitchGeometry.BladeBegin(stock, out int firstFull), TieBarAt - 1);
+                double headFrom = Math.Max(begin, SwitchGeometry.HeadFrom(stock));
 
                 if (headFrom < bladePoints - 1)
                 {
@@ -340,13 +317,6 @@ namespace RailWorld
             }
             return bar;
         }
-
-        // Ширина головки гостряка, блоків, від якої рахується його початок, і на скільки перерізів колії
-        // ближче до стрілки він починається насправді. Два перерізи це одна секція
-        private const double BladeMinHead = 0.01;
-        private const double BladeLead = 2;
-        // Найменша ширина головки гостряка, блоків: з такої вона починається, сходинкою
-        private const double BladeHeadFrom = 0.005;
 
         // За якого зміщення гостряка підпора під головкою сягає низу шийки, блоків. За меншого вона коротша
         private const double SupportFullOffset = 0.05;

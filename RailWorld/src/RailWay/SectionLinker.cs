@@ -419,6 +419,12 @@ namespace RailWorld.src.RailWay
                 // і тоді не відмовляємо
                 if (built != null && built.Resolved && built.Branches[0].FrogFrom == 0) return "стрілка без хрестовини: гілки розходяться надто полого або гілка закоротка";
 
+                if (built != null && built.Resolved)
+                {
+                    string shape = BranchesProblem(join.Copy, join.Other.AtStart, built, Find);
+                    if (shape != null) return shape;
+                }
+
                 // Важелю має бути де стати: якщо з обох боків від стрілки вже лежать інші колії, будувати її не можна
                 if (ChooseLeverSide(join.Copy, join.Other.AtStart, Find, track) == 0) return "важелю стрілки немає де стати: з обох боків інші колії";
 
@@ -601,6 +607,30 @@ namespace RailWorld.src.RailWay
 
         // Крок уздовж колії від тіла стрілки назовні: секція, котрим кінцем у неї зайшли, чи вона сама в тілі,
         // і якщо ні, скільки блоків від краю тіла до її початку
+        // Чи гілки стрілки розходяться так, як це може стрілка: гостряку є куди лягти, і гілки розходяться
+        // один раз, кожна у свій бік. Причина відмови або null
+        private static string BranchesProblem(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve)
+        {
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            Section[] first = { resolve(links[0]), resolve(links[1]) };
+            if (first[0] == null || first[1] == null) return null;
+
+            if (SwitchSides.CrossOver(SwitchSides.Walk(first[0], links[0].AtStart, resolve), SwitchSides.Walk(first[1], links[1].AtStart, resolve)))
+                return "гілки стрілки переходять одна через одну: стрілка розводить колії лише раз, кожну у свій бік";
+
+            for (int k = 0; k < 2; k++)
+            {
+                bool? mine = built.Branches[k].InnerIsFirst(1), theirs = built.Branches[1 - k].InnerIsFirst(1);
+                if (mine == null || theirs == null) continue;
+
+                BranchGeometry geometry = SwitchGeometry.Branch(first[k], links[k].AtStart, mine.Value, first[1 - k], links[1 - k].AtStart, theirs.Value, resolve);
+                if (!SwitchGeometry.BladeFits(geometry, built.Branches[k].BladeSections, first[k].TrackWidth))
+                    return "гілки біля стрілки лежать одна на одній: гостряку нема куди лягти. Поставте стрілку там, де колії розходяться";
+            }
+
+            return null;
+        }
+
         // Скільки секцій щонайбільше проходить пошук перетинів біля стрілки в один бік: тіло найпологішої
         // стрілки і найдовший вузол перетину за ним
         private const int MaxBodyWalk = 128;
