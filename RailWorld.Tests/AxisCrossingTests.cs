@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RailWorld.src.RailWay;
 using Vintagestory.API.MathTools;
@@ -110,6 +111,22 @@ namespace RailWorld.Tests
             // Відгалуження зі стику посеред колії: дуга, що починається в її напрямку
             List<Section> branch = Plan(Point(0, 0, 1, 0), Point(ArcRadius, ArcRadius, 0, 1));
             Assert.Equal(0, Count(branch, laid));
+        }
+
+        [Fact]
+        public void TracksMeetingAtAShallowAngleDoNotMakeACrossing()
+        {
+            // Дві колії під 5°: так лежать лише гілки стрілки, що йдуть одна по одній. Перетин під таким
+            // кутом прокладання не дозволяє
+            double angle = 5 * Math.PI / 180;
+            List<Section> main = LayEastward(0.25);
+            List<Section> other = Lay(Point(-6 * Math.Cos(angle), -6 * Math.Sin(angle), Math.Cos(angle), Math.Sin(angle)),
+                Point(6 * Math.Cos(angle), 6 * Math.Sin(angle), Math.Cos(angle), Math.Sin(angle)));
+
+            foreach (Section a in main)
+            {
+                foreach (Section b in other) Assert.False(AxisCrossing.OfLaid(a, b));
+            }
         }
 
         [Fact]

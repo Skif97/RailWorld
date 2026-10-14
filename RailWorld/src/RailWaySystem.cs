@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using RailWorld.src.RailWay;
@@ -171,6 +173,15 @@ namespace RailWorld
                 .RequiresPlayer()
                 .WithArgs(api.ChatCommands.Parsers.OptionalInt("count", 1))
                 .HandleWith(OnRailUndoCommand);
+
+            // Записи про стрілки й перетини рахуються, лише коли щось змінюється в колії. Коли змінюються самі
+            // правила, наявні записи лишаються старими, доки їх не перерахувати
+            api.ChatCommands.Create("railrecheck")
+                .WithDescription("Recalculates switch and crossing records of the track around you, after the rules have changed")
+                .RequiresPrivilege(Privilege.chat)
+                .RequiresPlayer()
+                .WithArgs(api.ChatCommands.Parsers.OptionalInt("radius", 2))
+                .HandleWith(OnRailRecheckCommand);
 
             // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
@@ -485,6 +496,34 @@ namespace RailWorld
 
             return TextCommandResult.Success(string.Format("Відкочено побудов: {0}. Секцій прибрано: {1}, блоків повернуто: {2}. Ще можна відкотити: {3}",
                 undone, sections, blocks, Journal.Count(player.PlayerUID)));
+        }
+
+        // Перераховує записи стрілок і перетинів у завантажених чанках навколо гравця, radius у чанках
+        private TextCommandResult OnRailRecheckCommand(TextCommandCallingArgs args)
+        {
+            int radius = GameMath.Clamp((int)args[0], 0, 8);
+            EntityPos pos = args.Caller.Player.Entity.Pos;
+            int centerX = (int)pos.X / GlobalConstants.ChunkSize, centerY = (int)pos.Y / GlobalConstants.ChunkSize, centerZ = (int)pos.Z / GlobalConstants.ChunkSize;
+
+            var session = new RailDataSession(sapi.World);
+            int chunks = 0;
+            for (int x = centerX - radius; x <= centerX + radius; x++)
+            {
+                for (int z = centerZ - radius; z <= centerZ + radius; z++)
+                {
+                    for (int y = centerY - 1; y <= centerY + 1; y++)
+                    {
+                        var chunk = new Vec3i(x, y, z);
+                        if (session.Get(chunk) == null) continue;
+                        session.MarkDirty(chunk);
+                        chunks++;
+                    }
+                }
+            }
+            if (chunks == 0) return TextCommandResult.Error("Поруч немає колії");
+
+            session.SaveAll();
+            return TextCommandResult.Success(string.Format("Перераховано записи стрілок і перетинів у чанках з колією: {0}", chunks));
         }
 
         // Щойно завантажена колонка чанків: дописує її стрілки й перетини, яких ще немає в записах, і дораховує

@@ -47,12 +47,24 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Чи перетинаються осі двох покладених секцій. Секції однієї колії чи однієї стрілки сходяться
-        /// кінцями, але це не перетин.
+        /// кінцями, але це не перетин. Колії, що сходяться гостріше за RouteCurve.MinCrossingAngleDeg, теж
+        /// не перетинаються: прокладання такого перетину не дозволяє, тож так лежать лише гілки стрілки, що
+        /// йдуть одна по одній і через неточність осей переходять одна через одну.
         /// </summary>
         public static bool OfLaid(Section a, Section b)
         {
-            if (a == b || SameTrack(a, b)) return false;
+            if (a == b || SameTrack(a, b) || Angle(a, b) < RouteCurve.MinCrossingAngleDeg) return false;
             return Of(a.FullStartPosition, a.FullEndPosition, b, out double t, out _) && On(a, t);
+        }
+
+        // Кут між осями двох секцій у плані, градуси, від 0 до 90
+        private static double Angle(Section a, Section b)
+        {
+            Vec3d p = a.FullStartPosition, q = a.FullEndPosition, c = b.FullStartPosition, d = b.FullEndPosition;
+            double rx = q.X - p.X, rz = q.Z - p.Z, sx = d.X - c.X, sz = d.Z - c.Z;
+            double lengths = Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
+            if (lengths < 1e-12) return 0;
+            return Math.Acos(GameMath.Clamp(Math.Abs(rx * sx + rz * sz) / lengths, 0, 1)) * 180 / Math.PI;
         }
 
         private static bool Of(Vec3d from, Vec3d to, Section laid, out double t, out double u)
