@@ -285,5 +285,40 @@ namespace RailWorld.Tests
             // Третій уже звичайний
             Assert.InRange(End(layout.Timbers[2], -1).Z, -Sleeper / 2 - 0.02, -Sleeper / 2 + 0.02);
         }
+        [Fact]
+        public void EveryBeamOfACrossingCarriesARailOfASectionItReplaces()
+        {
+            // Перетин з тестового світу: кінці секцій обох колій, як їх записала гра, відносно (513500, 510957).
+            // Крайній брус там обрізався об власну шпалу колії до 0,55 блока і лежав між коліями без рейки
+            List<Section> main = Through((8.0040, -0.4637), (7.5051, -0.4907), (7.0024, -0.5028), (6.4937, -0.5025), (5.9914, -0.4904), (5.4960, -0.4673), (4.9953, -0.4332), (4.4892, -0.3883), (3.9908, -0.3342), (3.5005, -0.2718), (2.9925, -0.1980), (2.5062, -0.1191), (2.0157, -0.0317), (1.5211, 0.0639), (1.0225, 0.1677), (0.5337, 0.2761), (0.0550, 0.3883), (-0.4407, 0.5105), (-0.9259, 0.6357), (-1.4001, 0.7630), (-1.8911, 0.8996), (-2.3707, 1.0375), (-2.8386, 1.1759), (-3.3229, 1.3230), (-3.7952, 1.4697));
+            List<Section> other = Through((-2.5760, 3.9245), (-2.1971, 3.5999), (-1.8135, 3.2740), (-1.4251, 2.9467), (-1.0425, 2.6269), (-0.6559, 2.3059), (-0.2652, 1.9839), (0.1184, 1.6695), (0.5055, 1.3542), (0.8958, 1.0380), (1.2890, 0.7210), (1.6740, 0.4120), (2.0725, 0.0936), (2.4623, -0.2167), (2.8540, -0.5275), (3.2476, -0.8388), (3.6427, -1.1506), (4.0392, -1.4627), (4.4255, -1.7662), (4.8240, -2.0789), (5.2119, -2.3829), (5.6115, -2.6959), (6.0114, -3.0089), (6.3999, -3.3131), (6.7996, -3.6261));
+
+            TimberLayout layout = NodeTimbers.LayCrossing(main, 11, other, 12);
+
+            Assert.NotEmpty(layout.Timbers);
+            foreach (Timber timber in layout.Timbers)
+            {
+                bool carries = false;
+                foreach (Section section in layout.Hidden) carries |= CarriesRailOf(timber, section);
+                Assert.True(carries, "брус завдовжки " + timber.Length.ToString("0.00") + " не тримає жодної рейки");
+            }
+        }
+
+        // Чи рейка секції в плані проходить над брусом
+        private static bool CarriesRailOf(Timber timber, Section section)
+        {
+            double half = timber.Length / 2;
+            double ax = timber.Position.X - timber.Across.X * half, az = timber.Position.Z - timber.Across.Z * half;
+            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+            Vec3f normal = section.CenterNormal;
+            for (int side = -1; side <= 1; side += 2)
+            {
+                double offset = section.TrackWidth / 2 * side;
+                if (PlanLines.Meet(start.X + normal.X * offset, start.Z + normal.Z * offset, end.X - start.X, end.Z - start.Z,
+                        ax, az, timber.Across.X * timber.Length, timber.Across.Z * timber.Length, out double t, out double u)
+                    && t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+            }
+            return false;
+        }
     }
 }

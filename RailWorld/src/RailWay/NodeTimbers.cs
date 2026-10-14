@@ -210,6 +210,9 @@ namespace RailWorld.src.RailWay
                     // Кінці бруса знайдено в плані. Лежить він на полотні основної колії: на схилі воно під
                     // брусом піднімається, і рівний брус одним кінцем задерся б над рейками, а другим провалився
                     Vec3d from = Shifted(middle, sideways, -left), to = Shifted(middle, sideways, right);
+                    // Брус тут, щоб тримати рейки секцій, шпали яких він заміняє. Обрізаний об власні шпали колій
+                    // так, що під ним жодної такої рейки, він лише лежав би між коліями
+                    if (!CarriesRail(from, to, layout.Hidden)) continue;
                     if (Deck(main, mainPlaces, from, out double fromY)) from.Y = fromY;
                     if (Deck(main, mainPlaces, to, out double toY)) to.Y = toY;
 
@@ -308,6 +311,24 @@ namespace RailWorld.src.RailWay
             Vec3d r = Chord(first), s = Chord(second);
             if (!PlanLines.Meet(a.X, a.Z, r.X, r.Z, c.X, c.Z, s.X, s.Z, out double t, out _)) return first.GetGlobalPos();
             return new Vec3d(a.X + r.X * t, a.Y, a.Z + r.Z * t);
+        }
+
+        // Чи в плані над брусом від from до to проходить рейка котроїсь із секцій
+        private static bool CarriesRail(Vec3d from, Vec3d to, IEnumerable<Section> sections)
+        {
+            double sx = to.X - from.X, sz = to.Z - from.Z;
+            foreach (Section section in sections)
+            {
+                Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+                Vec3f normal = section.CenterNormal;
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    double offset = section.TrackWidth / 2 * side;
+                    if (PlanLines.Meet(start.X + normal.X * offset, start.Z + normal.Z * offset, end.X - start.X, end.Z - start.Z,
+                            from.X, from.Z, sx, sz, out double t, out double u) && t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+                }
+            }
+            return false;
         }
 
         // Номер місця, найближчого в плані до точки
