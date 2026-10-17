@@ -93,6 +93,52 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public const double SamePlane = 0.15;
 
+        /// <summary>
+        /// Як далеко від осі покладеної колії точка розмітки, поставлена на блок, стає на саму колію, блоків у
+        /// плані: маршрут, що починається чи закінчується поруч із колією, до неї й приєднується. Колію впритул
+        /// до іншої так не покладеш, і це навмисно.
+        /// </summary>
+        public const double MarkerReach = 2.5;
+
+        /// <summary>
+        /// Секція покладеної колії, вісь якої проходить у плані найближче до точки p, не далі за reach, на тій
+        /// самій висоті (SamePlane), і найближча до p точка її осі. Вісь секції це ламана через її початок,
+        /// середину й кінець. false, якщо такої секції немає.
+        /// </summary>
+        public static bool NearestAxis(Vec3d p, double reach, TrackIndex track, out Section nearest, out Vec3d at)
+        {
+            nearest = null;
+            at = null;
+            double best = reach;
+
+            // Середина секції не далі ніж за блок від будь-якої точки її осі
+            foreach (Section section in track.Around(p, reach + 1, SamePlane + 1))
+            {
+                Vec3d start = section.FullStartPosition, middle = section.GetGlobalPos(), end = section.FullEndPosition;
+                for (int half = 0; half < 2; half++)
+                {
+                    Vec3d point = Closest(half == 0 ? start : middle, half == 0 ? middle : end, p);
+                    if (Math.Abs(point.Y - p.Y) > SamePlane) continue;
+
+                    double dx = point.X - p.X, dz = point.Z - p.Z, distance = Math.Sqrt(dx * dx + dz * dz);
+                    if (distance > best) continue;
+
+                    best = distance;
+                    nearest = section;
+                    at = point;
+                }
+            }
+            return nearest != null;
+        }
+
+        // Найближча до p у плані точка відрізка від a до b, з висотою на відрізку
+        private static Vec3d Closest(Vec3d a, Vec3d b, Vec3d p)
+        {
+            double rx = b.X - a.X, rz = b.Z - a.Z, length = rx * rx + rz * rz;
+            double t = length < 1e-12 ? 0 : GameMath.Clamp(((p.X - a.X) * rx + (p.Z - a.Z) * rz) / length, 0, 1);
+            return new Vec3d(a.X + rx * t, a.Y + (b.Y - a.Y) * t, a.Z + rz * t);
+        }
+
         /// <summary>Оглядає покладену колію навколо секції.</summary>
         public static SectionFacts Examine(Section section, TrackIndex track)
         {

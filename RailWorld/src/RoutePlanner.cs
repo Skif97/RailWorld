@@ -278,7 +278,7 @@ namespace RailWorld
             if (sel != null && sel.Part == SectionPart.Whole)
             {
                 if (!onTrack) return null;
-                return SnapToTrack(sel, first, player.Entity.Pos.GetViewVector());
+                return SnapToTrack(sel.Section, sel.HitPosition, first, player.Entity.Pos.GetViewVector());
             }
 
             snapRefusal = null;
@@ -290,25 +290,33 @@ namespace RailWorld
 
             Vec3f view = player.Entity.Pos.GetViewVector();
             double yaw = GameMath.Mod((float)Math.Atan2(-view.Z, view.X), GameMath.TWOPI);
-            return RouteMarker.OnBlock(block, yaw);
+            RouteMarker free = RouteMarker.OnBlock(block, yaw);
+
+            // Блок біля покладеної колії: точка стає на колію, ніби приціл навели на неї в найближчому місці
+            if (onTrack && TrackSurvey.NearestAxis(free.Position, TrackSurvey.MarkerReach,
+                new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid), out Section near, out Vec3d at))
+            {
+                return SnapToTrack(near, at, first, view);
+            }
+            return free;
         }
 
         /// <summary>
-        /// Точка на вже покладеній колії: найближчий до прицілу стик секції. Маршрут може від нього почати,
+        /// Точка на вже покладеній колії: найближчий до hit стик секції section. hit це місце, куди влучив
+        /// приціл, або найближча до блока розмітки точка осі, якщо блок поруч із колією. Маршрут може від нього почати,
         /// це відгалуження, або ним закінчити, це примикання; в обох випадках у стику виникає стрілка.
         /// У стику колія має два напрямки. Перша точка маршруту бере той, куди дивиться гравець,
         /// остання той, яким маршрут до неї прийшов. Якщо в потрібний бік стрілка вже є
         /// (у кінця секції два сусіди), береться інший бік, а якщо зайняті обидва, точка не ставиться.
         /// </summary>
-        private RouteMarker SnapToTrack(SectionSelection sel, bool first, Vec3f view)
+        private RouteMarker SnapToTrack(Section section, Vec3d hit, bool first, Vec3f view)
         {
             snapRefusal = null;
-            Section section = sel.Section;
-            bool atStart = sel.HitPosition.SquareDistanceTo(section.FullStartPosition) < sel.HitPosition.SquareDistanceTo(section.FullEndPosition);
+            bool atStart = hit.SquareDistanceTo(section.FullStartPosition) < hit.SquareDistanceTo(section.FullEndPosition);
 
             // Біля відкритого краю колії точка стає на сам край, а не на стик, у який влучив приціл:
             // промах на секцію-другу дав би стрілку з куцим хвостиком замість продовження колії
-            if (SwitchZone.FindOpenEnd(section, sel.HitPosition, FindClientSection, out Section endSection, out bool endAtStart))
+            if (SwitchZone.FindOpenEnd(section, hit, FindClientSection, out Section endSection, out bool endAtStart))
             {
                 section = endSection;
                 atStart = endAtStart;
@@ -533,7 +541,7 @@ namespace RailWorld
                 cacheRevision = system.ClientRevision;
             }
             var laid = new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid);
-            List<RouteMarker> settled = RouteBuilder.SettleSwitches(RouteBuilder.SnapToOpenEnds(shown, laid, FindClientSection), FindClientSection);
+            List<RouteMarker> settled = RouteBuilder.SettleSwitches(shown, FindClientSection);
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
 
             RouteCheck check = RouteRules.Check(points);
