@@ -171,7 +171,7 @@ namespace RailWorld.src.RailWay
             if (record == null) return;
 
             int side = -section.GetLeverSide(atStart);
-            if (!SectionLinker.LeverSideFree(section, atStart, side, record, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values)))
+            if (!SectionLinker.LeverSideFree(section, atStart, side, record, new TrackIndex(chunk => session.Get(chunk)?.Grid)))
             {
                 (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railleverside", "З того боку важелю заважає інша колія");
                 return;
@@ -421,7 +421,7 @@ namespace RailWorld.src.RailWay
             {
                 // Сусіди більше не мають на неї посилатися
                 SectionLinker.Unlink(session, section);
-                data.RailWaySections.Remove(sel.Index);
+                data.Remove(sel.Index);
             }
             else section.RemovePart(sel.Part);
 

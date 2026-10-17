@@ -38,7 +38,7 @@ namespace RailWorld.src.RailWay
                 if (!session.IsChunkLoaded(section.ChunkAddres) || (data != null && SectionLinker.HasSameSection(data, section))) continue;
                 planned.Add(section);
             }
-            var track = new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values);
+            var track = new TrackIndex(chunk => session.Get(chunk)?.Grid);
             string refusal = null;
             if (SectionLinker.FindLongOverlap(planned, track, session.GetSection, out _, out _)) refusal = "колії надто довго йдуть одна поверх одної";
             else if (SectionLinker.FindTooCloseAbove(planned, track).Count > 0) refusal = "колія проходить надто близько над чи під іншою";

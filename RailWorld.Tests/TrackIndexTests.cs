@@ -46,20 +46,35 @@ namespace RailWorld.Tests
         }
 
         [Fact]
-        public void ChunkIsReadOnce()
+        public void RemovedSectionIsNotFoundAnyMore()
         {
-            Lay(Point(10, 5, 1, 0), Point(20, 5, 1, 0));
+            List<Section> laid = Lay(Point(10, 5, 1, 0), Point(20, 5, 1, 0));
+            Section gone = laid[laid.Count / 2];
+            Vec3d middle = gone.GetGlobalPos();
+            Assert.Contains(gone, SectionsIn.Around(middle, 1, 1));
 
-            int reads = 0;
-            var track = new TrackIndex(chunk =>
-            {
-                reads++;
-                return StoredIn(chunk);
-            });
+            Forget(gone);
 
-            for (int i = 0; i < 50; i++) track.Around(new Vec3d(10 + i * 0.2, 0, 5), 3, 2);
-            // Точки лежать в одному чанку і поруч із його сусідами: кожен із них прочитано раз, а не п'ятдесят
-            Assert.InRange(reads, 1, 8);
+            List<Section> near = SectionsIn.Around(middle, 1, 1);
+            Assert.DoesNotContain(gone, near);
+            // Сусіди на місці
+            Assert.Contains(laid[laid.Count / 2 - 1], near);
+        }
+
+        [Fact]
+        public void GridIsRebuiltAfterReading()
+        {
+            // Сітка не зберігається: прочитані дані чанка розкладають секції по клітинках заново
+            var data = new DataInChunk();
+            List<Section> laid = Plan(Point(10, 5, 1, 0), Point(20, 5, 1, 0));
+            foreach (Section section in laid) data.Add(section);
+
+            DataInChunk read = ProtoBuf.Serializer.DeepClone(data);
+            var track = new TrackIndex(chunk => chunk.Equals(laid[0].ChunkAddres) ? read.Grid : null);
+
+            List<Section> near = track.Around(laid[0].GetGlobalPos(), 30, 2);
+            Assert.Equal(read.RailWaySections.Count, near.Count);
+            foreach (Section section in read.RailWaySections.Values) Assert.Contains(section, near);
         }
     }
 }

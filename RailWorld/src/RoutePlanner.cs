@@ -532,7 +532,7 @@ namespace RailWorld
                 cache.Clear();
                 cacheRevision = system.ClientRevision;
             }
-            var laid = new TrackIndex(system.ClientSectionsIn);
+            var laid = new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid);
             List<RouteMarker> settled = RouteBuilder.SettleSwitches(RouteBuilder.SnapToOpenEnds(shown, laid, FindClientSection), FindClientSection);
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
 

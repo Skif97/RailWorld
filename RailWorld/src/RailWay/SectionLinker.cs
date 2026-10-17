@@ -230,7 +230,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void LinkToNeighbours(RailDataSession session, Section section, bool atStart)
         {
-            foreach (SectionLink meeting in Meeting(section, atStart, chunk => session.Get(chunk)?.RailWaySections.Values))
+            foreach (SectionLink meeting in Meeting(section, atStart, new TrackIndex(chunk => session.Get(chunk)?.Grid)))
             {
                 Section other = session.GetSection(meeting);
                 if (other == null) continue;
@@ -246,49 +246,31 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Кінці вже покладених секцій, які сходяться з цим кінцем секції: лежать у тій самій точці й дивляться
-        /// назустріч. Саме з ними кінець буде з'єднано. sectionsIn каже, які секції зберігаються в чанку.
+        /// назустріч. Саме з ними кінець буде з'єднано.
         /// </summary>
-        public static List<SectionLink> Meeting(Section section, bool atStart, System.Func<Vec3i, IEnumerable<Section>> sectionsIn)
+        public static List<SectionLink> Meeting(Section section, bool atStart, TrackIndex track)
         {
             var found = new List<SectionLink>();
             Vec3d pos = section.GetEndPosition(atStart);
             Vec3f dir = section.GetOutwardDirection(atStart);
 
-            // Секція зберігається в чанку свого центру, а центр не далі ніж за блок від кінця
-            var chunks = new HashSet<Vec3i>();
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dy = -1; dy <= 1; dy++)
-                    for (int dz = -1; dz <= 1; dz++)
-                        chunks.Add(ModMath.FindChunk(pos.X + dx, pos.Y + dy, pos.Z + dz));
-
-            foreach (Vec3i chunkCoord in chunks)
+            // Центр секції не далі ніж за блок від її кінця
+            foreach (Section other in track.Around(pos, 1, 1))
             {
-                IEnumerable<Section> sections = sectionsIn(chunkCoord);
-                if (sections == null) continue;
+                if (other == section) continue;
 
-                foreach (Section other in sections)
+                for (int end = 0; end < 2; end++)
                 {
-                    if (other == section) continue;
+                    bool otherAtStart = end == 0;
+                    if (other.GetEndPosition(otherAtStart).DistanceTo(pos) > PositionTolerance) continue;
 
-                    for (int end = 0; end < 2; end++)
-                    {
-                        bool otherAtStart = end == 0;
-                        if (other.GetEndPosition(otherAtStart).DistanceTo(pos) > PositionTolerance) continue;
+                    Vec3f otherDir = other.GetOutwardDirection(otherAtStart);
+                    if (dir.X * otherDir.X + dir.Y * otherDir.Y + dir.Z * otherDir.Z > DirectionTolerance) continue;
 
-                        Vec3f otherDir = other.GetOutwardDirection(otherAtStart);
-                        if (dir.X * otherDir.X + dir.Y * otherDir.Y + dir.Z * otherDir.Z > DirectionTolerance) continue;
-
-                        found.Add(new SectionLink(other, otherAtStart));
-                    }
+                    found.Add(new SectionLink(other, otherAtStart));
                 }
             }
             return found;
-        }
-
-        /// <summary>Те саме по вже розкладеній колії.</summary>
-        public static List<SectionLink> Meeting(Section section, bool atStart, TrackIndex track)
-        {
-            return Meeting(section, atStart, track.InChunk);
         }
 
         // Місце, де кінець нової секції з'єднається з кінцем уже покладеної
@@ -771,7 +753,7 @@ namespace RailWorld.src.RailWay
             // Гравець переставив важіль сам: його вибір лишається
             if (trunk.IsLeverManual(atStart)) return;
 
-            int side = ChooseLeverSide(trunk, atStart, record, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.RailWaySections.Values));
+            int side = ChooseLeverSide(trunk, atStart, record, session.GetSection, new TrackIndex(chunk => session.Get(chunk)?.Grid));
             if (side == 0) return;
 
             if (trunk.GetLeverSide(atStart) == side && trunk.HasLeverSide(atStart)) return;

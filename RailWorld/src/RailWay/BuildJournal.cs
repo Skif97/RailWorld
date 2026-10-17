@@ -102,7 +102,7 @@ namespace RailWorld.src.RailWay
                 if (data == null) continue;
 
                 SectionLinker.Unlink(session, section);
-                data.RailWaySections.Remove(section.IndexInChunk);
+                data.Remove(section.IndexInChunk);
                 session.MarkDirty(section.ChunkAddres);
                 sectionsRemoved++;
             }

@@ -7,7 +7,7 @@ namespace RailWorld.Tests
 {
     /// <summary>
     /// Основа для тестів, яким потрібна покладена колія: нарізає маршрут на секції так само, як мод,
-    /// і тримає їх у словнику замість чанків. На цьому схожість закінчується: сусідні секції тут зв'язані
+    /// і тримає їх у даних чанків (DataInChunk), як гра, тільки без самих чанків. На цьому схожість закінчується: сусідні секції тут зв'язані
     /// руками (Join), а не кодом мода (SectionLinker.LinkStretch), реєстри стрілок і перетинів не працюють,
     /// і маршрут кладеться без огляду на вже покладену колію. Тобто справжній шлях зв'язування і появи
     /// стрілок ці тести не перевіряють.
@@ -16,25 +16,27 @@ namespace RailWorld.Tests
     {
         protected const double ArcRadius = 20;
 
-        private readonly Dictionary<string, Section> sections = new Dictionary<string, Section>();
-        private int nextIndex;
-
-        private static string Key(Vec3i chunk, int index)
-        {
-            return chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + index;
-        }
+        private readonly Dictionary<Vec3i, DataInChunk> chunks = new Dictionary<Vec3i, DataInChunk>();
 
         /// <summary>Секція за посиланням, або null, якщо її прибрано через Forget: ніби її чанк не завантажений.</summary>
         protected Section Resolve(SectionLink link)
         {
-            sections.TryGetValue(Key(link.Chunk, link.Index), out Section section);
+            Section section = null;
+            if (chunks.TryGetValue(link.Chunk, out DataInChunk data)) data.RailWaySections.TryGetValue(link.Index, out section);
             return section;
         }
 
         /// <summary>Робить секцію недоступною, ніби її чанк не завантажений. Зв'язки на неї лишаються.</summary>
         protected void Forget(Section section)
         {
-            sections.Remove(Key(section.ChunkAddres, section.IndexInChunk));
+            if (chunks.TryGetValue(section.ChunkAddres, out DataInChunk data)) data.Remove(section.IndexInChunk);
+        }
+
+        // Записує секцію в дані її чанка, як прокладання в грі: там вона отримує свій номер
+        private void Store(Section section)
+        {
+            if (!chunks.TryGetValue(section.ChunkAddres, out DataInChunk data)) chunks[section.ChunkAddres.Clone()] = data = new DataInChunk();
+            data.Add(section);
         }
 
         // Кладе колію по маршруту: точки нарізки, по три на секцію, сусідні секції зв'язані, рейки і шпали на місці
@@ -45,10 +47,9 @@ namespace RailWorld.Tests
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
                 var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
-                section.IndexInChunk = nextIndex++;
                 section.InstallationSleeper("oak");
                 section.InstallationRails("iron");
-                sections[Key(section.ChunkAddres, section.IndexInChunk)] = section;
+                Store(section);
 
                 if (track.Count > 0) Join(track[track.Count - 1], section);
                 track.Add(section);
@@ -57,17 +58,12 @@ namespace RailWorld.Tests
         }
 
         /// <summary>Покладена колія, якою її бачать правила. Щоразу нова: між перевірками тести докладають колію.</summary>
-        protected TrackIndex SectionsIn => new TrackIndex(StoredIn);
+        protected TrackIndex SectionsIn => new TrackIndex(GridIn);
 
-        /// <summary>Секції, що зберігаються в чанку: те саме, що гра дістає з даних чанка.</summary>
-        protected IEnumerable<Section> StoredIn(Vec3i chunk)
+        /// <summary>Секції чанка по клітинках: те саме, що гра дістає з даних чанка.</summary>
+        protected ChunkTrackGrid GridIn(Vec3i chunk)
         {
-            var found = new List<Section>();
-            foreach (Section section in sections.Values)
-            {
-                if (section.ChunkAddres.Equals(chunk)) found.Add(section);
-            }
-            return found;
+            return chunks.TryGetValue(chunk, out DataInChunk data) ? data.Grid : null;
         }
 
         /// <summary>Секції маршруту, який лише задумано: нарізані так само, але ще не покладені.</summary>
@@ -107,10 +103,9 @@ namespace RailWorld.Tests
             for (int i = 0; i < track.Count; i++)
             {
                 Section section = track[i];
-                section.IndexInChunk = nextIndex++;
                 section.InstallationSleeper("oak");
                 section.InstallationRails("iron");
-                sections[Key(section.ChunkAddres, section.IndexInChunk)] = section;
+                Store(section);
                 if (i > 0) Join(track[i - 1], section);
             }
             return track;

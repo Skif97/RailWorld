@@ -97,7 +97,7 @@ namespace RailWorld.src.RailWay
             DataInChunk data = session.Get(chunk);
             if (data == null) return;
 
-            var track = new TrackIndex(coord => session.Get(coord)?.RailWaySections.Values);
+            var track = new TrackIndex(coord => session.Get(coord)?.Grid);
             foreach (Section section in new List<Section>(data.RailWaySections.Values))
             {
                 if (section.GetCrossingRef() != null) continue;

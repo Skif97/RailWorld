@@ -253,7 +253,7 @@ namespace RailWorld
                 markers.Add(marker);
             }
 
-            var laid = new TrackIndex(chunk => lookup.Get(chunk)?.RailWaySections.Values);
+            var laid = new TrackIndex(chunk => lookup.Get(chunk)?.Grid);
             List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(RouteBuilder.SnapToOpenEnds(markers, laid, lookup.GetSection), lookup.GetSection));
             if (route == null) return "з цих точок маршрут не складається";
 

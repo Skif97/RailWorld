@@ -15,7 +15,16 @@ namespace RailWorld.src.RailWay
         private int index;
 
         [ProtoMember(2)]
-        public Dictionary<int, Section> RailWaySections;
+        private Dictionary<int, Section> sections;
+
+        /// <summary>
+        /// Секції чанка за номером. Лише для читання: секції додаються й прибираються через Add і Remove,
+        /// бо разом із ними міняється сітка Grid.
+        /// </summary>
+        public IReadOnlyDictionary<int, Section> RailWaySections => sections;
+
+        /// <summary>Ті самі секції, розкладені по клітинках, щоб швидко знаходити їх біля точки.</summary>
+        public ChunkTrackGrid Grid { get; private set; } = new ChunkTrackGrid();
 
         // Стрілки, чия спільна секція лежить у цьому чанку, за ключем RailSwitch.Key
         [ProtoMember(3)]
@@ -36,21 +45,26 @@ namespace RailWorld.src.RailWay
         public DataInChunk()
         {
             index = 0;
-            RailWaySections = new Dictionary<int, Section>();
+            sections = new Dictionary<int, Section>();
             Switches = new Dictionary<int, RailSwitch>();
             Crossings = new Dictionary<int, RailCrossing>();
         }
 
         // Секція не зберігає свій номер, він є ключем словника. Роздаємо номери після читання
+        // і розкладаємо секції по клітинках: сітка не зберігається
         [ProtoAfterDeserialization]
         private void OnDeserialized()
         {
-            if (RailWaySections == null) RailWaySections = new Dictionary<int, Section>();
+            if (sections == null) sections = new Dictionary<int, Section>();
             // У збереженнях, зроблених до появи списку стрілок, його немає
             if (Switches == null) Switches = new Dictionary<int, RailSwitch>();
             if (Crossings == null) Crossings = new Dictionary<int, RailCrossing>();
-            foreach (var kvp in RailWaySections)
+            Grid = new ChunkTrackGrid();
+            foreach (var kvp in sections)
+            {
                 kvp.Value.IndexInChunk = kvp.Key;
+                Grid.Add(kvp.Value);
+            }
         }
 
         /// <summary>
@@ -60,8 +74,20 @@ namespace RailWorld.src.RailWay
         {
             int assigned = index++;
             section.IndexInChunk = assigned;
-            RailWaySections[assigned] = section;
+            sections[assigned] = section;
+            Grid.Add(section);
             return assigned;
+        }
+
+        /// <summary>
+        /// Прибирає секцію з таким номером. Повертає false, якщо її тут не було.
+        /// </summary>
+        public bool Remove(int index)
+        {
+            if (!sections.TryGetValue(index, out Section section)) return false;
+            sections.Remove(index);
+            Grid.Remove(section);
+            return true;
         }
 
         // Розібрані дані чанків на сервері, щоб не розбирати їх із байтів при кожному зверненні.
