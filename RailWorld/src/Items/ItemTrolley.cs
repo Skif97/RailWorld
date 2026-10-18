@@ -60,9 +60,9 @@ namespace RailWorld.src.Items
             {
                 // Ставимо посередині секції. Далі вагонетка сама їде по зв'язках між секціями
                 Section section = railSel.Section;
-                double middle = section.FullStartPosition.DistanceTo(section.FullEndPosition) / 2;
+                double middle = RailPose.Length(section) / 2;
                 double halfHeight = (entityType.SelectionBoxSize?.Y ?? entityType.CollisionBoxSize.Y) / 2;
-                EntityTrolley.ApplyRailPose(entity.Pos, section, middle, halfHeight, 1, out float cant);
+                RailPose.Place(entity.Pos, section, middle, halfHeight, 1, out float cant);
                 entity.WatchedAttributes.SetFloat(EntityTrolley.CantAttribute, cant);
 
                 entity.Attributes.SetBool("onRail", true);

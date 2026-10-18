@@ -281,12 +281,6 @@ namespace RailWorld
         /// </summary>
         public int ClientRevision { get; private set; }
 
-        /// <summary>Секції колії, що зберігаються в чанку, якими їх знає клієнт; null, якщо колії там немає.</summary>
-        public IEnumerable<Section> ClientSectionsIn(Vec3i chunkCoord)
-        {
-            return clientTrack.SectionsIn(chunkCoord);
-        }
-
         public List<SectionBox> GetClientBoxes(Vec3i chunkCoord)
         {
             return clientTrack.GetBoxes(chunkCoord);

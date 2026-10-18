@@ -143,6 +143,7 @@ namespace RailWorld
             motorDir = Attributes.GetInt("motorDir", 1) < 0 ? -1 : 1;
             motorGear = Attributes.GetInt("motorGear");
             SetOnRail(onRail);
+            SyncTrackPlace();
         }
 
         private void SaveRailState()
@@ -197,25 +198,23 @@ namespace RailWorld
 
         /// <summary>
         /// Клієнт, раз на кадр: ставить вагонетку на рейки на екрані.
-        /// Положення й кути приходять із сервера кілька разів на секунду, і гра плавно доводить їх до
-        /// присланих, кожне окремо і нічого не знаючи про колію. На великій швидкості вагонетка за цей час
-        /// проїжджає більше блока: намальована вона ще в одному місці кривої, а повернута вже як у наступному.
-        /// Тому кути беремо з колії в тому місці, де вагонетка намальована саме зараз.
-        /// Писати кути просто в Pos після доведення можна: воно тримає власний стан і назад їх не читає
-        /// (EntityBehaviorInterpolatePosition), а рендер читає Pos уже після нас. Так само свій курс пише човен.
+        /// Положення приходять із сервера кілька разів на секунду, і гра веде сутність між двома останніми
+        /// (EntityBehaviorInterpolatePosition) навпростець, а кути доводить окремо, нічого не знаючи про колію.
+        /// На великій швидкості вагонетка за цей час проїжджає більше блока: на кривій вона зрізала б кут, а
+        /// повернута була б не так, як лежить колія під нею. Тому між тими самими двома положеннями ведемо її
+        /// колією і кути беремо з колії в тому місці, де вона зараз (PlaceOnTrack).
+        /// Писати в Pos після гри можна: її поведінка тримає власний стан і назад Pos не читає, а рендер читає
+        /// Pos уже після нас. Так само свій курс пише човен.
         /// </summary>
         private void ClientFrame(float dt)
         {
-            if (WatchedAttributes.GetBool("onRail") && TrackPoseHere(out float yaw, out float tilt, out float cant))
+            if (WatchedAttributes.GetBool("onRail") && PlaceOnTrack(out float cant))
             {
-                Pos.Yaw = yaw;
-                Pos.Roll = tilt;
-                Pos.Pitch = 0;
                 shownCant = cant;
             }
             else
             {
-                // Не на колії або колії поруч не знайдено: як прислав сервер
+                // Не на колії або колії, якою вона їде, клієнт ще не знає: як прислав сервер
                 float target = WatchedAttributes.GetFloat(CantAttribute);
                 shownCant += (target - shownCant) * Math.Min(1f, dt * 10f);
             }
@@ -227,113 +226,55 @@ namespace RailWorld
             ShowMotion(dt);
         }
 
-        // Як далеко від намальованої вагонетки шукати колію, блоків
-        private const double TrackSearchRange = 1.2;
-        // Наскільки напрямок колії важить проти відстані до неї, коли колій поруч кілька: на стрілці й
-        // перетині беремо ту, що йде туди ж, куди їде вагонетка
-        private const double TrackHeadingWeight = 0.6;
+        // На скільки блоків у кожен бік від своєї секції клієнт бере колію: з запасом більше, ніж намальована
+        // вагонетка відстає від присланої і ніж вона проїжджає між двома положеннями
+        private const double ChainReach = 6;
+        // Прислане положення, далі за це від колії, вже не на ній, блоків
+        private const double OnTrackDistance = 0.5;
 
         private RailWaySystem railSystem;
+        private System.Func<SectionLink, Section> findClientSection;
+        private EntityBehaviorInterpolatePosition interpolation;
+        private readonly TrackChain chain = new TrackChain();
 
-        // Поворот, ухил і нахил полотна колії в тому місці, де вагонетка намальована. Колія між трьома точками
-        // секції гнеться плавно, тож і кути міняються плавно, а не сходинкою на межі секцій
-        private bool TrackPoseHere(out float yaw, out float tilt, out float cant)
+        // Ставить вагонетку на колію між двома положеннями, між якими її зараз веде гра: туди, куди та поставила б
+        // її навпростець, тільки колією. Секцію, від якої шукати, каже сервер (SyncTrackPlace); положення й
+        // номер секції приходять різними пакетами (положення UDP, атрибути TCP), тож на переході між секціями
+        // одне з них може випередити інше, і положення шукаються на кілька секцій в обидва боки від неї.
+        // false, якщо колії, якою вона їде, клієнт ще не знає
+        private bool PlaceOnTrack(out float cant)
         {
-            yaw = 0;
-            tilt = 0;
             cant = 0;
 
-            if (railSystem == null) railSystem = Api.ModLoader.GetModSystem<RailWaySystem>();
-            if (railSystem == null) return false;
-
-            Vec3d p = Pos.XYZ;
-            // Куди вагонетка дивиться зараз: курс, щойно доведений грою до присланого сервером
-            Vec3f heading = Pos.GetViewVector();
-            double headingX = heading.X, headingZ = heading.Z;
-
-            Section best = null;
-            int bestPart = 0;
-            double bestAlong = 0, bestScore = double.MaxValue;
-
-            const int chunkSize = GlobalConstants.ChunkSize;
-            for (int dx = -1; dx <= 1; dx += 2)
+            if (railSystem == null)
             {
-                for (int dy = -1; dy <= 1; dy += 2)
-                {
-                    for (int dz = -1; dz <= 1; dz += 2)
-                    {
-                        Vec3i chunk = new Vec3i((int)Math.Floor((p.X + dx * 2) / chunkSize), (int)Math.Floor((p.Y + dy * 2) / chunkSize),
-                            (int)Math.Floor((p.Z + dz * 2) / chunkSize));
-                        // Той самий чанк із різних кутів пошуку: дивимося один раз
-                        if ((dx > 0 && chunk.X == (int)Math.Floor((p.X - 2) / chunkSize))
-                            || (dy > 0 && chunk.Y == (int)Math.Floor((p.Y - 2) / chunkSize))
-                            || (dz > 0 && chunk.Z == (int)Math.Floor((p.Z - 2) / chunkSize))) continue;
-
-                        System.Collections.Generic.IEnumerable<Section> sections = railSystem.ClientSectionsIn(chunk);
-                        if (sections == null) continue;
-
-                        foreach (Section section in sections)
-                        {
-                            Vec3d middle = section.GetGlobalPos();
-                            if (Math.Abs(middle.X - p.X) > 2 || Math.Abs(middle.Y - p.Y) > 2 || Math.Abs(middle.Z - p.Z) > 2) continue;
-
-                            Vec3d[] axis = { section.FullStartPosition, middle, section.FullEndPosition };
-                            for (int part = 0; part < 2; part++)
-                            {
-                                Vec3d a = axis[part], b = axis[part + 1];
-                                double bx = b.X - a.X, by = b.Y - a.Y, bz = b.Z - a.Z;
-                                double lengthSq = bx * bx + by * by + bz * bz;
-                                if (lengthSq < 1e-9) continue;
-
-                                double along = GameMath.Clamp(((p.X - a.X) * bx + (p.Y - a.Y) * by + (p.Z - a.Z) * bz) / lengthSq, 0, 1);
-                                double qx = a.X + bx * along - p.X, qy = a.Y + by * along - p.Y, qz = a.Z + bz * along - p.Z;
-                                double distance = Math.Sqrt(qx * qx + qy * qy + qz * qz);
-                                if (distance > TrackSearchRange) continue;
-
-                                double flat = Math.Sqrt(bx * bx + bz * bz);
-                                double aligned = flat < 1e-6 ? 0 : Math.Abs(bx * headingX + bz * headingZ) / flat;
-                                double score = distance + (1 - aligned) * TrackHeadingWeight;
-                                if (score >= bestScore) continue;
-
-                                bestScore = score;
-                                best = section;
-                                bestPart = part;
-                                bestAlong = along;
-                            }
-                        }
-                    }
-                }
+                railSystem = Api.ModLoader.GetModSystem<RailWaySystem>();
+                if (railSystem == null) return false;
+                findClientSection = railSystem.FindClientSection;
             }
-            if (best == null) return false;
+            if (interpolation == null) interpolation = GetBehavior<EntityBehaviorInterpolatePosition>();
+            if (interpolation == null) return false;
 
-            Vec3f[] tangents = { best.StartTangent, best.CenterTangent, best.EndTangent };
-            Vec3f[] normals = { best.StartNormal, best.CenterNormal, best.EndNormal };
-            Vec3d[] points = { best.FullStartPosition, best.GetGlobalPos(), best.FullEndPosition };
+            var chunk = new Vec3i(WatchedAttributes.GetInt(TrackChunkX), WatchedAttributes.GetInt(TrackChunkY), WatchedAttributes.GetInt(TrackChunkZ));
+            DataInChunk data = DataInChunk.GetClient(chunk);
+            Section section = null;
+            if (data == null || !data.RailWaySections.TryGetValue(WatchedAttributes.GetInt(TrackSection), out section)) return false;
 
-            Vec3d Mixed(Vec3f from, Vec3f to)
-            {
-                return new Vec3d(from.X + (to.X - from.X) * bestAlong, from.Y + (to.Y - from.Y) * bestAlong, from.Z + (to.Z - from.Z) * bestAlong);
-            }
+            chain.Build(section, ChainReach, findClientSection);
 
-            Vec3d along3 = Mixed(tangents[bestPart], tangents[bestPart + 1]);
-            if (along3.Length() < 1e-6) return false;
-            along3.Normalize();
-            // Дотична має дивитися від початку секції до кінця
-            Vec3d chord = points[bestPart + 1].SubCopy(points[bestPart]);
-            if (along3.Dot(chord) < 0) along3.Mul(-1);
+            double halfHeight = SelectionBox.Y2 / 2;
+            PositionSnapshot from = interpolation.pL, to = interpolation.pN;
+            if (!chain.Locate(new Vec3d(from.x, from.y, from.z), halfHeight, OnTrackDistance, out double atFrom)) return false;
+            if (!chain.Locate(new Vec3d(to.x, to.y, to.z), halfHeight, OnTrackDistance, out double atTo)) return false;
 
-            Vec3d side = Mixed(normals[bestPart], normals[bestPart + 1]);
-            side.Sub(along3.Clone().Mul(side.Dot(along3)));
-            if (side.Length() < 1e-6) return false;
-            side.Normalize();
-            Vec3d up = side.Cross(along3);
+            // Яку частку шляху між ними гра вже пройшла: так само, як рахує вона сама. Поки нового положення
+            // немає (wait), вона стоїть у останньому
+            float done = interpolation.wait != 0 || to.interval <= 0 ? 1 : GameMath.Clamp(interpolation.dtAccum / to.interval, 0, 1);
+            if (!chain.At(atFrom + (atTo - atFrom) * done, out Section here, out double s, out bool reversed)) return false;
 
-            // Перед вагонетки дивиться туди, куди вона їде
-            bool reversed = along3.X * headingX + along3.Z * headingZ < 0;
-            Vec3d forward = reversed ? along3.Clone().Mul(-1) : along3;
-            Vec3d right = reversed ? side.Clone().Mul(-1) : side;
-
-            ModMath.TrackFrameToEntityAngles(forward, right, up, out yaw, out tilt, out cant);
+            // Перед дивиться в бік кінця своєї секції або початку; на секції, якою ланцюжок іде назустріч, навпаки
+            int facing = WatchedAttributes.GetInt(TrackFacing, 1) < 0 ? -1 : 1;
+            RailPose.PlaceSmooth(Pos, here, s, halfHeight, reversed ? -facing : facing, out cant);
             return true;
         }
 
@@ -370,9 +311,6 @@ namespace RailWorld
         private AnimationMetaData swayMeta;
         private ILoadedSound squeal;
 
-        // ТИМЧАСОВО, замір
-        private float debugSince;
-        private Vec3d debugPeak = new Vec3d();
 
         private void ShowMotion(float dt)
         {
@@ -389,22 +327,6 @@ namespace RailWorld
             double rolled = (now.X - shownAt.X) * nose.X + (now.Z - shownAt.Z) * nose.Z;
             double moved = now.DistanceTo(shownAt);
             float turned = Math.Abs(GameMath.AngleRadDistance(shownYaw, Pos.Yaw));
-            // ТИМЧАСОВО, замір: вагонетка стоїть (колеса не крутяться), а кузов гойдається. Раз на секунду
-            // пише, куди й наскільки зсунулася намальована вагонетка за кадр. Прибрати, щойно знайдемо причину
-            debugSince += dt;
-            debugPeak.Set(Math.Max(debugPeak.X, Math.Abs(now.X - shownAt.X)), Math.Max(debugPeak.Y, Math.Abs(now.Y - shownAt.Y)), Math.Max(debugPeak.Z, Math.Abs(now.Z - shownAt.Z)));
-            if (debugSince >= 1)
-            {
-                if (shownSpeed > 0.05f)
-                {
-                    Api.Logger.Notification("[RailWorld] trolley {0}: shownSpeed {1:0.000}, wheelTurns {2:0.000}, max step per frame x {3:0.00000} y {4:0.00000} z {5:0.00000}, onRail {6}, pos {7:0.000} {8:0.000} {9:0.000}, motion {10:0.00000} {11:0.00000} {12:0.00000}",
-                        EntityId, shownSpeed, wheelTurns, debugPeak.X, debugPeak.Y, debugPeak.Z, WatchedAttributes.GetBool("onRail"),
-                        now.X, now.Y, now.Z, Pos.Motion.X, Pos.Motion.Y, Pos.Motion.Z);
-                }
-                debugSince = 0;
-                debugPeak.Set(0, 0, 0);
-            }
-
             shownAt = now;
             shownYaw = Pos.Yaw;
 
@@ -516,13 +438,38 @@ namespace RailWorld
             base.OnEntityDespawn(despawn);
         }
 
-        // Клієнту стан потрібен лише для тяжіння, тому синхронізуємо один прапорець і лише при зміні
+        // Клієнту потрібно знати, чи вагонетка на колії: від цього залежать тяжіння і те, як він її малює
         private void SetOnRail(bool value)
         {
             onRail = value;
             if (WatchedAttributes.GetBool("onRail") == value) return;
             WatchedAttributes.SetBool("onRail", value);
             WatchedAttributes.MarkPathDirty("onRail");
+        }
+
+        // Секція, на якій вагонетка зараз, і куди дивиться її перед відносно цієї секції, для клієнта: від неї
+        // він веде вагонетку колією (PlaceOnTrack). Міняються лише при переході на іншу секцію, тож і
+        // відправляються гравцям лише тоді
+        private const string TrackChunkX = "railChunkX";
+        private const string TrackChunkY = "railChunkY";
+        private const string TrackChunkZ = "railChunkZ";
+        private const string TrackSection = "railSectionIndex";
+        private const string TrackFacing = "railFacing";
+
+        private void SyncTrackPlace()
+        {
+            SetWatched(TrackChunkX, railChunk.X);
+            SetWatched(TrackChunkY, railChunk.Y);
+            SetWatched(TrackChunkZ, railChunk.Z);
+            SetWatched(TrackSection, railIndex);
+            SetWatched(TrackFacing, railFacing);
+        }
+
+        private void SetWatched(string key, int value)
+        {
+            if (WatchedAttributes.HasAttribute(key) && WatchedAttributes.GetInt(key) == value) return;
+            WatchedAttributes.SetInt(key, value);
+            WatchedAttributes.MarkPathDirty(key);
         }
 
         public override void OnGameTick(float dt)
@@ -566,7 +513,7 @@ namespace RailWorld
             // Запобіжник: за тік не буває стільки переходів між секціями і зупинок
             for (int guard = 0; guard < 256 && timeLeft > 0; guard++)
             {
-                double length = SectionLength(section);
+                double length = RailPose.Length(section);
                 if (length < 1e-9) break;
 
                 Vec3d start = section.FullStartPosition;
@@ -712,7 +659,7 @@ namespace RailWorld
                 if (result == EnterResult.Blocked) break;
             }
 
-            ApplyRailPose(Pos, section, railS, SelectionBox.Y2 / 2, railFacing, out float cant);
+            RailPose.Place(Pos, section, railS, SelectionBox.Y2 / 2, railFacing, out float cant);
             SetCant(cant);
             Pos.Motion.Set(0, 0, 0);
         }
@@ -911,9 +858,10 @@ namespace RailWorld
             }
             else
             {
-                railS = SectionLength(section);
+                railS = RailPose.Length(section);
                 railVelocity = -speed;
             }
+            SyncTrackPlace();
             return EnterResult.Entered;
         }
 
@@ -922,7 +870,7 @@ namespace RailWorld
         {
             if (section != null)
             {
-                double length = SectionLength(section);
+                double length = RailPose.Length(section);
                 if (length > 1e-9)
                 {
                     Vec3d start = section.FullStartPosition;
@@ -999,49 +947,6 @@ namespace RailWorld
             if (data == null) return null;
             data.RailWaySections.TryGetValue(index, out Section section);
             return section;
-        }
-
-        private static double SectionLength(Section section)
-        {
-            return section.FullStartPosition.DistanceTo(section.FullEndPosition);
-        }
-
-        /// <summary>
-        /// Ставить позицію на колію: на відстані s від початку секції, колесами на головці рейки,
-        /// з поворотом, ухилом і нахилом полотна. halfHeight це половина висоти боксу сутності,
-        /// facing каже, в який бік секції дивиться перед: 1 у бік кінця, -1 у бік початку.
-        /// </summary>
-        public static void ApplyRailPose(EntityPos pos, Section section, double s, double halfHeight, int facing, out float cant)
-        {
-            cant = 0;
-            Vec3d start = section.FullStartPosition;
-            Vec3d end = section.FullEndPosition;
-            Vec3d along = new Vec3d(end.X - start.X, end.Y - start.Y, end.Z - start.Z);
-            if (along.Length() < 1e-9) return;
-            along.Normalize();
-
-            // Рамка колії: уздовж, убік (з нахилом полотна) і вгору
-            Vec3d side = new Vec3d(section.CenterNormal.X, section.CenterNormal.Y, section.CenterNormal.Z);
-            side.Sub(along.Clone().Mul(side.Dot(along))).Normalize();
-            Vec3d up = side.Cross(along);
-
-            // Розворот переду це поворот на 180° навколо верху: уздовж і вбік міняють знак, верх лишається
-            Vec3d forward = facing < 0 ? along.Clone().Mul(-1) : along;
-            Vec3d right = facing < 0 ? side.Clone().Mul(-1) : side;
-
-            // Ухил іде в Roll: рендер застосовує його одразу після курсу, тобто навколо поперечної осі вагонетки.
-            // Нахил полотна повертається окремо, Pitch лишається нулем
-            ModMath.TrackFrameToEntityAngles(forward, right, up, out float yaw, out float tilt, out cant);
-            pos.Yaw = yaw;
-            pos.Pitch = 0;
-            pos.Roll = tilt;
-
-            // Рендер обертає модель навколо середини її висоти, тому зсуваємо позицію так,
-            // щоб після нахилу низ моделі лишився на осі колії
-            double lift = SectionBox.RailHeight + halfHeight;
-            pos.X = start.X + along.X * s + up.X * lift;
-            pos.Y = start.Y + along.Y * s + up.Y * lift - halfHeight;
-            pos.Z = start.Z + along.Z * s + up.Z * lift;
         }
     }
 }

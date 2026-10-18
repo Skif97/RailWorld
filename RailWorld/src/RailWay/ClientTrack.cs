@@ -31,12 +31,6 @@ namespace RailWorld
             return section;
         }
 
-        /// <summary>Секції колії, що зберігаються в чанку, якими їх знає клієнт; null, якщо колії там немає.</summary>
-        public IEnumerable<Section> SectionsIn(Vec3i chunkCoord)
-        {
-            return DataInChunk.GetClient(chunkCoord)?.RailWaySections.Values;
-        }
-
         public List<SectionBox> GetBoxes(Vec3i chunkCoord)
         {
             boxes.TryGetValue(chunkCoord, out List<SectionBox> found);
