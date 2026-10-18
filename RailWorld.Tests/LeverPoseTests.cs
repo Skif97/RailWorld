@@ -46,6 +46,22 @@ namespace RailWorld.Tests
             Assert.Equal(-1, SectionLinker.BranchToward(trunk, false, SwitchBuilder.Build(trunk, false, Resolve), 1, Resolve));
         }
 
+        [Fact]
+        public void Partly_read_switch_keeps_the_shape_of_its_full_record()
+        {
+            // Повний запис знає форму. Потім чанк першої секції дуги не завантажений: запис недорахований,
+            // гілки береться з повного, і форма має бути та сама, а не з того, що вдалося прочитати
+            Section trunk = LaySwitch();
+            RailSwitch full = SwitchBuilder.Build(trunk, false, Resolve);
+            Assert.NotEqual(SwitchShape.Unknown, full.Shape);
+
+            Forget(Resolve(trunk.GetLinks(false)[1]));
+            RailSwitch partial = SwitchBuilder.Rebuild(full, trunk, false, Resolve);
+
+            Assert.False(partial.Resolved);
+            Assert.Equal(full.Shape, partial.Shape);
+        }
+
         [Theory]
         // гілка з боку важеля, увімкнена гілка, очікуваний кадр
         [InlineData(1, 1, 1.0)]

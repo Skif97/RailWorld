@@ -321,6 +321,9 @@ namespace RailWorld.src.RailWay
             if (built == null || built.Resolved || previous == null || previous.Outdated || !previous.Covers(built)) return built;
 
             built.Branches = previous.Branches;
+            // Форма рахується з гілок (ShapeOf), тож береться разом з ними: з прочитаної частини вона вийшла б
+            // іншою, а то й невідомою, якщо не прочитано навіть першої секції гілки
+            built.Shape = previous.Shape;
             built.Complete = previous.Complete && partsInPlace;
             return built;
         }
