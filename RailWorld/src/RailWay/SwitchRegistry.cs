@@ -75,7 +75,8 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Дописує стрілки чанка, яких у записах ще немає (чанк не був завантажений, коли колію клали), і
         /// перераховує пораховані неповністю (чанк гілки тоді не був завантажений), іншою версією розрахунку або
-        /// з посиланням на секцію, якої вже немає. Повертає true, якщо щось змінилося.
+        /// з посиланням на секцію, якої вже немає; прибирає записи стрілок, яких уже немає. Повертає true, якщо
+        /// щось змінилося.
         /// </summary>
         public static bool Complete(RailDataSession session, Vec3i chunk)
         {
@@ -95,6 +96,12 @@ namespace RailWorld.src.RailWay
                     // секцію, якої вже немає
                     if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.Outdated || known.LostMember(session)) missing.Add(key);
                 }
+            }
+
+            // Записи стрілок, яких уже немає: спільну секцію прибрали або в неї лишилася одна гілка
+            foreach (RailSwitch record in data.Switches.Values)
+            {
+                if (!data.RailWaySections.TryGetValue(record.TrunkIndex, out Section trunk) || !trunk.HasSwitch(record.AtStart)) missing.Add(record.Key);
             }
 
             foreach (int key in missing) Update(session, chunk, key / 2, key % 2 == 0);

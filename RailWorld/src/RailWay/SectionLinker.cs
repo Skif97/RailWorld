@@ -849,6 +849,55 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Прибирає з секцій чанка те, що веде в нікуди: зв'язки з секціями, яких у завантаженому чанку вже немає,
+        /// і посилання на записи стрілок і перетинів, яких немає в завантаженому чанку запису. Таке лишається,
+        /// коли колію міняли, поки чанк цієї секції не був завантажений: прибрана гілка лишила б у спільній
+        /// секції зв'язок і з ним стрілку-привид, а посилання на зниклий перетин не дало б з'явитися новому.
+        /// Про незавантажений чанк нічого сказати не можна, і те, що веде туди, лишається.
+        /// </summary>
+        public static void PruneLost(RailDataSession session, Vec3i chunk)
+        {
+            DataInChunk data = session.Get(chunk);
+            if (data == null) return;
+            if (PruneLost(data, session.IsChunkLoaded, coord => session.Get(coord))) session.MarkDirty(chunk);
+        }
+
+        /// <summary>
+        /// Те саме для даних чанка data. loaded каже, чи чанк завантажений, dataIn дає дані колії завантаженого
+        /// чанка (null, якщо колії там немає). Повертає true, якщо щось прибрано.
+        /// </summary>
+        public static bool PruneLost(DataInChunk data, System.Func<Vec3i, bool> loaded, System.Func<Vec3i, DataInChunk> dataIn)
+        {
+            // Чи в завантаженому чанку немає того, що має там бути
+            bool Gone(Vec3i chunk, System.Func<DataInChunk, bool> present)
+            {
+                if (!loaded(chunk)) return false;
+                DataInChunk there = dataIn(chunk);
+                return there == null || !present(there);
+            }
+
+            bool changed = false;
+            foreach (Section section in data.RailWaySections.Values)
+            {
+                for (int end = 0; end < 2; end++)
+                {
+                    bool atStart = end == 0;
+                    foreach (SectionLink link in new List<SectionLink>(section.GetLinks(atStart)))
+                    {
+                        if (Gone(link.Chunk, there => there.RailWaySections.ContainsKey(link.Index))) changed |= section.RemoveLink(atStart, link);
+                    }
+
+                    SwitchRef place = section.GetSwitchRef(atStart);
+                    if (place != null && Gone(place.Chunk, there => there.Switches.ContainsKey(place.Key))) changed |= section.SetSwitchRef(atStart, null);
+                }
+
+                CrossingRef node = section.GetCrossingRef();
+                if (node != null && Gone(node.Chunk, there => there.Crossings.ContainsKey(node.Key))) changed |= section.SetCrossingRef(null);
+            }
+            return changed;
+        }
+
+        /// <summary>
         /// Прибирає посилання на секцію в усіх її сусідів. Викликати перед видаленням секції.
         /// </summary>
         public static void Unlink(RailDataSession session, Section section)

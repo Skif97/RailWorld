@@ -552,6 +552,11 @@ namespace RailWorld
         private void CompleteSwitches(int chunkX, int chunkZ, int height)
         {
             var session = new RailDataSession(sapi.World);
+            // Спершу прибираємо те, що веде в нікуди: і в цій колонці, і в сусідніх, бо зв'язки ведуть лише в сусідні
+            // чанки, а сусід міг завантажитися раніше за той, на який посилається
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dz = -1; dz <= 1; dz++)
+                    for (int y = 0; y < height; y++) SectionLinker.PruneLost(session, new Vec3i(chunkX + dx, y, chunkZ + dz));
             for (int y = 0; y < height; y++) SwitchRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
             SwitchRegistry.CompletePendingNear(session, chunkX, chunkZ);
             for (int y = 0; y < height; y++) CrossingRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
