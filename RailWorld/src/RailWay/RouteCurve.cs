@@ -711,7 +711,7 @@ namespace RailWorld.src.RailWay
 
             if (hit >= 0)
             {
-                if (hit == edge + direction) return;
+                // Жорстка ділянка впритул: переходу між ними немає, тож висоти мусять збігатися
                 if (Math.Abs(hit - edge) < 2)
                 {
                     if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance * 5)
