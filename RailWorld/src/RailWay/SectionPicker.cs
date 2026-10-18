@@ -134,6 +134,17 @@ namespace RailWorld.src.RailWay
             return true;
         }
 
+        /// <summary>Чи лежить точка в боксі, із запасом tolerance блоків з кожного боку.</summary>
+        public bool Contains(Vec3d p, double tolerance)
+        {
+            double dx = p.X - Center.X, dy = p.Y - Center.Y, dz = p.Z - Center.Z;
+            double side = AxisSide.X * dx + AxisSide.Y * dy + AxisSide.Z * dz;
+            double up = AxisUp.X * dx + AxisUp.Y * dy + AxisUp.Z * dz;
+            double along = AxisAlong.X * dx + AxisAlong.Y * dy + AxisAlong.Z * dz;
+            return Math.Abs(side) <= HalfSide + tolerance && Math.Abs(along) <= HalfAlong + tolerance
+                && up >= MinUp - tolerance && up <= MaxUp + tolerance;
+        }
+
         private static bool Slab(Vec3d axis, double dx, double dy, double dz, Vec3d dir, double lo, double hi, ref double tmin, ref double tmax)
         {
             double p = axis.X * dx + axis.Y * dy + axis.Z * dz;

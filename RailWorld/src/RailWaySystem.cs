@@ -65,6 +65,8 @@ namespace RailWorld
 
         // На скільки блоків далі за дальність взаємодії сервер ще приймає дії клієнта
         private const double ReachTolerance = 1.5;
+        // На скільки блоків точка влучання може лежати за боксом деталі: на похибку чисел
+        private const double HitTolerance = 0.1;
 
         private ICoreAPI api;
         private ICoreClientAPI capi;
@@ -624,6 +626,15 @@ namespace RailWorld
         }
 
         // Перевіряє, що деталь із пакета справді існує і гравець до неї дотягується
+        // Чи лежить точка в боксі виділення цієї деталі секції: тих самих боксів, у які цілиться клієнт
+        // (Handler.GetSelectionBoxes)
+        private bool OnPart(Vec3i chunk, int index, Section section, SectionPart part, Vec3d hit)
+        {
+            var boxes = new List<SectionBox>();
+            Handler.GetSelectionBoxes(boxes, chunk, index, section);
+            return boxes.Exists(box => box.Part == part && box.Contains(hit, HitTolerance));
+        }
+
         private SectionSelection Resolve(IPlayer player, SectionActionPacket packet, out string rejectReason)
         {
             rejectReason = null;
@@ -645,10 +656,24 @@ namespace RailWorld
             Vec3d hit = new Vec3d(packet.HitX, packet.HitY, packet.HitZ);
             Vec3d eye = player.Entity.Pos.XYZ.Add(player.Entity.LocalEyePos);
             double distance = eye.DistanceTo(hit);
-            if (distance > player.WorldData.PickingRange + ReachTolerance)
+
+            // Точку влучання присилає клієнт. Як і гра з блоком (ServerSystemBlockSimulation), сервер вірить їй,
+            // лише якщо вона лежить на самій деталі, і міряє відстань до неї: інакше клієнт прислав би точку біля
+            // себе й дістав секцію будь-де. Гравцеві з правом гри на необмежену досяжність це не потрібно.
+            // На налаштування сервера AntiAbuse не зважаємо: гра вмикає свою перевірку лише з ним, а воно за
+            // замовчуванням вимкнене
+            if (!player.HasPrivilege(Privilege.pickingrange))
             {
-                rejectReason = "out of reach, distance " + distance.ToString("0.00") + ", picking range " + player.WorldData.PickingRange;
-                return null;
+                if (!OnPart(chunk, packet.Index, section, part, hit))
+                {
+                    rejectReason = "hit point is not on the " + part + " of the section";
+                    return null;
+                }
+                if (distance > player.WorldData.PickingRange + ReachTolerance)
+                {
+                    rejectReason = "out of reach, distance " + distance.ToString("0.00") + ", picking range " + player.WorldData.PickingRange;
+                    return null;
+                }
             }
 
             return new SectionSelection
