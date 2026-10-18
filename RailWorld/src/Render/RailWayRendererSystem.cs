@@ -358,14 +358,16 @@ void main()
 
         private void UpdateLights(float dt)
         {
+            // Один запас світла на такт для всіх рендерів: деталі одного блока питають той самий блок
+            var probe = new LightProbe(capi.World.BlockAccessor);
             foreach (var renderer in sleeperRenderers.Values)
-                renderer.UpdateLights(LightBudget);
+                renderer.UpdateLights(LightBudget, probe);
             foreach (var renderer in railRenderers.Values)
-                renderer.UpdateLights(LightBudget);
+                renderer.UpdateLights(LightBudget, probe);
 
             if (++lightTick < FullLightTicks) return;
             lightTick = 0;
-            bladeRenderer?.UpdateLights();
+            bladeRenderer?.UpdateLights(probe);
         }
 
         // Збирає свої шейдери. Викликається при старті і щоразу, коли гра перезбирає шейдери

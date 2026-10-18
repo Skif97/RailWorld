@@ -426,18 +426,17 @@ namespace RailWorld
             values[17] = (float)(blade.Origin.Y - chunkCoord.Y * GlobalConstants.ChunkSize);
             values[18] = (float)(blade.Origin.Z - chunkCoord.Z * GlobalConstants.ChunkSize);
             values[19] = 1;
-            WriteLight(blade);
+            WriteLight(blade, TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin), TrackLight.Of(capi.World.BlockAccessor, blade.Origin));
 
             mesh.CustomFloats = floats;
             blade.MeshRef = capi.Render.UploadMesh(mesh);
             blades[key] = blade;
         }
 
-        // Читає світло блока, де стоїть деталь, і кладе його в дані інстанса: rgb це світло від джерел, a сонячне
-        private void WriteLight(Blade blade)
+        // Кладе світло блока, де стоїть деталь, у дані інстанса: rgb це світло від джерел, a сонячне
+        private static void WriteLight(Blade blade, int key, Vec4f light)
         {
-            blade.LightKey = TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin);
-            Vec4f light = TrackLight.Of(capi.World.BlockAccessor, blade.Origin);
+            blade.LightKey = key;
 
             float[] values = blade.Floats.Values;
             values[0] = light.R;
@@ -493,14 +492,14 @@ namespace RailWorld
         /// Перевіряє, чи змінилося світло деталей: гра не повідомляє моди про зміну освітлення. Деталі,
         /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса.
         /// </summary>
-        public void UpdateLights()
+        public void UpdateLights(LightProbe probe)
         {
             foreach (Blade blade in blades.Values)
             {
-                int key = TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin);
+                int key = probe.KeyOf(blade.Origin);
                 if (key == blade.LightKey || blade.MeshRef == null) continue;
 
-                WriteLight(blade);
+                WriteLight(blade, key, probe.Of(blade.Origin));
                 capi.Render.UpdateMesh(blade.MeshRef, blade.Update);
             }
         }

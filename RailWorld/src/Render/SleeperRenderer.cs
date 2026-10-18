@@ -156,7 +156,7 @@ namespace RailWorld
         /// моди про зміну освітлення, тому його доводиться опитувати. Шпалі, чиє світло змінилося, у буфері
         /// переписуються лише чотири числа світла. Повертає, скільки шпал перевірено.
         /// </summary>
-        public int UpdateLights(int budget)
+        public int UpdateLights(int budget, LightProbe probe)
         {
             int checkedCount = 0;
             for (int n = 0; n < order.Count && checkedCount < budget; n++)
@@ -172,11 +172,11 @@ namespace RailWorld
                 for (int i = 0; i < batch.Drawn.Count; i++)
                 {
                     SleeperInstance part = batch.Drawn[i];
-                    int key = LightKey(part.position);
+                    int key = probe.KeyOf(part.position);
                     if (key == part.lightKey) continue;
 
                     part.lightKey = key;
-                    part.light = Light(part.position);
+                    part.light = probe.Of(part.position);
                     int j = i * FloatsPerInstance;
                     values[j] = part.light.R;
                     values[j + 1] = part.light.G;

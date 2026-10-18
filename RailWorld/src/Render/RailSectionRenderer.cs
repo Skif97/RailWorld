@@ -302,7 +302,7 @@ namespace RailWorld
         /// моди про зміну освітлення, тому його доводиться опитувати. Шматкові, чиє світло змінилося, у буфері
         /// переписуються лише чотири числа світла. Повертає, скільки шматків перевірено.
         /// </summary>
-        public int UpdateLights(int budget)
+        public int UpdateLights(int budget, LightProbe probe)
         {
             int checkedCount = 0;
             for (int n = 0; n < order.Count && checkedCount < budget; n++)
@@ -318,11 +318,11 @@ namespace RailWorld
                 for (int i = 0; i < batch.Drawn; i++)
                 {
                     RailInstanceData piece = batch.Pieces[i];
-                    int key = LightKey(piece.Position);
+                    int key = probe.KeyOf(piece.Position);
                     if (key == piece.LightKey) continue;
 
                     piece.LightKey = key;
-                    piece.Light = GetLight(piece.Position);
+                    piece.Light = probe.Of(piece.Position);
                     int j = i * FloatsPerInstance;
                     values[j] = piece.Light.R;
                     values[j + 1] = piece.Light.G;
