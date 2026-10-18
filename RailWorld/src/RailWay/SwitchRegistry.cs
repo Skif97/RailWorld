@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 
@@ -11,9 +12,8 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class SwitchRegistry
     {
-        // Чанки, де є недорахована стрілка: її гілка заходить у чанк, який тоді не був завантажений.
-        // Між запусками не зберігається: чанк повертається сюди, коли його завантажують і переглядають
-        private static HashSet<Vec3i> pending = new HashSet<Vec3i>();
+        // Чанки з недорахованими стрілками, що чекають на завантаження сусідніх
+        private static readonly PendingChunks pending = new PendingChunks();
 
         /// <summary>Забуває недораховані стрілки попереднього світу.</summary>
         public static void Reset()
@@ -26,12 +26,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void CompletePendingNear(RailDataSession session, int chunkX, int chunkZ)
         {
-            if (pending.Count == 0) return;
-
-            foreach (Vec3i chunk in new List<Vec3i>(pending))
-            {
-                if (System.Math.Abs(chunk.X - chunkX) <= 1 && System.Math.Abs(chunk.Z - chunkZ) <= 1) Complete(session, chunk);
-            }
+            foreach (Vec3i chunk in pending.Near(chunkX, chunkZ)) Complete(session, chunk);
         }
 
         /// <summary>
@@ -106,7 +101,7 @@ namespace RailWorld.src.RailWay
 
             foreach (int key in missing) Update(session, chunk, key / 2, key % 2 == 0);
             // Чанк, у якому нічого перераховувати, міг лишитися у списку від стрілки, якої вже немає
-            if (missing.Count == 0) pending.Remove(chunk);
+            if (missing.Count == 0) pending.Track(chunk, false);
             return missing.Count > 0;
         }
 
@@ -180,13 +175,7 @@ namespace RailWorld.src.RailWay
         // Пам'ятає чанк, поки в ньому є недорахована стрілка
         private static void Track(Vec3i chunk, DataInChunk data)
         {
-            foreach (RailSwitch record in data.Switches.Values)
-            {
-                if (record.Resolved) continue;
-                pending.Add(chunk.Clone());
-                return;
-            }
-            pending.Remove(chunk);
+            pending.Track(chunk, data.Switches.Values.Any(record => !record.Resolved));
         }
 
         // Прибирає посилання на стрілку в секціях, яких у новому записі вже немає

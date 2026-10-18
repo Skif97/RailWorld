@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.MathTools;
 
 namespace RailWorld.src.RailWay
@@ -12,9 +13,8 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class CrossingRegistry
     {
-        // Чанки, де є недорахований перетин: одна з його колій заходить у чанк, який тоді не був завантажений.
-        // Між запусками не зберігається: чанк повертається сюди, коли його завантажують і переглядають
-        private static HashSet<Vec3i> pending = new HashSet<Vec3i>();
+        // Чанки з недорахованими перетинами, що чекають на завантаження сусідніх
+        private static readonly PendingChunks pending = new PendingChunks();
 
         /// <summary>Забуває недораховані перетини попереднього світу.</summary>
         public static void Reset()
@@ -27,12 +27,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void CompletePendingNear(RailDataSession session, int chunkX, int chunkZ)
         {
-            if (pending.Count == 0) return;
-
-            foreach (Vec3i chunk in new List<Vec3i>(pending))
-            {
-                if (System.Math.Abs(chunk.X - chunkX) <= 1 && System.Math.Abs(chunk.Z - chunkZ) <= 1) Complete(session, chunk);
-            }
+            foreach (Vec3i chunk in pending.Near(chunkX, chunkZ)) Complete(session, chunk);
         }
 
         /// <summary>
@@ -85,7 +80,7 @@ namespace RailWorld.src.RailWay
             }
             foreach (int key in unresolved) Update(session, chunk, key, null);
             // Чанк, у якому нічого перераховувати, міг лишитися у списку від перетину, якого вже немає
-            if (unresolved.Count == 0) pending.Remove(chunk);
+            if (unresolved.Count == 0) pending.Track(chunk, false);
 
             Discover(session, chunk);
         }
@@ -230,13 +225,7 @@ namespace RailWorld.src.RailWay
         // Пам'ятає чанк, поки в ньому є недорахований перетин
         private static void Track(Vec3i chunk, DataInChunk data)
         {
-            foreach (RailCrossing record in data.Crossings.Values)
-            {
-                if (record.Resolved) continue;
-                pending.Add(chunk.Clone());
-                return;
-            }
-            pending.Remove(chunk);
+            pending.Track(chunk, data.Crossings.Values.Any(record => !record.Resolved));
         }
 
         // Прибирає посилання на перетин у секціях, яких у вузлі нового запису вже немає
