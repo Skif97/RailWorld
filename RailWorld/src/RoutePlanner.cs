@@ -21,15 +21,15 @@ namespace RailWorld
 
         public static RoutePlanner Instance { get; private set; }
 
-        // Ухил, з якого лінія вже повністю червона, у градусах
-        private const double RedSlopeDeg = 45;
+        // Ухил, з якого лінія вже повністю жовта, у градусах. Рівна лінія зелена; червоне лишається порушенням
+        private const double YellowSlopeDeg = 45;
 
         private static readonly int[] MarkerRgba = { 255, 255, 255, 230 };
         private static readonly int[] HoverRgba = { 120, 200, 255, 200 };
         // Точка, через яку маршрут проходить точно
         private static readonly int[] ExactRgba = { 255, 210, 60, 230 };
         private static readonly int[] PreviewRgba = { 255, 220, 40, 150 };
-        private static readonly int[] ProblemRgba = { 200, 60, 255, 230 };
+        private static readonly int[] ProblemRgba = { 230, 40, 40, 230 };
 
         // Чому маршрут зараз не можна будувати; null, якщо можна
         private string routeProblem;
@@ -544,6 +544,8 @@ namespace RailWorld
             var laid = new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid);
             List<RouteMarker> settled = RouteBuilder.SettleSwitches(shown, FindClientSection);
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
+            // Секції в чужому приваті: сервер такий маршрут не покладе (RailWorld.BuildRoute)
+            if (TrackBed.ClaimedSections(capi.World, capi.World.Player, points, conflictAt)) conflict = conflict ?? TrackBed.ClaimedRefusal;
 
             RouteCheck check = RouteRules.Check(points);
             bool[] problems = check.Problems;
@@ -669,8 +671,9 @@ namespace RailWorld
             {
                 double slope = RouteRules.SlopeDeg(points[i].position, points[i + 1].position);
 
-                double t = GameMath.Clamp(slope / RedSlopeDeg, 0, 1);
-                int[] rgba = { (int)(255 * t), (int)(255 * (1 - t)), 40, 230 };
+                // Від зеленого (0, 255, 40) до жовтого (255, 220, 40)
+                double t = GameMath.Clamp(slope / YellowSlopeDeg, 0, 1);
+                int[] rgba = { (int)(255 * t), (int)(255 - 35 * t), 40, 230 };
                 // Порушення обмежень маршруту видно окремим кольором, незалежно від ухилу
                 if (problems[i] || problems[i + 1]) rgba = ProblemRgba;
 

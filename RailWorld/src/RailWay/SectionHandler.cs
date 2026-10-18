@@ -162,6 +162,11 @@ namespace RailWorld.src.RailWay
         /// </summary>
         protected virtual void MoveLever(IWorldAccessor world, IPlayer byPlayer, SectionSelection sel)
         {
+            // Клік по секції сервер пропускає з правом лише користуватися (RailWaySystem), як гра взаємодію з
+            // блоком; перенести важіль це вже будування, і право на нього перевіряє сама дія, як у грі
+            // BlockBehaviorRightClickPickup чи BlockEntityChisel. Відмову гравцеві показує гра
+            if (!world.Claims.TryAccess(byPlayer, sel.Position, EnumBlockAccessFlags.BuildOrBreak)) return;
+
             var session = new RailDataSession(world);
             DataInChunk data = session.Get(sel.Chunk);
             if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
@@ -192,6 +197,9 @@ namespace RailWorld.src.RailWay
         /// </summary>
         protected virtual void InstallPart(IWorldAccessor world, IPlayer byPlayer, SectionSelection sel, ItemSlot slot)
         {
+            // Поставити деталь це будування: під нею стають блоки основи колії. Див. MoveLever
+            if (!world.Claims.TryAccess(byPlayer, sel.Position, EnumBlockAccessFlags.BuildOrBreak)) return;
+
             DataInChunk data = DataInChunk.Get(world, sel.Chunk);
             if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
 

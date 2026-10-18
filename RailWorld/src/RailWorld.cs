@@ -267,6 +267,8 @@ namespace RailWorld
             string problem = conflict ?? RouteRules.FindProblem(points);
             if (problem != null) return problem;
             if (points.Count < 3) return "маршрут надто короткий";
+            // Перегляд у клієнта вже попереджав, але вирішує сервер
+            if (TrackBed.ClaimedSections(_sapi.World, fromPlayer, points, null)) return TrackBed.ClaimedRefusal;
 
             return TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
         }

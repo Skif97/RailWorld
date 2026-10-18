@@ -8,7 +8,8 @@ namespace RailWorld.src.RailWay
     /// <summary>
     /// Блоки колії під секціями. Кожна секція займає клітинки світу, через які проходить, невидимим блоком:
     /// він не дає поставити туди інший блок і дає колізію за формою колії. Блок пам'ятає всі секції,
-    /// що через нього проходять, і зникає, коли не лишилося жодної. Працює тільки на сервері.
+    /// що через нього проходять, і зникає, коли не лишилося жодної. Працює тільки на сервері, крім
+    /// ClaimedSections, яку питає й перегляд маршруту.
     /// </summary>
     public static class TrackBed
     {
@@ -325,6 +326,37 @@ namespace RailWorld.src.RailWay
         private static bool IsFree(Block block, Block bed)
         {
             return block.Id == 0 || block is BlockTrackBed || block.Replaceable >= ReplaceableThreshold;
+        }
+
+        /// <summary>Чому маршрут не покласти, якщо частина його секцій лягла б туди, де гравцеві не можна будувати.</summary>
+        public const string ClaimedRefusal = "колія проходить через чужий приват";
+
+        /// <summary>
+        /// Чи лягла б якась секція маршруту, нарізаного на точки, туди, де гравцеві не можна будувати: хоч одна
+        /// клітинка її основи колії (AllCells, ті самі, що займе TrackBuilder) у чужому приваті. Номери точок
+        /// нарізки таких секцій додаються в at, якщо задано. Права рахує гра (Claims.TestAccess), і на клієнті
+        /// теж: привати вона розсилає клієнтам сама. Креатив із правом гри будувати всюди приватів не помічає.
+        /// Гравцеві нічого не пише: перегляд маршруту питає часто, а причину відмови показує сам.
+        /// </summary>
+        public static bool ClaimedSections(IWorldAccessor world, IPlayer player, List<PointOnBezierCurve> points, List<int> at)
+        {
+            bool found = false;
+            for (int i = 0; i + 2 < points.Count; i += 2)
+            {
+                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                foreach (BlockPos pos in AllCells(section))
+                {
+                    if (world.Claims.TestAccess(player, pos, EnumBlockAccessFlags.BuildOrBreak) == EnumWorldAccessResponse.Granted) continue;
+
+                    if (at == null) return true;
+                    found = true;
+                    at.Add(i);
+                    at.Add(i + 1);
+                    at.Add(i + 2);
+                    break;
+                }
+            }
+            return found;
         }
 
         /// <summary>
