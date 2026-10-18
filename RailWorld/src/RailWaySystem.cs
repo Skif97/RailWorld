@@ -490,16 +490,17 @@ namespace RailWorld
 
             int wanted = GameMath.Clamp((int)args[0], 1, BuildJournal.MaxRecords);
             int undone = 0, sections = 0, blocks = 0;
-            while (undone < wanted && Journal.UndoLast(sapi.World, player, out int removed, out int restored))
+            string refusal = null;
+            while (undone < wanted && Journal.UndoLast(sapi.World, player, out int removed, out int restored, out refusal))
             {
                 undone++;
                 sections += removed;
                 blocks += restored;
             }
-            if (undone == 0) return TextCommandResult.Error("Немає побудов, які можна відкотити");
+            if (undone == 0) return TextCommandResult.Error(refusal == null ? "Немає побудов, які можна відкотити" : "Не відкочено: " + refusal);
 
             return TextCommandResult.Success(string.Format("Відкочено побудов: {0}. Секцій прибрано: {1}, блоків повернуто: {2}. Ще можна відкотити: {3}",
-                undone, sections, blocks, Journal.Count(player.PlayerUID)));
+                undone, sections, blocks, Journal.Count(player.PlayerUID)) + (refusal == null ? "" : ". Далі не відкочено: " + refusal));
         }
 
         // Перераховує записи стрілок і перетинів у завантажених чанках навколо гравця, radius у чанках
