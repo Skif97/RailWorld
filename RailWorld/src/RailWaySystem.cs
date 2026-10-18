@@ -359,6 +359,7 @@ namespace RailWorld
             bool known = clientTrack.Remove(chunkCoord);
             ClientRevision++;
             switchAnimator.Forget(chunkCoord);
+            chunkRenderer?.Forget(chunkCoord);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
             // Колія в чанку зникла: сусіди могли малювати з нею спільні шпали
             if (known) chunkRenderer?.QueueNeighbours(chunkCoord);

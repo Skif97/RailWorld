@@ -40,10 +40,17 @@ namespace RailWorld
             disposed = true;
         }
 
+        /// <summary>Забуває деталі стрілок, що малювалися в чанку: колія з нього зникла.</summary>
+        public void Forget(Vec3i chunkCoord)
+        {
+            builder.Forget(chunkCoord);
+        }
+
         /// <summary>Збирає заново все, що малюється для колії чанка: шпали, важелі стрілок, рейки і деталі стрілок.</summary>
         public void Rebuild(Vec3i chunkCoord, IReadOnlyDictionary<int, Section> sections)
         {
             renderer.RemoveChunkParts(chunkCoord);
+            builder.Forget(chunkCoord);
             renderer.ClearRails(chunkCoord);
             // Деталі стрілок не викидаються наперед: незмінні лишаються з готовим мешем
             renderer.BeginParts(chunkCoord);
@@ -231,8 +238,8 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Щокадру, поки котрась стрілка рухається: ставить її гостряки в нове проміжне положення.
-        /// Решту чанка не чіпає; хрестовина й контррейки не змінюються і лишаються з готовим мешем.
+        /// Щотакту, поки котрась стрілка рухається: ставить її гостряки й тягу в нове проміжне положення.
+        /// Решту не чіпає: хрестовина, контррейки і болти не рухаються.
         /// </summary>
         public void AnimateSwitches()
         {
@@ -244,7 +251,7 @@ namespace RailWorld
                 foreach (SectionLink link in trunk.GetLinks(atStart))
                 {
                     Section branch = track.FindSection(link);
-                    if (branch != null) builder.Build(link.Chunk, branch);
+                    if (branch != null) builder.MoveBlade(branch);
                 }
             });
         }

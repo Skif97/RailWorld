@@ -35,7 +35,7 @@ namespace RailWorld
         /// </summary>
         /// <param name="wood">
         /// Каже, яке дерево лежить під стрілкою із записом у цьому чанку: її бруси і шпали секцій. По ньому
-        /// хрестовину прибивають костилями. null, коли перебудовується лише рухома частина стрілки.
+        /// хрестовину прибивають костилями.
         /// </param>
         public void Build(Vec3i chunkCoord, Section section, System.Func<Vec3i, RailSwitch, IList<Timber>> wood = null)
         {
@@ -72,17 +72,80 @@ namespace RailWorld
             string material = section.GetMaterial(part) ?? "iron";
             // Хрестовину й тягу ставить перша гілка: вони одні на обидві колії
             bool primary = place.Branch == 0;
-            bool active = trunk.GetSwitchPosition(record.AtStart) == place.Branch;
             // Перерізи внутрішньої рейки потрібні лише для меша, тому рахуються тут, а не зберігаються
             BranchGeometry own = SwitchGeometry.Branch(section, switchAtStart, left, partner, partnerLink.AtStart, partnerInnerFirst.Value, track.FindSection);
 
+            var setup = new BladeSetup
+            {
+                Chunk = chunkCoord.Clone(), Section = section, Left = left, Material = material, Primary = primary, Own = own,
+                BladeSections = record.BranchOf(place).BladeSections, SwitchChunk = switchChunk.Clone(), TrunkIndex = record.TrunkIndex,
+                AtStart = record.AtStart, Branch = place.Branch
+            };
+            blades[SectionKey.Of(section)] = setup;
+            PlaceBlade(setup);
+
+            // Хрестовина одна на обидві колії: її ставить перша з них
+            if (primary && own.Throat >= 0) AddFrog(chunkCoord, section, left, material, own, wood?.Invoke(switchChunk, record));
+
+            // Контррейка в кожної колії своя
+            if (own.Throat >= 0) AddCheckRail(chunkCoord, section, left, own);
+        }
+
+        // Що потрібно, щоб поставити гостряк гілки в будь-якому положенні стрілки. Геометрія гілки від положення не
+        // залежить: її рахують, коли чанк перебудовується, а під час переведення лише перекладають гостряк і тягу
+        private class BladeSetup
+        {
+            // Чанк, де малюється гілка, і її перша секція
+            public Vec3i Chunk;
+            public Section Section;
+            // З котрого боку секції внутрішня рейка і з якого вона металу
+            public bool Left;
+            public string Material;
+            // Тягу ставить перша гілка: вона одна на обидва гостряки
+            public bool Primary;
+            public BranchGeometry Own;
+            public int BladeSections;
+            // Де стрілка: чанк і кінець її спільної секції, і котра це з двох гілок
+            public Vec3i SwitchChunk;
+            public int TrunkIndex;
+            public bool AtStart;
+            public int Branch;
+        }
+
+        // Гілки стрілок, пораховані в перебудовах чанків, за першою секцією гілки
+        private readonly Dictionary<SectionKey, BladeSetup> blades = new Dictionary<SectionKey, BladeSetup>();
+
+        /// <summary>Забуває гілки, що малюються в чанку: чанк перебудовується або колія з нього зникла.</summary>
+        public void Forget(Vec3i chunkCoord)
+        {
+            foreach (SectionKey key in blades.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) blades.Remove(key);
+        }
+
+        /// <summary>
+        /// Ставить гостряк і тягу гілки, що починається секцією section, у теперішнє положення стрілки, за
+        /// геометрією з останньої перебудови чанка. Хрестовину, контррейку і їхні болти не чіпає: вони не
+        /// рухаються. Нічого не робить, якщо гілку ще не порахували.
+        /// </summary>
+        public void MoveBlade(Section section)
+        {
+            if (blades.TryGetValue(SectionKey.Of(section), out BladeSetup setup)) PlaceBlade(setup);
+        }
+
+        // Гостряк гілки і, у першої гілки, тяга, у положенні, де стрілка зараз
+        private void PlaceBlade(BladeSetup setup)
+        {
             // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
             // Під час переведення стрілки він між цими положеннями
-            double moved = animator.Progress(switchChunk, record.TrunkIndex, record.AtStart);
+            DataInChunk switchData = DataInChunk.GetClient(setup.SwitchChunk);
+            if (switchData == null || !switchData.RailWaySections.TryGetValue(setup.TrunkIndex, out Section trunk)) return;
+            bool active = trunk.GetSwitchPosition(setup.AtStart) == setup.Branch;
+            double moved = animator.Progress(setup.SwitchChunk, setup.TrunkIndex, setup.AtStart);
             double open = active ? 1 - moved : moved;
+            BranchGeometry own = setup.Own;
+            Section section = setup.Section;
 
             // ── Гостряк ──
-            int bladePoints = Math.Min(record.BranchOf(place).BladeSections * 2 + 1, own.Frames.Count);
+            int bladePoints = Math.Min(setup.BladeSections * 2 + 1, own.Frames.Count);
             if (bladePoints >= 2)
             {
                 double[] stock = SwitchGeometry.Stock(own, bladePoints, section.TrackWidth);
@@ -137,7 +200,7 @@ namespace RailWorld
 
                     // Тяга між двома гостряками: планка, що тримає їх на сталій відстані, тому вони й рухаються
                     // разом. Одна на стрілку, її ставить перша гілка. Лежить між шпалами, біля вістря
-                    if (primary && own.Other != null)
+                    if (setup.Primary && own.Other != null)
                     {
                         for (int bar = 0; bar < TieBars; bar++)
                         {
@@ -146,15 +209,9 @@ namespace RailWorld
                         }
                     }
 
-                    renderer.SetLoft(chunkCoord, section.IndexInChunk, left, "", material, parts);
+                    renderer.SetLoft(setup.Chunk, section.IndexInChunk, setup.Left, "", setup.Material, parts);
                 }
             }
-
-            // Хрестовина одна на обидві колії: її ставить перша з них
-            if (primary && own.Throat >= 0) AddFrog(chunkCoord, section, left, material, own, wood?.Invoke(switchChunk, record));
-
-            // Контррейка в кожної колії своя
-            if (own.Throat >= 0) AddCheckRail(chunkCoord, section, left, own);
         }
 
         // На скільки кінці контррейки відігнуті від ходової рейки, блоків
