@@ -319,6 +319,15 @@ namespace RailWorld
         // З якого радіуса і крутіше колеса скрегочуть об рейки, і на якій швидкості щонайменше
         private static double SquealRadius => TrackRules.MinRadius * 1.4;
         private const float SquealSpeed = 0.4f;
+        // Скрегіт не безперервний: уривки через випадкові паузи, як поштовхи. Скільки триває уривок і пауза між
+        // ними, секунди на крутій кривій, і як швидко уривок наростає і затихає
+        private const float SquealForMin = 1f;
+        private const float SquealForMax = 3f;
+        private const float SquealEveryMin = 0.5f;
+        private const float SquealEveryMax = 2f;
+        private const float SquealFadeIn = 0.1f;
+        private const float SquealFadeOut = 0.2f;
+        private const float SquealVolume = 0.9f;
 
         // Де вагонетка була намальована минулого кадру. Один об'єкт на вагонетку: щокадру в ньому лише
         // переписуються числа, щоб не лишати збирачеві сміття по новому на кадр
@@ -330,6 +339,9 @@ namespace RailWorld
         // Скільки обертів зробили колеса
         private double wheelTurns;
         private float nextBumpIn = 2;
+        // Скільки ще триває теперішній уривок скреготу (нуль, якщо не грає) і скільки до наступного
+        private float squealLeft;
+        private float nextSquealIn;
         // Гойдання має власний темп у кожної вагонетки, тому в нього власна копія опису анімації
         private AnimationMetaData swayMeta;
         private ILoadedSound squeal;
@@ -373,7 +385,7 @@ namespace RailWorld
                 SwayBody(moving, curved);
                 BumpBody(dt, moving);
             }
-            Squeal(shownAt);
+            Squeal(shownAt, dt);
         }
 
         /// <summary>
@@ -428,14 +440,29 @@ namespace RailWorld
         }
 
         // Скрегіт коліс у дуже крутій кривій
-        private void Squeal(Vec3d at)
+        // Скрегіт коліс на крутій кривій: уривок час від часу, а не весь час, поки вагонетка в кривій. Звук один
+        // на вагонетку і їде разом з нею
+        private void Squeal(Vec3d at, float dt)
         {
             bool tight = shownCurve > 1 / SquealRadius && shownSpeed > SquealSpeed;
-            if (!tight)
+            if (squeal != null && squeal.IsPlaying) squeal.SetPosition((float)at.X, (float)at.Y, (float)at.Z);
+
+            if (squealLeft > 0)
             {
-                if (squeal != null && squeal.IsPlaying) squeal.Stop();
+                // Уривок скінчився або крива скінчилася раніше: затихає, а не обривається
+                squealLeft -= dt;
+                if (squealLeft > 0 && tight) return;
+                squealLeft = 0;
+                squeal?.FadeOutAndStop(SquealFadeOut);
                 return;
             }
+
+            if (!tight) return;
+            nextSquealIn -= dt;
+            if (nextSquealIn > 0) return;
+
+            Random rand = Api.World.Rand;
+            nextSquealIn = SquealEveryMin + (float)rand.NextDouble() * (SquealEveryMax - SquealEveryMin);
 
             if (squeal == null && Api is ICoreClientAPI clientApi)
             {
@@ -443,16 +470,22 @@ namespace RailWorld
                 {
                     Location = new AssetLocation("game:sounds/effect/metalgrinding"),
                     ShouldLoop = true,
-                    Position = at.ToVec3f(),
+                    Position = new Vec3f((float)at.X, (float)at.Y, (float)at.Z),
                     DisposeOnFinish = false,
-                    Volume = 0.5f,
+                    Volume = SquealVolume,
                     Range = 20
                 });
             }
             if (squeal == null) return;
 
+            squealLeft = SquealForMin + (float)rand.NextDouble() * (SquealForMax - SquealForMin);
+            // Кожен уривок з іншого місця звуку, щоб уривки не звучали однаково
+            if (squeal.SoundLengthSeconds > 0) squeal.PlaybackPosition = (float)rand.NextDouble() * squeal.SoundLengthSeconds;
             squeal.SetPosition((float)at.X, (float)at.Y, (float)at.Z);
-            if (!squeal.IsPlaying) squeal.Start();
+            // Гучність наростає множенням (LoadedSoundNative.FadeTo), тож не з нуля, а з найменшої, яку дозволяє гра
+            squeal.SetVolume(0.01f);
+            squeal.Start();
+            squeal.FadeTo(SquealVolume, SquealFadeIn, null);
         }
 
         public override void OnEntityDespawn(EntityDespawnData despawn)
