@@ -71,5 +71,27 @@ namespace RailWorld.Tests
             Assert.Single(track[1].GetLinks(true));
             Assert.Single(track[1].GetLinks(false));
         }
+
+        [Fact]
+        public void ChangeInTheMarginOfACrossingFindsItsRecord()
+        {
+            // Перетин біля межі чанків на x = 32: запас основної колії за вузлом заходить у сусідній чанк, а запис
+            // лежить у чанку перетнутої секції. Посилань на запис у секцій запасу немає, тож зміну там знаходить
+            // лише пошук по секціях записів у сусідніх чанках
+            List<Section> main = Lay(Point(20, 4, 1, 0), Point(44, 4, 1, 0));
+            List<Section> across = Lay(Point(31.1, -6, 0, 1), Point(31.1, 14, 0, 1));
+            Section center = main.Find(m => across.Exists(o => AxisCrossing.OfLaid(m, o)));
+            Section other = across.Find(o => AxisCrossing.OfLaid(center, o));
+            RailCrossing record = CrossingBuilder.Build(center, other, Resolve, out _);
+            Vec3i home = center.ChunkAddres;
+            DataIn(home).Crossings[record.Key] = record;
+
+            var next = new Vec3i(home.X + 1, home.Y, home.Z);
+            Assert.Contains(record.Tracks[0].Members, link => link.Chunk.Equals(next));
+            Assert.Contains(new SectionKey(home, record.Key), CrossingRegistry.TouchedBy(next, DataIn));
+
+            // Чанк, якого запис не торкається, його не знаходить
+            Assert.Empty(CrossingRegistry.TouchedBy(new Vec3i(home.X, home.Y, home.Z + 3), DataIn));
+        }
     }
 }

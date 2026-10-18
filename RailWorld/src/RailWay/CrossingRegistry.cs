@@ -56,6 +56,8 @@ namespace RailWorld.src.RailWay
                     CrossingRef member = section.GetCrossingRef();
                     if (member != null) Want(seen, targets, member.Chunk, member.Key);
                 }
+                // Посилання на запис мають лише секції вузла, а запис тримає ще й запас за ним
+                foreach (SectionKey record in TouchedBy(chunk, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
             }
 
             foreach (CrossingRef target in targets) Update(session, target.Chunk, target.Key, null);
@@ -89,6 +91,33 @@ namespace RailWorld.src.RailWay
         }
 
         // Перетин впізнається перетнутою секцією основної колії: його ключ це її номер у чанку
+        /// <summary>
+        /// Записи перетинів, серед секцій яких є секція чанка chunk: чанк запису і його ключ. Посилання на запис
+        /// мають лише секції вузла, а запис пам'ятає ще й запас за ним (CrossingBuilder.MarginSections), тож зміна
+        /// колії в запасі, що лежить в іншому чанку, знаходить свій запис лише так. Записи шукаються в сусідніх
+        /// чанках: усі секції запису лежать не далі за вузол і запас від перетину, тобто ближче за чанк.
+        /// dataIn дає дані колії завантаженого чанка або null.
+        /// </summary>
+        public static List<SectionKey> TouchedBy(Vec3i chunk, System.Func<Vec3i, DataInChunk> dataIn)
+        {
+            var found = new List<SectionKey>();
+            for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dz = -1; dz <= 1; dz++)
+                    {
+                        var coord = new Vec3i(chunk.X + dx, chunk.Y + dy, chunk.Z + dz);
+                        DataInChunk data = dataIn(coord);
+                        if (data == null) continue;
+
+                        foreach (RailCrossing record in data.Crossings.Values)
+                        {
+                            if (record.Tracks.Exists(track => track.Members.Exists(link => link.ChunkX == chunk.X && link.ChunkY == chunk.Y && link.ChunkZ == chunk.Z)))
+                                found.Add(new SectionKey(coord, record.Key));
+                        }
+                    }
+            return found;
+        }
+
         private static void Want(HashSet<SectionKey> seen, List<CrossingRef> targets, Vec3i chunk, int key)
         {
             if (seen.Add(new SectionKey(chunk, key))) targets.Add(new CrossingRef { ChunkX = chunk.X, ChunkY = chunk.Y, ChunkZ = chunk.Z, Key = key });
