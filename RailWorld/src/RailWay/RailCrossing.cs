@@ -123,9 +123,34 @@ namespace RailWorld.src.RailWay
         [ProtoMember(4)]
         public bool Resolved;
 
+        /// <summary>
+        /// Якою версією розрахунку пораховано запис. У записах, зроблених до появи цього поля, тут 0.
+        /// </summary>
+        [ProtoMember(5)]
+        public int Formula;
+
+        /// <summary>
+        /// Версія розрахунку перетину: збільшується, коли міняється те, як CrossingBuilder рахує запис (центр
+        /// і межі вузла, запас за ним). Запис з іншою версією застарілий і перераховується, коли завантажується
+        /// його чанк. Забути збільшити не дасть тест-еталон RecordFormulaTests.
+        /// </summary>
+        public const int CurrentFormula = 1;
+
+        /// <summary>Запис пораховано іншою версією розрахунку: його треба перерахувати.</summary>
+        public bool Outdated => Formula != CurrentFormula;
+
+        /// <summary>
+        /// Чи запис посилається на секцію, якої вже немає: її чанк завантажений, а секції з таким номером у ньому
+        /// немає.
+        /// </summary>
+        public bool LostMember(RailDataSession session)
+        {
+            return Tracks.Exists(track => track.Members.Exists(session.Lost));
+        }
+
         public bool SameAs(RailCrossing other)
         {
-            return other != null && Key == other.Key && Complete == other.Complete && Resolved == other.Resolved
+            return other != null && Key == other.Key && Complete == other.Complete && Resolved == other.Resolved && Formula == other.Formula
                 && Tracks.Count == 2 && other.Tracks.Count == 2 && Tracks[0].SameAs(other.Tracks[0]) && Tracks[1].SameAs(other.Tracks[1]);
         }
 
@@ -189,7 +214,7 @@ namespace RailWorld.src.RailWay
         public static RailCrossing Build(Section main, Section other, Func<SectionLink, Section> resolve, out bool partsInPlace)
         {
             partsInPlace = true;
-            var result = new RailCrossing { Key = main.IndexInChunk, Resolved = true };
+            var result = new RailCrossing { Key = main.IndexInChunk, Resolved = true, Formula = RailCrossing.CurrentFormula };
 
             Section[] centers = { main, other };
             var sides = new Side[2][];
@@ -261,7 +286,7 @@ namespace RailWorld.src.RailWay
         public static RailCrossing Rebuild(RailCrossing previous, Section main, Section other, Func<SectionLink, Section> resolve)
         {
             RailCrossing built = Build(main, other, resolve, out bool partsInPlace);
-            if (built.Resolved || previous == null || previous.Tracks.Count != 2
+            if (built.Resolved || previous == null || previous.Outdated || previous.Tracks.Count != 2
                 || !previous.Tracks[0].SameCenter(built.Tracks[0]) || !previous.Tracks[1].SameCenter(built.Tracks[1])) return built;
 
             built.Tracks = previous.Tracks;

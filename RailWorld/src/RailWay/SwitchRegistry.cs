@@ -90,8 +90,9 @@ namespace RailWorld.src.RailWay
                     if (!section.HasSwitch(atStart)) continue;
 
                     int key = RailSwitch.KeyOf(section.IndexInChunk, atStart);
-                    // Запису немає, він не дорахований або зроблений старою версією мода
-                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.Outdated) missing.Add(key);
+                    // Запису немає, він не дорахований, пораховано іншою версією розрахунку або посилається на
+                    // секцію, якої вже немає
+                    if (!data.Switches.TryGetValue(key, out RailSwitch known) || !known.Resolved || known.Outdated || known.LostMember(session)) missing.Add(key);
                 }
             }
 

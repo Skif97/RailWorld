@@ -92,9 +92,6 @@ namespace RailWorld.src.RailWay
             return number >= 1 && number <= InnerFirst.Count ? InnerFirst[number - 1] : (bool?)null;
         }
 
-        /// <summary>Запис зроблено до того, як записи стрілок знали боки гілок: його треба перерахувати.</summary>
-        public bool LacksSides => InnerFirst.Count != Members.Count;
-
         /// <summary>Чи шпала секції з таким номером спільна із секцією другої гілки під тим самим номером.</summary>
         public bool SharesSleeper(int number)
         {
@@ -206,6 +203,19 @@ namespace RailWorld.src.RailWay
         [ProtoMember(5)]
         public bool Resolved;
 
+        /// <summary>
+        /// Якою версією розрахунку пораховано запис. У записах, зроблених до появи цього поля, тут 0.
+        /// </summary>
+        [ProtoMember(7)]
+        public int Formula;
+
+        /// <summary>
+        /// Версія розрахунку стрілки: збільшується, коли міняється те, як SwitchBuilder рахує запис (гостряк,
+        /// хрестовина, боки гілок, форма). Запис з іншою версією застарілий і перераховується, коли
+        /// завантажується його чанк. Забути збільшити не дасть тест-еталон RecordFormulaTests.
+        /// </summary>
+        public const int CurrentFormula = 1;
+
         /// <summary>Ключ стрілки в чанку: у секції два кінці, і на кожному може бути своя.</summary>
         public int Key => KeyOf(TrunkIndex, AtStart);
 
@@ -217,7 +227,7 @@ namespace RailWorld.src.RailWay
         public bool SameAs(RailSwitch other)
         {
             if (other == null || TrunkIndex != other.TrunkIndex || AtStart != other.AtStart || Complete != other.Complete
-                || Resolved != other.Resolved || Shape != other.Shape || Branches.Count != other.Branches.Count) return false;
+                || Resolved != other.Resolved || Formula != other.Formula || Shape != other.Shape || Branches.Count != other.Branches.Count) return false;
             for (int k = 0; k < Branches.Count; k++)
             {
                 if (!Branches[k].SameAs(other.Branches[k])) return false;
@@ -246,10 +256,18 @@ namespace RailWorld.src.RailWay
         public int Main => Shape == SwitchShape.MainSecond ? 1 : 0;
 
         /// <summary>
-        /// Запис зроблено старішою версією мода, яка ще не знала форми стрілки чи боків гілок: його треба
-        /// перерахувати.
+        /// Запис пораховано іншою версією розрахунку: його треба перерахувати.
         /// </summary>
-        public bool Outdated => Shape == SwitchShape.Unknown || Branches.Exists(branch => branch.LacksSides);
+        public bool Outdated => Formula != CurrentFormula;
+
+        /// <summary>
+        /// Чи запис посилається на секцію, якої вже немає: її чанк завантажений, а секції з таким номером у ньому
+        /// немає. Так буває, коли секцію прибрали, поки чанк зі стрілкою не був завантажений.
+        /// </summary>
+        public bool LostMember(RailDataSession session)
+        {
+            return Branches.Exists(branch => branch.Members.Exists(session.Lost));
+        }
 
         /// <summary>
         /// Гілка, на яку вказує посилання секції, або null, якщо такої в записі немає: стрілку пораховано
@@ -313,7 +331,7 @@ namespace RailWorld.src.RailWay
             List<SectionLink> links = trunk.GetLinks(atStart);
             if (links.Count != 2) return null;
 
-            var result = new RailSwitch { TrunkIndex = trunk.IndexInChunk, AtStart = atStart, Resolved = true };
+            var result = new RailSwitch { TrunkIndex = trunk.IndexInChunk, AtStart = atStart, Resolved = true, Formula = RailSwitch.CurrentFormula };
 
             Section[] first = { resolve(links[0]), resolve(links[1]) };
             if (first[0] == null || first[1] == null)

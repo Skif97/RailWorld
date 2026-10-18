@@ -66,8 +66,9 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Дописує перетини чанка, яких у записах ще немає (світ збережено до їх появи), і дораховує пораховані
-        /// неповністю, бо чанк однієї з колій тоді не був завантажений.
+        /// Дописує перетини чанка, яких у записах ще немає (світ збережено до їх появи), і перераховує пораховані
+        /// неповністю (чанк однієї з колій тоді не був завантажений), іншою версією розрахунку або з посиланням
+        /// на секцію, якої вже немає.
         /// </summary>
         public static void Complete(RailDataSession session, Vec3i chunk)
         {
@@ -77,7 +78,7 @@ namespace RailWorld.src.RailWay
             var unresolved = new List<int>();
             foreach (RailCrossing record in data.Crossings.Values)
             {
-                if (!record.Resolved) unresolved.Add(record.Key);
+                if (!record.Resolved || record.Outdated || record.LostMember(session)) unresolved.Add(record.Key);
             }
             foreach (int key in unresolved) Update(session, chunk, key, null);
             // Чанк, у якому нічого перераховувати, міг лишитися у списку від перетину, якого вже немає

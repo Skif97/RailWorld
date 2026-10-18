@@ -103,6 +103,15 @@ namespace RailWorld.src.RailWay
             return section;
         }
 
+        /// <summary>
+        /// Чи посилання веде на секцію, якої вже немає: її чанк завантажений, а секції з таким номером у ньому
+        /// немає. Про секцію в незавантаженому чанку сказати нічого не можна, і це не втрата.
+        /// </summary>
+        public bool Lost(SectionLink link)
+        {
+            return IsChunkLoaded(link.Chunk) && GetSection(link) == null;
+        }
+
         public void MarkDirty(Vec3i chunkCoord)
         {
             dirty.Add(chunkCoord.Clone());
