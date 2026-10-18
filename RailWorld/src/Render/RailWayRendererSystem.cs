@@ -21,11 +21,15 @@ namespace RailWorld
         // і чекає, що вона вже відносно камери
         private IShaderProgram chunkProg;
 
-        // Словник: ключ матеріалу → рендерер шпал
-        private Dictionary<string, SleeperRenderer> sleeperRenderers = new Dictionary<string, SleeperRenderer>();
+        // Рендери деталей колії: ключ це дерево шпали, деталь з металом або готовий меш → рендер
+        private Dictionary<string, TrackPartRenderer> partRenderers = new Dictionary<string, TrackPartRenderer>();
 
         // Словник: ключ матеріалу → рендерер рейок
         private Dictionary<string, RailSectionRenderer> railRenderers = new Dictionary<string, RailSectionRenderer>();
+
+        // Усі рендери деталей пачками, і шпал, і рейок: світло, підготовка кадру, малювання і звільнення в них
+        // однакові
+        private List<IInstancedParts> instanced = new List<IInstancedParts>();
 
         private long lightListenerId;
 
@@ -82,15 +86,16 @@ void main()
         /// </summary>
         public void AddSleeper(Vec3i chunkCoord, string material, Vec3d position, Vec3f rotation, float length)
         {
-            if (!sleeperRenderers.TryGetValue(material, out var renderer))
+            if (!partRenderers.TryGetValue(material, out var renderer))
             {
                 ItemStack stack = CreateStack("sleeper", material);
                 if (stack == null) return;
-                renderer = new SleeperRenderer(capi, stack);
-                sleeperRenderers[material] = renderer;
+                renderer = new TrackPartRenderer(capi, stack);
+                partRenderers[material] = renderer;
+                instanced.Add(renderer);
             }
             // Модель шпали намальована своєї звичайної довжини; довший брус стрілки це вона ж, розтягнута
-            renderer.AddRailWayPart(position, new SleeperInstance(rotation, length / renderer.ModelLength, chunkCoord.Clone()));
+            renderer.Add(chunkCoord, position, rotation, length / renderer.ModelLength);
         }
 
         /// <summary>Скріплення рейки зі шпалою: підкладка з костилями.</summary>
@@ -156,7 +161,7 @@ void main()
                 y = new Vec3d(-y.X, -y.Y, -y.Z);
             }
 
-            // SleeperRenderer повертає деталь довкола Y на yaw, потім довкола X на -pitch, потім довкола Z на -roll.
+            // TrackPartRenderer повертає деталь довкола Y на yaw, потім довкола X на -pitch, потім довкола Z на -roll.
             // Після цього вісь Z моделі це (sin yaw cos pitch, sin pitch, cos yaw cos pitch), а висоти осей X і Y
             // це -sin roll cos pitch і cos roll cos pitch: звідси й кути
             double pitch = Math.Asin(GameMath.Clamp(z.Y, -1, 1));
@@ -172,12 +177,13 @@ void main()
         public void AddRailPart(Vec3i chunkCoord, string part, string material, Vec3d position, Vec3f rotation)
         {
             string key = "#" + part + "-" + material;
-            if (!sleeperRenderers.TryGetValue(key, out var renderer))
+            if (!partRenderers.TryGetValue(key, out var renderer))
             {
-                renderer = new SleeperRenderer(capi, TesselatePart(part, material));
-                sleeperRenderers[key] = renderer;
+                renderer = new TrackPartRenderer(capi, TesselatePart(part, material));
+                partRenderers[key] = renderer;
+                instanced.Add(renderer);
             }
-            renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+            renderer.Add(chunkCoord, position, rotation, 1f);
         }
 
         // Меш деталі з моделі shapes/part, з текстурою потрібного металу. Свого предмета в такої деталі немає:
@@ -208,31 +214,32 @@ void main()
         /// </summary>
         public void AddMeshPart(Vec3i chunkCoord, string key, MeshData mesh, Vec3d position, Vec3f rotation)
         {
-            foreach (SleeperRenderer renderer in MeshPartRenderers(key, mesh))
-                renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+            foreach (TrackPartRenderer renderer in MeshPartRenderers(key, mesh))
+                renderer.Add(chunkCoord, position, rotation, 1f);
         }
 
         /// <summary>Прибирає деталь із готового меша з ключем key, що стоїть у чанку на місці position.</summary>
         public void RemoveMeshPart(Vec3i chunkCoord, string key, Vec3d position)
         {
-            if (!meshParts.TryGetValue(key, out List<SleeperRenderer> renderers)) return;
-            foreach (SleeperRenderer renderer in renderers) renderer.RemovePart(chunkCoord, position);
+            if (!meshParts.TryGetValue(key, out List<TrackPartRenderer> renderers)) return;
+            foreach (TrackPartRenderer renderer in renderers) renderer.Remove(chunkCoord, position);
         }
 
         // Рендери деталі з готового меша: по одному на кожну сторінку атласу, на якій лежать його текстури.
         // Рендер деталей малює меш з однією сторінкою, а модель може брати текстури з кількох
-        private readonly Dictionary<string, List<SleeperRenderer>> meshParts = new Dictionary<string, List<SleeperRenderer>>();
+        private readonly Dictionary<string, List<TrackPartRenderer>> meshParts = new Dictionary<string, List<TrackPartRenderer>>();
 
-        private List<SleeperRenderer> MeshPartRenderers(string key, MeshData mesh)
+        private List<TrackPartRenderer> MeshPartRenderers(string key, MeshData mesh)
         {
-            if (meshParts.TryGetValue(key, out List<SleeperRenderer> renderers)) return renderers;
+            if (meshParts.TryGetValue(key, out List<TrackPartRenderer> renderers)) return renderers;
 
-            renderers = new List<SleeperRenderer>();
+            renderers = new List<TrackPartRenderer>();
             MeshData[] pages = mesh.SplitByTextureId();
             for (int page = 0; page < pages.Length; page++)
             {
-                var renderer = new SleeperRenderer(capi, pages[page], mesh.TextureIds[page]);
-                sleeperRenderers["@" + key + "#" + page] = renderer;
+                var renderer = new TrackPartRenderer(capi, pages[page], mesh.TextureIds[page]);
+                partRenderers["@" + key + "#" + page] = renderer;
+                instanced.Add(renderer);
                 renderers.Add(renderer);
             }
             meshParts[key] = renderers;
@@ -257,7 +264,7 @@ void main()
         /// </summary>
         public void RemoveChunkParts(Vec3i chunkCoord)
         {
-            foreach (var renderer in sleeperRenderers.Values)
+            foreach (var renderer in partRenderers.Values)
             {
                 renderer.RemoveChunk(chunkCoord);
             }
@@ -269,7 +276,7 @@ void main()
         /// </summary>
         public void ClearChunkParts(Vec3i chunkCoord)
         {
-            foreach (var renderer in sleeperRenderers.Values)
+            foreach (var renderer in partRenderers.Values)
             {
                 renderer.ClearChunk(chunkCoord);
             }
@@ -341,6 +348,7 @@ void main()
             if (stack == null) return null;
             renderer = new RailSectionRenderer(capi, stack);
             railRenderers[material] = renderer;
+            instanced.Add(renderer);
             return renderer;
         }
 
@@ -397,9 +405,7 @@ void main()
         {
             // Один запас світла на такт для всіх рендерів: деталі одного блока питають той самий блок
             var probe = new LightProbe(capi.World.BlockAccessor);
-            foreach (var renderer in sleeperRenderers.Values)
-                renderer.UpdateLights(LightBudget, probe);
-            foreach (var renderer in railRenderers.Values)
+            foreach (IInstancedParts renderer in instanced)
                 renderer.UpdateLights(LightBudget, probe);
 
             if (++lightTick < FullLightTicks) return;
@@ -443,8 +449,7 @@ void main()
         {
             if (stage == EnumRenderStage.Before)
             {
-                foreach (var renderer in sleeperRenderers.Values) renderer.PrepareFrame();
-                foreach (var renderer in railRenderers.Values) renderer.PrepareFrame();
+                foreach (IInstancedParts renderer in instanced) renderer.PrepareFrame();
                 return;
             }
             Vec3d cameraPos = capi.World.Player.Entity.CameraPos;
@@ -462,12 +467,7 @@ void main()
 
             chunkProg.Use();
             SetFrameUniforms(chunkProg);
-            foreach (var renderer in sleeperRenderers.Values)
-            {
-                chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.Draw(chunkProg, cameraPos);
-            }
-            foreach (var renderer in railRenderers.Values)
+            foreach (IInstancedParts renderer in instanced)
             {
                 chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
                 renderer.Draw(chunkProg, cameraPos);
@@ -493,7 +493,7 @@ void main()
         private void RenderShadows(Vec3d cameraPos)
         {
             if (shadowProg == null || shadowProg.Disposed) return;
-            if (sleeperRenderers.Count == 0 && railRenderers.Count == 0) return;
+            if (instanced.Count == 0) return;
 
             IShaderProgram gameShader = capi.Render.CurrentActiveShader;
             gameShader?.Stop();
@@ -504,8 +504,7 @@ void main()
             shadowProg.UniformMatrix("mvpMatrix", capi.Render.CurrentShadowProjectionMatrix);
 
             capi.Render.GlDisableCullFace();
-            foreach (var renderer in sleeperRenderers.Values) renderer.Draw(shadowProg, cameraPos);
-            foreach (var renderer in railRenderers.Values) renderer.Draw(shadowProg, cameraPos);
+            foreach (IInstancedParts renderer in instanced) renderer.Draw(shadowProg, cameraPos);
             bladeRenderer?.Draw(shadowProg, cameraPos, null);
             capi.Render.GlEnableCullFace();
 
@@ -521,12 +520,11 @@ void main()
             capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
             capi.Event.ReloadShader -= LoadShaders;
             capi.Event.UnregisterGameTickListener(lightListenerId);
-            foreach (var renderer in sleeperRenderers.Values)
+            foreach (IInstancedParts renderer in instanced)
                 renderer.Dispose();
-            sleeperRenderers.Clear();
+            instanced.Clear();
+            partRenderers.Clear();
             meshParts.Clear();
-            foreach (var renderer in railRenderers.Values)
-                renderer.Dispose();
             railRenderers.Clear();
             bladeRenderer?.Dispose();
             bladeRenderer = null;
