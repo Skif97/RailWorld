@@ -163,9 +163,9 @@ namespace RailWorld
         private bool pendingRenderScheduled;
 
         /// <summary>
-        /// Вигляд колії в чанку залежить і від сусідніх чанків: спільна шпала стрілки малюється з двох секцій,
-        /// які можуть лежати в різних чанках, а дані чанків приходять окремо і в довільному порядку.
-        /// Тому після зміни колії в чанку його сусіди перемальовуються теж, трохи згодом і всі разом.
+        /// Вигляд колії в чанку може залежати від сусідніх чанків: стрілка чи перетин на межі малюються з секцій
+        /// обох, а дані чанків приходять окремо і в довільному порядку. Тому після зміни колії в чанку
+        /// перемальовуються й ті сусіди, що беруть із нього щось (ChunkDependency), трохи згодом і всі разом.
         /// </summary>
         public void QueueNeighbours(Vec3i chunkCoord)
         {
@@ -177,7 +177,8 @@ namespace RailWorld
                     {
                         if (dx == 0 && dy == 0 && dz == 0) continue;
                         Vec3i neighbour = new Vec3i(chunkCoord.X + dx, chunkCoord.Y + dy, chunkCoord.Z + dz);
-                        if (DataInChunk.GetClient(neighbour) != null) pendingRender.Add(neighbour);
+                        DataInChunk data = DataInChunk.GetClient(neighbour);
+                        if (data != null && ChunkDependency.Reads(data, chunkCoord, DataInChunk.GetClient)) pendingRender.Add(neighbour);
                     }
                 }
             }
