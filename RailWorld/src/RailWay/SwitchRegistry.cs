@@ -31,9 +31,10 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Перераховує стрілки, яких стосуються зміни в цих чанках: ті, що в них записані, ті, що мають там
-        /// з'явитися, і ті, на чиїх гілках лежать секції цих чанків.
+        /// з'явитися, і ті, на чиїх гілках лежать секції цих чанків. Для секцій, у яких змінилися лише деталі,
+        /// лише стрілки на їхніх кінцях і ті, на чиїх гілках вони лежать.
         /// </summary>
-        public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks)
+        public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks, IEnumerable<Section> changedSections)
         {
             var seen = new HashSet<SectionEndKey>();
             var targets = new List<SwitchRef>();
@@ -48,16 +49,21 @@ namespace RailWorld.src.RailWay
                 if (data == null) continue;
 
                 foreach (int key in data.Switches.Keys) Want(chunk.X, chunk.Y, chunk.Z, key);
-                foreach (Section section in data.RailWaySections.Values)
-                {
-                    for (int end = 0; end < 2; end++)
-                    {
-                        bool atStart = end == 0;
-                        if (section.HasSwitch(atStart)) Want(chunk.X, chunk.Y, chunk.Z, RailSwitch.KeyOf(section.IndexInChunk, atStart));
+                foreach (Section section in data.RailWaySections.Values) WantOf(section);
+            }
+            // Секції, у яких змінилися лише деталі: стрілки на їхніх кінцях і ті, на чиїх гілках вони лежать
+            foreach (Section section in changedSections) WantOf(section);
 
-                        SwitchRef member = section.GetSwitchRef(atStart);
-                        if (member != null) Want(member.ChunkX, member.ChunkY, member.ChunkZ, member.Key);
-                    }
+            void WantOf(Section section)
+            {
+                Vec3i chunk = section.ChunkAddres;
+                for (int end = 0; end < 2; end++)
+                {
+                    bool atStart = end == 0;
+                    if (section.HasSwitch(atStart)) Want(chunk.X, chunk.Y, chunk.Z, RailSwitch.KeyOf(section.IndexInChunk, atStart));
+
+                    SwitchRef member = section.GetSwitchRef(atStart);
+                    if (member != null) Want(member.ChunkX, member.ChunkY, member.ChunkZ, member.Key);
                 }
             }
 

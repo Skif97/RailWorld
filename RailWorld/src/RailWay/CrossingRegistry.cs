@@ -34,7 +34,7 @@ namespace RailWorld.src.RailWay
         /// Перераховує перетини, яких стосуються зміни в цих чанках: ті, що в них записані, ті, у вузлах яких
         /// лежать секції цих чанків, і ті, що мають там з'явитися.
         /// </summary>
-        public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks)
+        public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks, IEnumerable<Section> changedSections)
         {
             var chunks = new List<Vec3i>(changedChunks);
             var seen = new HashSet<SectionKey>();
@@ -53,6 +53,14 @@ namespace RailWorld.src.RailWay
                 }
                 // Посилання на запис мають лише секції вузла, а запис тримає ще й запас за ним
                 foreach (SectionKey record in TouchedBy(chunk, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
+            }
+            // Секції, у яких змінилися лише деталі: перетин, у вузлі якого вона лежить, і ті, у запасі яких. Нові
+            // перетини від деталей не з'являються, тож їх тут не шукаємо
+            foreach (Section section in changedSections)
+            {
+                CrossingRef member = section.GetCrossingRef();
+                if (member != null) Want(seen, targets, member.Chunk, member.Key);
+                foreach (SectionKey record in TouchedBy(section, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
             }
 
             foreach (CrossingRef target in targets) Update(session, target.Chunk, target.Key, null);
@@ -95,6 +103,18 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static List<SectionKey> TouchedBy(Vec3i chunk, System.Func<Vec3i, DataInChunk> dataIn)
         {
+            return TouchedBy(chunk, link => link.ChunkX == chunk.X && link.ChunkY == chunk.Y && link.ChunkZ == chunk.Z, dataIn);
+        }
+
+        /// <summary>Те саме для однієї секції: записи перетинів, серед секцій яких є вона.</summary>
+        public static List<SectionKey> TouchedBy(Section section, System.Func<Vec3i, DataInChunk> dataIn)
+        {
+            return TouchedBy(section.ChunkAddres, link => link.PointsTo(section), dataIn);
+        }
+
+        // Записи перетинів у чанку chunk і сусідніх, серед секцій яких є така, що відповідає member
+        private static List<SectionKey> TouchedBy(Vec3i chunk, System.Func<SectionLink, bool> member, System.Func<Vec3i, DataInChunk> dataIn)
+        {
             var found = new List<SectionKey>();
             for (int dx = -1; dx <= 1; dx++)
                 for (int dy = -1; dy <= 1; dy++)
@@ -106,7 +126,7 @@ namespace RailWorld.src.RailWay
 
                         foreach (RailCrossing record in data.Crossings.Values)
                         {
-                            if (record.Tracks.Exists(track => track.Members.Exists(link => link.ChunkX == chunk.X && link.ChunkY == chunk.Y && link.ChunkZ == chunk.Z)))
+                            if (record.Tracks.Exists(track => track.Members.Exists(link => member(link))))
                                 found.Add(new SectionKey(coord, record.Key));
                         }
                     }

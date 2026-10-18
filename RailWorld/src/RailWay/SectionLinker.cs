@@ -58,6 +58,10 @@ namespace RailWorld.src.RailWay
         private IWorldAccessor world;
         private Dictionary<Vec3i, DataInChunk> loaded = new Dictionary<Vec3i, DataInChunk>();
         private HashSet<Vec3i> dirty = new HashSet<Vec3i>();
+        // Чанки, у яких колія змінилася так, що перераховується все, що з ними пов'язане
+        private HashSet<Vec3i> whole = new HashSet<Vec3i>();
+        // Секції, у яких змінилися лише деталі: перераховується лише те, чого вони стосуються
+        private List<Section> changed = new List<Section>();
         // Секції, покладені за цю операцію
         private HashSet<Section> laid = new HashSet<Section>();
 
@@ -112,9 +116,26 @@ namespace RailWorld.src.RailWay
             return IsChunkLoaded(link.Chunk) && GetSection(link) == null;
         }
 
+        /// <summary>
+        /// Колія в чанку змінилася: він піде у збереження, а записи стрілок і перетинів, пов'язані з ним,
+        /// перераховуються всі. Так після будь-якої зміни, про яку не відомо точніше.
+        /// </summary>
         public void MarkDirty(Vec3i chunkCoord)
         {
             dirty.Add(chunkCoord.Clone());
+            whole.Add(chunkCoord.Clone());
+        }
+
+        /// <summary>
+        /// У секції змінилися лише деталі (рейка, шпала, підсипка), а не те, де вона лежить і з чим з'єднана. Її
+        /// чанк піде у збереження, а перераховуються лише записи стрілок і перетинів, яких вона стосується.
+        /// </summary>
+        public void MarkChanged(Section section)
+        {
+            // Зберігаються лише чанки, які сесія читала сама
+            Get(section.ChunkAddres);
+            dirty.Add(section.ChunkAddres.Clone());
+            changed.Add(section);
         }
 
         /// <summary>Запам'ятовує, що секцію покладено щойно, за цю операцію.</summary>
@@ -130,26 +151,17 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Записує один чанк, дані якого щойно змінили, і розсилає його клієнтам; заразом перераховує
-        /// стрілки й перетини, яких ця зміна стосується. Для змін, що не проходять через власну сесію.
-        /// </summary>
-        public static void SaveChunk(IWorldAccessor world, Vec3i chunkCoord)
-        {
-            var session = new RailDataSession(world);
-            if (session.Get(chunkCoord) == null) return;
-            session.MarkDirty(chunkCoord);
-            session.SaveAll();
-        }
-
-        /// <summary>
         /// Записує змінені чанки і розсилає їх клієнтам.
         /// </summary>
         public void SaveAll()
         {
             // Записи про стрілки й перетини мають відповідати колії вже в тому, що зараз піде у збереження й клієнтам.
             // Перерахунок сам позначає чанки, які зачепив
-            SwitchRegistry.Refresh(this, new List<Vec3i>(dirty));
-            CrossingRegistry.Refresh(this, new List<Vec3i>(dirty));
+            var chunks = new List<Vec3i>(whole);
+            // Секції, чий чанк і так перераховується цілком, окремо не потрібні
+            List<Section> sections = changed.FindAll(section => !whole.Contains(section.ChunkAddres));
+            SwitchRegistry.Refresh(this, chunks, sections);
+            CrossingRegistry.Refresh(this, chunks, sections);
 
             foreach (Vec3i chunkCoord in dirty)
             {
@@ -158,6 +170,8 @@ namespace RailWorld.src.RailWay
                 RailWorld.SendChunkDataToClients(chunkCoord, data);
             }
             dirty.Clear();
+            whole.Clear();
+            changed.Clear();
         }
     }
 

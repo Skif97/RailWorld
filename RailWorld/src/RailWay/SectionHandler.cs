@@ -221,8 +221,11 @@ namespace RailWorld.src.RailWay
 
             if (!section.InstallPart(sel.Part, type, material)) return;
 
-            // Поставлена рейка могла доповнити стрілку: зберігаємо через сесію, вона перерахує записи стрілок
-            RailDataSession.SaveChunk(world, sel.Chunk);
+            // Поставлена рейка могла доповнити стрілку чи перетин: зберігаємо через сесію, вона перерахує
+            // записи, яких стосується ця секція
+            var session = new RailDataSession(world);
+            session.MarkChanged(section);
+            session.SaveAll();
 
             // З першою деталлю секція займає свої клітинки, з наступними оновлює їхню форму
             TrackBed.Sync(world, section);
@@ -272,7 +275,7 @@ namespace RailWorld.src.RailWay
                     if (!TrackBed.IsBallastCovered(world, neighbour)) break;
 
                     neighbour.InstallPart(SectionPart.Ballast, "normal", material);
-                    session.MarkDirty(neighbour.ChunkAddres);
+                    session.MarkChanged(neighbour);
                     marked.Add(neighbour);
 
                     // Далі виходимо з сусіда через його протилежний кінець
@@ -425,7 +428,9 @@ namespace RailWorld.src.RailWay
             }
             else section.RemovePart(sel.Part);
 
-            session.MarkDirty(sel.Chunk);
+            // Зламана секція змінює колію навколо; знята деталь лише саму секцію
+            if (whole) session.MarkDirty(sel.Chunk);
+            else session.MarkChanged(section);
             session.SaveAll();
 
             // Секції більше немає або в ній не лишилося деталей: звільняємо клітинки. Інакше оновлюємо їхню форму
