@@ -558,6 +558,9 @@ namespace RailWorld
             for (int dx = -1; dx <= 1; dx++)
                 for (int dz = -1; dz <= 1; dz++)
                     for (int y = 0; y < height; y++) SectionLinker.PruneLost(session, new Vec3i(chunkX + dx, y, chunkZ + dz));
+            // Кінці колії, які чекали на цей чанк. Досить кінців цієї колонки: зустрічний кінець у сусідній
+            // колонці теж вільний, і зв'язок ставиться в обидва боки
+            for (int y = 0; y < height; y++) SectionLinker.LinkOpenEnds(session, new Vec3i(chunkX, y, chunkZ));
             for (int y = 0; y < height; y++) SwitchRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
             SwitchRegistry.CompletePendingNear(session, chunkX, chunkZ);
             for (int y = 0; y < height; y++) CrossingRegistry.Complete(session, new Vec3i(chunkX, y, chunkZ));
@@ -573,7 +576,6 @@ namespace RailWorld
             if (data == null || !data.RailWaySections.TryGetValue(index, out Section section))
                 return "Section " + index + " not found in chunk " + chunk;
 
-            // Заразом доз'єднує кінці, сусідній чанк яких не був завантажений, коли колію клали
             string start = DescribeEnd(session, section, true);
             string end = DescribeEnd(session, section, false);
             string switches = DescribeSwitches(session, data, section);
@@ -616,7 +618,7 @@ namespace RailWorld
 
         private static string DescribeEnd(RailDataSession session, Section section, bool atStart)
         {
-            SectionStep next = SectionLinker.GetNext(session, section, atStart);
+            SectionStep next = SectionLinker.Next(section, atStart, session.GetSection);
             int count = section.GetLinks(atStart).Count;
             if (next == null) return count == 0 ? "nothing" : "unloaded chunk";
 

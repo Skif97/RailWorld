@@ -281,7 +281,7 @@ namespace RailWorld.src.RailWay
 
                 for (int step = 0; step < NeighbourScanLimit; step++)
                 {
-                    SectionStep next = SectionLinker.GetNext(session, current, atStart);
+                    SectionStep next = SectionLinker.Next(current, atStart, session.GetSection);
                     if (next == null) break;
 
                     Section neighbour = next.Section;

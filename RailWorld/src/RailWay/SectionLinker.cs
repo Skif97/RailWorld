@@ -927,31 +927,31 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Куди веде кінець секції. Якщо зв'язку ще немає (коли секцію клали, сусідній чанк не був
-        /// завантажений), шукає сусіда зараз і запам'ятовує.
-        /// Повертає null, якщо далі колії немає або сусідній чанк не завантажений.
-        /// Після виклику треба зберегти сесію, якщо в ній з'явилися зміни.
+        /// Куди веде кінець секції: активне посилання і секція за ним. null, якщо зв'язку немає або секції за
+        /// ним не прочитати (чанк не завантажений). Лише читає: колію не змінює. Завислі зв'язки прибирає, а
+        /// кінці, що лишилися без сусіда, доз'єднує завантаження чанка (RailWaySystem.CompleteSwitches).
         /// </summary>
-        public static SectionStep GetNext(RailDataSession session, Section section, bool atStart)
+        public static SectionStep Next(Section section, bool atStart, System.Func<SectionLink, Section> resolve)
         {
-            // Посилання на секції, яких уже немає, прибираємо. Якщо чанк сусіда не завантажений, не чіпаємо
-            List<SectionLink> links = new List<SectionLink>(section.GetLinks(atStart));
-            foreach (SectionLink link in links)
-            {
-                if (session.GetSection(link) != null || !session.IsChunkLoaded(link.Chunk)) continue;
-                section.RemoveLink(atStart, link);
-                session.MarkDirty(section.ChunkAddres);
-            }
-
-            if (section.GetLinks(atStart).Count == 0) LinkToNeighbours(session, section, atStart);
-
             SectionLink active = section.GetActiveLink(atStart);
-            if (active == null) return null;
+            Section next = active == null ? null : resolve(active);
+            return next == null ? null : new SectionStep { Section = next, EnterAtStart = active.AtStart };
+        }
 
-            Section next = session.GetSection(active);
-            if (next == null) return null;
+        /// <summary>
+        /// Доз'єднує колію в чанку: кінцям секцій без жодного зв'язку шукає сусіда, як при прокладанні. Таке буває,
+        /// коли колію клали, а сусідній чанк не був завантажений: зв'язок з'являється, щойно обидва в пам'яті.
+        /// </summary>
+        public static void LinkOpenEnds(RailDataSession session, Vec3i chunk)
+        {
+            DataInChunk data = session.Get(chunk);
+            if (data == null) return;
 
-            return new SectionStep { Section = next, EnterAtStart = active.AtStart };
+            foreach (Section section in data.RailWaySections.Values)
+            {
+                if (section.GetLinks(true).Count == 0) LinkToNeighbours(session, section, true);
+                if (section.GetLinks(false).Count == 0) LinkToNeighbours(session, section, false);
+            }
         }
     }
 }

@@ -842,14 +842,14 @@ namespace RailWorld
         // Переїжджає з краю поточної секції в сусідню. Швидкість за модулем не змінюється
         private EnterResult EnterNext(ref Section section, bool leaveAtStart)
         {
-            RailDataSession session = new RailDataSession(World);
-            SectionStep next = SectionLinker.GetNext(session, section, leaveAtStart);
-            bool linked = section.GetLinks(leaveAtStart).Count > 0;
-            if (session.HasChanges) session.SaveAll();
-
+            // Лише читаємо колію: вагонетка її не міняє
+            SectionStep next = SectionLinker.Next(section, leaveAtStart, findServerSection ?? (findServerSection = ServerSection));
             if (next == null)
             {
-                if (linked)
+                // Зв'язок є, але секцію за ним не прочитати, бо її чанк не завантажений: стоїмо на краю.
+                // Якщо чанк завантажений, а секції немає, колія там скінчилася
+                SectionLink active = section.GetActiveLink(leaveAtStart);
+                if (active != null && World.BlockAccessor.GetChunk(active.ChunkX, active.ChunkY, active.ChunkZ) == null)
                 {
                     // Далі колія є, але її чанк не завантажений: стоїмо на краю
                     railVelocity = 0;
@@ -995,6 +995,14 @@ namespace RailWorld
             {
                 railVelocity = pushDir * Math.Min(speedInPushDir + PushSpeed, MaxPushSpeed);
             }
+        }
+
+        private System.Func<SectionLink, Section> findServerSection;
+
+        // Секція за посиланням з даних сервера; null, якщо її чанк не завантажений або секції немає
+        private Section ServerSection(SectionLink link)
+        {
+            return GetSection(link.Chunk, link.Index, out _);
         }
 
         private Section GetSection(Vec3i chunk, int index, out bool chunkLoaded)

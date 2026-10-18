@@ -121,6 +121,10 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public int IndexInChunk { get; internal set; } = -1;
 
+        // Клітинки світу під секцією (TrackBed.AllCells). Геометрія секції після створення не міняється, тож
+        // вони рахуються раз; у збереження не потрапляють
+        internal List<BlockPos> Cells;
+
         public Section() { }// для серриализатора
 
 
