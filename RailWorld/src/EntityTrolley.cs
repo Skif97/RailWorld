@@ -320,7 +320,10 @@ namespace RailWorld
         private static double SquealRadius => TrackRules.MinRadius * 1.4;
         private const float SquealSpeed = 0.4f;
 
-        private Vec3d shownAt;
+        // Де вагонетка була намальована минулого кадру. Один об'єкт на вагонетку: щокадру в ньому лише
+        // переписуються числа, щоб не лишати збирачеві сміття по новому на кадр
+        private readonly Vec3d shownAt = new Vec3d();
+        private bool shownBefore;
         private float shownYaw;
         private float shownSpeed;
         private float shownCurve;
@@ -334,20 +337,23 @@ namespace RailWorld
 
         private void ShowMotion(float dt)
         {
-            Vec3d now = Pos.XYZ;
-            if (shownAt == null || dt <= 0)
+            if (!shownBefore || dt <= 0)
             {
-                shownAt = now;
+                shownAt.Set(Pos.X, Pos.InternalY, Pos.Z);
                 shownYaw = Pos.Yaw;
+                shownBefore = true;
                 return;
             }
 
-            // Шлях за кадр уздовж носа вагонетки: зі знаком, уперед чи назад
-            Vec3f nose = Pos.GetViewVector();
-            double rolled = (now.X - shownAt.X) * nose.X + (now.Z - shownAt.Z) * nose.Z;
-            double moved = now.DistanceTo(shownAt);
+            // Шлях за кадр уздовж носа вагонетки: зі знаком, уперед чи назад. Ніс той самий, що дає
+            // Pos.GetViewVector, лише без нового об'єкта
+            double cosPitch = GameMath.Cos(Pos.Pitch);
+            double noseX = -cosPitch * GameMath.Sin(Pos.Yaw), noseZ = -cosPitch * GameMath.Cos(Pos.Yaw);
+            double dx = Pos.X - shownAt.X, dy = Pos.InternalY - shownAt.Y, dz = Pos.Z - shownAt.Z;
+            double rolled = dx * noseX + dz * noseZ;
+            double moved = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             float turned = Math.Abs(GameMath.AngleRadDistance(shownYaw, Pos.Yaw));
-            shownAt = now;
+            shownAt.Set(Pos.X, Pos.InternalY, Pos.Z);
             shownYaw = Pos.Yaw;
 
             // Швидкість і кривизна шляху, згладжені: окремий кадр дає їх із шумом
@@ -367,7 +373,7 @@ namespace RailWorld
                 SwayBody(moving, curved);
                 BumpBody(dt, moving);
             }
-            Squeal(now);
+            Squeal(shownAt);
         }
 
         /// <summary>
@@ -445,7 +451,7 @@ namespace RailWorld
             }
             if (squeal == null) return;
 
-            squeal.SetPosition(at.ToVec3f());
+            squeal.SetPosition((float)at.X, (float)at.Y, (float)at.Z);
             if (!squeal.IsPlaying) squeal.Start();
         }
 
