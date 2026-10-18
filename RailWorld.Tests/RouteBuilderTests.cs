@@ -66,5 +66,29 @@ namespace RailWorld.Tests
             List<RoutePoint> exact = RouteBuilder.Build(corner);
             Assert.Contains(exact, point => point.Position.DistanceTo(at) < 1e-6);
         }
+
+        // Точка на блоці з напрямком, заданим вектором у плані
+        private static RouteMarker Facing(int x, int z, double headingX, double headingZ)
+        {
+            RouteMarker marker = Block(x, z);
+            marker.Heading = new Vec3d(headingX, 0, headingZ).Normalize();
+            return marker;
+        }
+
+        [Theory]
+        // Друга точка за два блоки на схід, обидві дивляться на захід: маршрут мусить зробити повну петлю
+        [InlineData(2, 0, -1, 0)]
+        // Навскіс: петля чи розворот більше ніж на 180° на одному-двох блоках
+        [InlineData(1, 1, -1, 0)]
+        [InlineData(2, 1, -1, -1)]
+        public void LoopBetweenTwoCloseMarkersIsTooTight(int dx, int dz, double headingX, double headingZ)
+        {
+            var markers = new List<RouteMarker> { Facing(0, 0, headingX, headingZ), Facing(dx, dz, headingX, headingZ) };
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(markers));
+
+            RouteCheck check = RouteRules.Check(points);
+            Assert.True(check.MinRadius < RouteRules.MinRadius - RouteRules.RadiusTolerance);
+            Assert.Contains(check.Reasons(), reason => reason.StartsWith("поворот крутіший"));
+        }
     }
 }

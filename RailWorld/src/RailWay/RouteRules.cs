@@ -89,8 +89,18 @@ namespace RailWorld.src.RailWay
                 run[i] = run[i - 1] + Math.Sqrt(dx * dx + dy * dy + dz * dz);
             }
 
+            // Поворот дотичної в плані між кожними двома сусідніми точками нарізки. Між сусідами колія
+            // повертає на кілька градусів, і кут між ними однозначний. Кут між напрямками на кінцях довшого
+            // відрізка такий не завжди: він не більший за 180°, і петля на 360° дала б нуль
+            double[] step = new double[count];
+            for (int i = 1; i < count; i++)
+            {
+                Vec3f t0 = points[i - 1].tangent, t1 = points[i].tangent;
+                step[i] = Math.Abs(Math.Atan2(t0.X * t1.Z - t0.Z * t1.X, t0.X * t1.X + t0.Z * t1.Z));
+            }
+
             // Радіус це довжина відрізка колії, поділена на кут, на який на ньому повернула дотична:
-            // окремо в плані і окремо по висоті
+            // окремо в плані і окремо по висоті. У плані кут складається з поворотів між сусідніми точками
             for (int i = 0; i < count; i++)
             {
                 int a = Math.Max(0, i - RadiusWindow);
@@ -98,8 +108,9 @@ namespace RailWorld.src.RailWay
                 double length = run[b] - run[a];
                 if (length < 1e-6) continue;
 
+                double turn = 0;
+                for (int k = a + 1; k <= b; k++) turn += step[k];
                 Vec3f ta = points[a].tangent, tb = points[b].tangent;
-                double turn = Math.Abs(Math.Atan2(ta.X * tb.Z - ta.Z * tb.X, ta.X * tb.X + ta.Z * tb.Z));
                 double pitch = Math.Abs(Pitch(tb) - Pitch(ta));
 
                 double radius = turn > 1e-6 ? length / turn : double.MaxValue;
