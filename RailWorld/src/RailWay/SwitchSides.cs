@@ -60,25 +60,56 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Те саме для обох гілок стрілки, що починаються секціями first і second; entered кажуть, котрим кінцем
-        /// кожна з них до стрілки.
+        /// Те саме для обох гілок стрілки на кінці atStart секції trunk, у порядку її зв'язків. false, якщо
+        /// першу секцію котроїсь гілки прочитати не вдалося.
         /// </summary>
-        public static void Of(Section first, bool firstEntered, Section second, bool secondEntered, Func<SectionLink, Section> resolve,
+        public static bool Of(Section trunk, bool atStart, Func<SectionLink, Section> resolve,
             out List<bool> firstSides, out List<bool> secondSides)
         {
-            List<Section> a = Walk(first, firstEntered, resolve), b = Walk(second, secondEntered, resolve);
+            firstSides = secondSides = null;
+            if (!Branches(trunk, atStart, resolve, out List<Section> a, out List<Section> b)) return false;
             firstSides = InnerFirst(a, b);
             secondSides = InnerFirst(b, a);
+            return true;
         }
 
-        /// <summary>Секції гілки по порядку від стрілки, не більше MaxSections; first це перша з них.</summary>
-        public static List<Section> Walk(Section first, bool entered, Func<SectionLink, Section> resolve)
+        /// <summary>
+        /// Секції обох гілок стрілки на кінці atStart секції trunk, по порядку від стрілки, у порядку її зв'язків,
+        /// кожна не більше MaxSections. Колія, замкнена петлею, вертається до стрілки, з якої вийшла: обидві гілки
+        /// тоді це одне коло, пройдене в різні боки, і гілка, порівняна з такою самою, лежала б на ній. Тому гілки
+        /// йдуть одночасно, по секції, і кожна зупиняється, ступивши на секцію, яку вже пройшла інша, чи на саму
+        /// trunk: на колі вони зустрічаються посередині, і кожній дістається своя половина. false, якщо першу
+        /// секцію котроїсь гілки прочитати не вдалося.
+        /// </summary>
+        public static bool Branches(Section trunk, bool atStart, Func<SectionLink, Section> resolve, out List<Section> first, out List<Section> second)
         {
-            var sections = new List<Section>();
-            TrackWalker walk = TrackWalker.Entering(first, entered, resolve);
-            do sections.Add(walk.Section);
-            while (sections.Count < MaxSections && walk.Next());
-            return sections;
+            first = second = null;
+            List<SectionLink> links = trunk.GetLinks(atStart);
+            if (links.Count != 2) return false;
+            Section a = resolve(links[0]), b = resolve(links[1]);
+            if (a == null || b == null) return false;
+
+            var taken = new HashSet<SectionKey> { SectionKey.Of(trunk), SectionKey.Of(a), SectionKey.Of(b) };
+            first = new List<Section> { a };
+            second = new List<Section> { b };
+            TrackWalker[] walks = { TrackWalker.Entering(a, links[0].AtStart, resolve), TrackWalker.Entering(b, links[1].AtStart, resolve) };
+            List<Section>[] branches = { first, second };
+            bool[] going = { true, true };
+
+            while (going[0] || going[1])
+            {
+                for (int k = 0; k < 2; k++)
+                {
+                    if (!going[k]) continue;
+                    if (branches[k].Count >= MaxSections || !walks[k].Next() || !taken.Add(SectionKey.Of(walks[k].Section)))
+                    {
+                        going[k] = false;
+                        continue;
+                    }
+                    branches[k].Add(walks[k].Section);
+                }
+            }
+            return true;
         }
 
         /// <summary>

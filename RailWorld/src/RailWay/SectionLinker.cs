@@ -599,11 +599,10 @@ namespace RailWorld.src.RailWay
         // і дедалі швидше, а гостряк доходить до свого кореня. Причина відмови або null
         private static string BranchesProblem(Section trunk, bool atStart, RailSwitch built, System.Func<SectionLink, Section> resolve)
         {
+            if (!SwitchSides.Branches(trunk, atStart, resolve, out List<Section> one, out List<Section> other)) return null;
             List<SectionLink> links = trunk.GetLinks(atStart);
-            Section[] first = { resolve(links[0]), resolve(links[1]) };
-            if (first[0] == null || first[1] == null) return null;
+            Section[] first = { one[0], other[0] };
 
-            List<Section> one = SwitchSides.Walk(first[0], links[0].AtStart, resolve), other = SwitchSides.Walk(first[1], links[1].AtStart, resolve);
             if (SwitchSides.CrossOver(one, other))
                 return "гілки стрілки переходять одна через одну: стрілка розводить колії лише раз, кожну у свій бік";
 
@@ -865,8 +864,8 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Куди веде кінець секції. Якщо зв'язку ще немає (колія прокладена до появи зв'язків
-        /// або сусідній чанк тоді не був завантажений), шукає сусіда зараз і запам'ятовує.
+        /// Куди веде кінець секції. Якщо зв'язку ще немає (коли секцію клали, сусідній чанк не був
+        /// завантажений), шукає сусіда зараз і запам'ятовує.
         /// Повертає null, якщо далі колії немає або сусідній чанк не завантажений.
         /// Після виклику треба зберегти сесію, якщо в ній з'явилися зміни.
         /// </summary>

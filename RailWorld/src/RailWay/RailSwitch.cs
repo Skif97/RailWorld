@@ -204,7 +204,7 @@ namespace RailWorld.src.RailWay
         public bool Resolved;
 
         /// <summary>
-        /// Якою версією розрахунку пораховано запис. У записах, зроблених до появи цього поля, тут 0.
+        /// Якою версією розрахунку пораховано запис.
         /// </summary>
         [ProtoMember(7)]
         public int Formula;
@@ -345,7 +345,7 @@ namespace RailWorld.src.RailWay
 
             // З якого боку від кожної секції гілки лежить друга: від цього залежить уся геометрія стрілки
             var sides = new List<bool>[2];
-            SwitchSides.Of(first[0], links[0].AtStart, first[1], links[1].AtStart, resolve, out sides[0], out sides[1]);
+            SwitchSides.Of(trunk, atStart, resolve, out sides[0], out sides[1]);
 
             for (int k = 0; k < 2; k++)
             {

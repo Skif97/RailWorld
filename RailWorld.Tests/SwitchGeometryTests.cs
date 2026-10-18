@@ -16,7 +16,12 @@ namespace RailWorld.Tests
         // друга гілка відома
         private BranchGeometry Branch(List<Section> mine, List<Section> partner, bool withPartner)
         {
-            SwitchSides.Of(mine[0], true, partner[0], true, Resolve, out List<bool> mineSides, out List<bool> partnerSides);
+            // Спільна колія, що приходить у стик, з якого виходять обидві гілки
+            List<Section> trunk = Trunk();
+            Section last = trunk[trunk.Count - 1];
+            Join(last, mine[0]);
+            Join(last, partner[0]);
+            SwitchSides.Of(last, false, Resolve, out List<bool> mineSides, out List<bool> partnerSides);
             return SwitchGeometry.Branch(mine[0], true, mineSides[0], partner[0], withPartner ? true : (bool?)null, partnerSides[0], Resolve);
         }
 
