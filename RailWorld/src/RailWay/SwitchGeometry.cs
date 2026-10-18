@@ -66,6 +66,8 @@ namespace RailWorld.src.RailWay
         public int Throat = -1, Tip, Crossing, Full;
         // Секції, на яких звичайна рейка не малюється, бо там хрестовина. Номери від стрілки, з одиниці
         public int HideFrom, HideTo;
+        // Котрусь із двох колій далі прочитати не вдалося (її чанк не завантажений): хрестовина може лежати там
+        public bool Cut;
     }
 
     /// <summary>
@@ -246,9 +248,12 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Перерізи внутрішньої рейки колії від стрілки. first це перша секція колії, switchAtStart котрим кінцем
         /// вона до стрілки, toward з якого боку її нормалі лежить сусідня колія.
+        /// cut каже, чи колію далі прочитати не вдалося раніше, ніж набралося sections секцій.
         /// </summary>
-        public static List<RailFrame> RailFrames(Section first, bool switchAtStart, double toward, int sections, Func<SectionLink, Section> resolve)
+        public static List<RailFrame> RailFrames(Section first, bool switchAtStart, double toward, int sections, Func<SectionLink, Section> resolve,
+            out bool cut)
         {
+            cut = false;
             var frames = new List<RailFrame>();
             TrackWalker walk = TrackWalker.Entering(first, switchAtStart, resolve);
             Vec3d side = null;
@@ -297,7 +302,9 @@ namespace RailWorld.src.RailWay
                 }
 
                 // Наступна секція колії. Якщо колія скінчилася, перерізи закінчуються там само
-                if (!walk.Next()) break;
+                if (walk.Next()) continue;
+                cut = walk.Stop == WalkStop.Unread && n + 1 < sections;
+                break;
             }
 
             return frames;
@@ -314,10 +321,12 @@ namespace RailWorld.src.RailWay
             bool partnerInnerFirst, Func<SectionLink, Section> resolve)
         {
             BranchGeometry result = new BranchGeometry();
-            result.Frames = RailFrames(first, switchAtStart, innerFirst ? 1 : -1, MaxFrogSections, resolve);
+            result.Frames = RailFrames(first, switchAtStart, innerFirst ? 1 : -1, MaxFrogSections, resolve, out bool cut);
+            result.Cut = cut;
             if (partnerSwitchAtStart == null) return result;
 
-            result.Other = RailFrames(partnerFirst, partnerSwitchAtStart.Value, partnerInnerFirst ? 1 : -1, MaxFrogSections, resolve);
+            result.Other = RailFrames(partnerFirst, partnerSwitchAtStart.Value, partnerInnerFirst ? 1 : -1, MaxFrogSections, resolve, out cut);
+            result.Cut |= cut;
             int count = Math.Min(result.Frames.Count, result.Other.Count);
             result.Across = new double[count];
 

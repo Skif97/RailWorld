@@ -20,9 +20,9 @@ namespace RailWorld.Tests
         private const string CrossingHint = "Змінився розрахунок запису перетину: збільш RailCrossing.CurrentFormula і запиши новий еталон.";
 
         private const string SwitchExpected =
-            "formula 1 shape MainFirst complete True resolved True | members 23 pair 17 overlap 18 blade 6 frog 10-13 inner 11111111111111111111111 | members 22 pair 17 overlap 17 blade 6 frog 10-13 inner 0000000000000000000000"
-            + "\n" + "formula 1 shape Fork complete True resolved True | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 000000000000000000 | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 111111111111111111"
-            + "\n" + "formula 1 shape MainFirst complete True resolved True | members 36 pair 30 overlap 31 blade 9 frog 16-23 inner 000000000000000000000000000000000000 | members 35 pair 30 overlap 30 blade 9 frog 16-23 inner 11111111111111111111111111111111111";
+            "formula 2 shape MainFirst complete True resolved True | members 23 pair 17 overlap 18 blade 6 frog 10-13 inner 11111111111111111111111 | members 22 pair 17 overlap 17 blade 6 frog 10-13 inner 0000000000000000000000"
+            + "\n" + "formula 2 shape Fork complete True resolved True | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 000000000000000000 | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 111111111111111111"
+            + "\n" + "formula 2 shape MainFirst complete True resolved True | members 36 pair 30 overlap 31 blade 9 frog 16-23 inner 000000000000000000000000000000000000 | members 35 pair 30 overlap 30 blade 9 frog 16-23 inner 11111111111111111111111111111111111";
 
         private const string CrossingExpected =
             "formula 1 complete True resolved True | members 13 center 7 node 5-9 | members 12 center 6 node 5-8"
@@ -123,6 +123,28 @@ namespace RailWorld.Tests
             RailSwitch record = SwitchOf(Straight(), Arc());
             Assert.False(record.Outdated);
             Assert.False(ProtoBuf.Serializer.DeepClone(record).Outdated);
+        }
+
+        [Fact]
+        public void SwitchDismantledBeforeItsFrogIsNotComplete()
+        {
+            // Дугову гілку розібрано з далекого кінця так, що хрестовини вже немає: це дві колії одна на одній,
+            // і малюються вони звичайними рейками, а не гостряками
+            List<Section> trunk = Trunk();
+            Section last = trunk[trunk.Count - 1];
+            List<Section> straight = Straight(), arc = Arc();
+            Join(last, straight[0]);
+            Join(last, arc[0]);
+            Assert.True(SwitchBuilder.Build(last, false, Resolve).Complete);
+
+            for (int n = arc.Count - 1; n >= 3; n--)
+            {
+                arc[n - 1].RemoveLink(false, arc[n]);
+                Forget(arc[n]);
+            }
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            Assert.True(record.Resolved);
+            Assert.False(record.Complete);
         }
     }
 }

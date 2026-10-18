@@ -188,9 +188,10 @@ namespace RailWorld.src.RailWay
         public SwitchShape Shape;
 
         /// <summary>
-        /// Стрілку зібрано: на обох гілках у її зоні на кожній секції стоять обидві рейки і шпала. Лише тоді
-        /// її можна переводити і малювати стрілкою, з гостряками, хрестовиною і власними брусами. Доки бракує
-        /// хоч однієї деталі, це дві колії, покладені одна на одну: кожна секція малює свої рейки і свою шпалу.
+        /// Стрілку зібрано: обидві гілки доходять до хрестовини, і в зоні стрілки на кожній секції стоять обидві
+        /// рейки і шпала. Лише тоді її можна переводити і малювати стрілкою, з гостряками, хрестовиною і власними
+        /// брусами. Доки бракує хоч однієї деталі чи хрестовини, це дві колії, покладені одна на одну: кожна
+        /// секція малює свої рейки і свою шпалу.
         /// </summary>
         [ProtoMember(4)]
         public bool Complete;
@@ -214,7 +215,7 @@ namespace RailWorld.src.RailWay
         /// хрестовина, боки гілок, форма). Запис з іншою версією застарілий і перераховується, коли
         /// завантажується його чанк. Забути збільшити не дасть тест-еталон RecordFormulaTests.
         /// </summary>
-        public const int CurrentFormula = 1;
+        public const int CurrentFormula = 2;
 
         /// <summary>Ключ стрілки в чанку: у секції два кінці, і на кожному може бути своя.</summary>
         public int Key => KeyOf(TrunkIndex, AtStart);
@@ -354,6 +355,14 @@ namespace RailWorld.src.RailWay
 
                 BranchGeometry geometry = SwitchGeometry.Branch(mine, mineAtStart, sides[k][0], other, otherAtStart, sides[1 - k][0], resolve);
                 double heelAt = SwitchGeometry.HeelAt(geometry, mine.TrackWidth);
+                // Без хрестовини це не стрілка, а дві колії одна на одній: так буває, коли гілку розібрали до неї.
+                // Покласти таку стрілку не можна (SectionLinker.FindSwitchProblem), і зібраною вона не вважається.
+                // Якщо ж колію далі не прочитати, хрестовина може бути там: запис чекає на чанк
+                if (geometry.Throat < 0)
+                {
+                    if (geometry.Cut) result.Resolved = false;
+                    else partsInPlace = false;
+                }
 
                 var branch = new SwitchBranch
                 {
