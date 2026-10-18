@@ -177,11 +177,11 @@ namespace RailWorld
                 return;
             }
 
-            target.Exact = ExactKeyDown();
+            target.Exact = target.Aimed = ExactKeyDown();
             markers.Add(target);
             serverRefusal = null;
-            capi.ShowChatMessage(markers.Count == 1 ? "Першу точку обрано"
-                : "Точку " + markers.Count + " обрано" + (target.Exact ? ": маршрут пройде точно через неї" : ""));
+            capi.ShowChatMessage((markers.Count == 1 ? "Першу точку обрано" : "Точку " + markers.Count + " обрано")
+                + (target.Exact ? ": маршрут пройде точно через неї, а на кінці піде туди, куди ви дивитеся" : ""));
         }
 
         /// <summary>
@@ -214,8 +214,9 @@ namespace RailWorld
             return true;
         }
 
-        // Точка, поставлена із затиснутим Ctrl, точна: маршрут проходить саме через неї.
-        // Без Ctrl проміжна точка це кут, який маршрут скруглює дугою
+        // Точка, поставлена із затиснутим Ctrl, точна: маршрут проходить саме через неї, а на кінці маршруту
+        // йде туди, куди дивиться гравець. Без Ctrl проміжна точка це кут, який маршрут скруглює дугою, а крайня
+        // бере напрямок, яким маршрут приходить у неї найплавніше
         private bool ExactKeyDown()
         {
             bool[] keys = capi.Input.KeyboardKeyStateRaw;
@@ -458,7 +459,7 @@ namespace RailWorld
                 hover = MakeMarker(markers.Count == 0);
                 // Повторне наведення на останню точку нічого не додає: там клік означає перехід до перегляду
                 if (hover != null && markers.Count > 0 && hover.Block.Equals(markers[markers.Count - 1].Block)) hover = null;
-                if (hover != null) hover.Exact = ExactKeyDown();
+                if (hover != null) hover.Exact = hover.Aimed = ExactKeyDown();
             }
 
             string key = BuildKey();

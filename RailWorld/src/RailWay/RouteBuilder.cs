@@ -136,6 +136,8 @@ namespace RailWorld.src.RailWay
             int count = points.Count;
             if (count < 2) return null;
 
+            EndsOf(points, out Vec3d[] ends, out Vec3d[] headings);
+
             var route = new List<RoutePoint>();
             for (int i = 0; i < count; i++)
             {
@@ -145,14 +147,10 @@ namespace RailWorld.src.RailWay
 
                 if (!marker.Snapped)
                 {
-                    if (i == 0)
+                    if (i == 0 || i == count - 1)
                     {
-                        // Початок маршруту на краю блока позаду, щоб колія займала блок цілком
-                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone());
-                    }
-                    else if (i == count - 1)
-                    {
-                        position = ModMath.DirectionVectorPositionCorrection(position, tangent.Clone().Mul(-1));
+                        position = ends[i == 0 ? 0 : 1];
+                        tangent = headings[i == 0 ? 0 : 1];
                     }
                     else
                     {
@@ -203,6 +201,77 @@ namespace RailWorld.src.RailWay
             }
 
             return RoundCorners(points, route, sources);
+        }
+
+        /// <summary>
+        /// Положення й напрямок двох крайніх точок маршруту, що стоять на блоках (для точки на колії вони беруться
+        /// з колії, і тут не потрібні). Крайня точка стоїть на краю свого блока, щоб колія займала блок цілком:
+        /// початок на краю позаду, кінець на краю попереду. Напрямок, якщо його задано (Aimed), береться як є.
+        /// Інакше маршрут приходить у точку найплавніше: з двох точок, одна з яких має напрямок, маршрут іде однією
+        /// дугою сталого радіуса, і в другій точці напрямок дзеркальний відносно хорди; в інших випадках
+        /// крайня ділянка пряма, уздовж хорди до сусідньої точки. Так та сама точка дає той самий маршрут, куди б
+        /// гравець не дивився, ставлячи її.
+        /// </summary>
+        private static void EndsOf(List<RouteMarker> points, out Vec3d[] ends, out Vec3d[] headings)
+        {
+            int count = points.Count;
+            RouteMarker[] markers = { points[0], points[count - 1] };
+            ends = new Vec3d[2];
+            headings = new Vec3d[2];
+            for (int end = 0; end < 2; end++)
+            {
+                headings[end] = markers[end].Heading.Clone();
+                ends[end] = Edge(markers[end], headings[end], end == 0);
+            }
+
+            // Напрямок вільного кінця залежить від положення кінців, а положення від напрямку (край блока, на
+            // якому стоїть кінець). Перший прохід рахує від середин блоків, другий уточнює від країв
+            for (int pass = 0; pass < 2; pass++)
+            {
+                for (int end = 0; end < 2; end++)
+                {
+                    if (markers[end].Snapped || markers[end].Aimed) continue;
+
+                    bool first = end == 0;
+                    // Сусідня точка маршруту: друга крайня, якщо точок дві, інакше проміжна
+                    Vec3d near = count == 2 ? ends[1 - end] : points[first ? 1 : count - 2].Position;
+                    Vec3d from = first ? ends[0] : near, to = first ? near : ends[1];
+
+                    RouteMarker other = markers[1 - end];
+                    Vec3d otherHeading = count == 2 && (other.Snapped || other.Aimed) ? headings[1 - end] : null;
+                    Vec3d heading = Smoothest(from, to, otherHeading);
+                    if (heading == null) continue;
+
+                    headings[end] = heading;
+                    ends[end] = Edge(markers[end], heading, first);
+                }
+            }
+        }
+
+        // Точка на краю свого блока в напрямку руху: початок позаду, кінець попереду. Точка на колії стоїть, де стоїть
+        private static Vec3d Edge(RouteMarker marker, Vec3d heading, bool first)
+        {
+            if (marker.Snapped) return marker.Position.Clone();
+            return ModMath.DirectionVectorPositionCorrection(marker.Position.Clone(), first ? heading.Clone() : heading.Clone().Mul(-1));
+        }
+
+        // Напрямок, у якому маршрут від from до to найплавніше проходить свій вільний кінець. other це напрямок
+        // другого кінця, якщо він заданий і між кінцями нічого немає: тоді маршрут це одна дуга, і напрямки на її
+        // кінцях дзеркальні відносно хорди. Інакше пряма вздовж хорди. null, якщо кінці в одній точці плану
+        private static Vec3d Smoothest(Vec3d from, Vec3d to, Vec3d other)
+        {
+            double cx = to.X - from.X, cz = to.Z - from.Z, length = Math.Sqrt(cx * cx + cz * cz);
+            if (length < 1e-6) return null;
+            cx /= length;
+            cz /= length;
+            if (other == null) return new Vec3d(cx, 0, cz);
+
+            double ox = other.X, oz = other.Z, flat = Math.Sqrt(ox * ox + oz * oz);
+            if (flat < 1e-6) return new Vec3d(cx, 0, cz);
+            ox /= flat;
+            oz /= flat;
+            double along = ox * cx + oz * cz;
+            return new Vec3d(2 * along * cx - ox, 0, 2 * along * cz - oz).Normalize();
         }
 
         // Дуга, якою маршрут скруглює кут, не тісніша за найменший радіус із невеликим запасом: крива Безьє

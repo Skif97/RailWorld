@@ -64,6 +64,7 @@ namespace RailWorld
         [ProtoMember(10)] public int[] JointIndex;
         [ProtoMember(11)] public bool[] JointAtStart;
         [ProtoMember(12)] public int[] Sign;
+        [ProtoMember(13)] public bool[] Aimed;
     }
 
     /// <summary>
@@ -175,7 +176,7 @@ namespace RailWorld
             {
                 Id = id,
                 BlockX = new int[count], BlockY = new int[count], BlockZ = new int[count],
-                Yaw = new double[count], Exact = new bool[count],
+                Yaw = new double[count], Exact = new bool[count], Aimed = new bool[count],
                 JointChunkX = new int[count], JointChunkY = new int[count], JointChunkZ = new int[count],
                 JointIndex = new int[count], JointAtStart = new bool[count], Sign = new int[count]
             };
@@ -188,6 +189,7 @@ namespace RailWorld
                 packet.BlockZ[i] = marker.Block.Z;
                 packet.Yaw[i] = marker.Yaw;
                 packet.Exact[i] = marker.Exact;
+                packet.Aimed[i] = marker.Aimed;
 
                 packet.JointIndex[i] = marker.Joint == null ? -1 : marker.Joint.IndexInChunk;
                 if (marker.Joint == null) continue;
@@ -220,7 +222,7 @@ namespace RailWorld
 
             int count = packet.BlockX?.Length ?? 0;
             if (count < 2 || count > MaxRoutePoints) return "у маршруті має бути від 2 до " + MaxRoutePoints + " точок";
-            if (packet.BlockY?.Length != count || packet.BlockZ?.Length != count || packet.Yaw?.Length != count || packet.Exact?.Length != count
+            if (packet.BlockY?.Length != count || packet.BlockZ?.Length != count || packet.Yaw?.Length != count || packet.Exact?.Length != count || packet.Aimed?.Length != count
                 || packet.JointChunkX?.Length != count || packet.JointChunkY?.Length != count || packet.JointChunkZ?.Length != count
                 || packet.JointIndex?.Length != count || packet.JointAtStart?.Length != count || packet.Sign?.Length != count) return "пошкоджений запит";
 
@@ -247,6 +249,7 @@ namespace RailWorld
                     if (double.IsNaN(yaw) || double.IsInfinity(yaw)) return "пошкоджений запит";
                     marker = RouteMarker.OnBlock(new BlockPos(packet.BlockX[i], packet.BlockY[i], packet.BlockZ[i], 0), yaw);
                     marker.Exact = packet.Exact[i];
+                    marker.Aimed = packet.Aimed[i];
                 }
 
                 if (i > 0 && marker.Position.DistanceTo(markers[i - 1].Position) > MaxRouteSpan) return "точки надто далеко одна від одної";

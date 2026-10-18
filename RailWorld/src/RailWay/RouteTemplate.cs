@@ -47,7 +47,7 @@ namespace RailWorld.src.RailWay
 
                 markers.Add(RouteMarker.OnBlock(corner, Yaw(direction)));
                 markers.Add(RouteMarker.OnBlock(end, Yaw(turned)));
-                return markers;
+                return Aimed(markers);
             }
 
             // Пряма займає стільки блоків, скільки задано; один блок це найкоротша пряма.
@@ -55,6 +55,13 @@ namespace RailWorld.src.RailWay
             int blocks = mode == Straight ? Math.Max(1, lengthOrRadius) : 1;
             int steps = (int)Math.Round((blocks - 1) / StepLength(direction));
             markers.Add(RouteMarker.OnBlock(Along(start, direction, steps, mode == Straight ? climb : 0), Yaw(direction)));
+            return Aimed(markers);
+        }
+
+        // Напрямки готової форми задані нею самою: маршрут має йти саме так
+        private static List<RouteMarker> Aimed(List<RouteMarker> markers)
+        {
+            foreach (RouteMarker marker in markers) marker.Aimed = true;
             return markers;
         }
 
