@@ -20,6 +20,8 @@ namespace RailWorld
         // Те саме світло одним числом: за ним видно, чи воно змінилося
         public int LightKey;
         public float ScaleZ;
+        // Котра за рахунком частина текстури вздовж рейки лягає на шматок
+        public int Variant;
     }
 
     /// <summary>
@@ -33,8 +35,8 @@ namespace RailWorld
     /// </summary>
     internal class RailSectionRenderer
     {
-        // На інстанс: світло (4 числа) і матриця (16 чисел)
-        private const int FloatsPerInstance = 20;
+        // На інстанс: світло (4 числа), матриця (16 чисел) і частина текстури вздовж рейки
+        private const int FloatsPerInstance = 21;
         // Найменший буфер пачки, в інстансах: щоб чанк із парою рейок не перезавантажував меш на кожну нову
         private const int MinCapacity = 128;
 
@@ -76,14 +78,14 @@ namespace RailWorld
         public MeshData TemplateMesh { get; private set; }
 
         /// <summary>
-        /// Скільки варіантів рейки з тією самою моделлю, але різним місцем текстури вздовж неї. Модель рейки це
-        /// шматок у чверть блока, і вздовж він бере чверть текстури; якби всі шматки брали ту саму чверть,
-        /// малюнок повторювався б на кожному. Сусідні шматки беруть варіанти по черзі.
+        /// На скільки частин вздовж рейки ділиться її текстура. Модель рейки це шматок у чверть блока, і вздовж
+        /// він бере чверть текстури; якби всі шматки брали ту саму чверть, малюнок повторювався б на кожному.
+        /// Сусідні шматки беруть частини по черзі: номер частини лежить у даних інстанса, а зсуває текстуру
+        /// шейдер, тож модель на метал одна.
         /// </summary>
         public const int Variants = 4;
 
-        /// <param name="variant">Котра за рахунком частина текстури вздовж рейки лягає на цей варіант, з нуля.</param>
-        public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack, int variant = 0)
+        public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack)
         {
             this.capi = capi;
 
@@ -100,7 +102,7 @@ namespace RailWorld
             itemMesh = itemMesh.Clone();
 
             TemplateMesh = itemMesh.Clone();
-            ShiftTexture(itemMesh, variant);
+            itemMesh.CustomInts = TextureSteps(itemMesh);
 
             TextureId = itemMesh.TextureIds != null && itemMesh.TextureIds.Length > 0
                 ? itemMesh.TextureIds[0]
@@ -114,24 +116,24 @@ namespace RailWorld
             }
         }
 
-        // Зсуває текстуру вздовж рейки на variant її частин. Яка вісь текстури йде вздовж рейки, у кожної грані
-        // своя: на боках одна, зверху інша, тож це видно лише з самої грані. Торці не чіпаються. Зсув не може
-        // вивести грань за межі текстури: в атласі поруч лежить чужа
-        private static void ShiftTexture(MeshData mesh, int variant)
+        // Для кожної вершини: уздовж якої осі текстури і на скільки зсувається одна частина текстури
+        // (railinstanced.vsh). Шматок рейки завдовжки чверть блока, тож кожна його грань уздовж рейки бере першу
+        // чверть текстури, і зсув на кілька таких частин, менше за Variants, лишається в межах текстури. Яка вісь
+        // текстури йде вздовж рейки, у кожної грані своя: на боках одна, зверху інша, тож це видно лише з самої
+        // грані. Торці не зсуваються
+        private static CustomMeshDataPartInt TextureSteps(MeshData mesh)
         {
-            if (variant <= 0 || mesh.VerticesCount == 0) return;
-
-            // Межі текстури в атласі невідомі, відомі лише координати, які модель з неї бере. Початок текстури
-            // це найменші з них, розмір найбільші, округлені вгору до цілого числа частин
-            float[] low = { float.MaxValue, float.MaxValue }, high = { float.MinValue, float.MinValue };
-            for (int v = 0; v < mesh.VerticesCount; v++)
+            var steps = new CustomMeshDataPartInt(mesh.VerticesCount * 2)
             {
-                for (int axis = 0; axis < 2; axis++)
-                {
-                    low[axis] = Math.Min(low[axis], mesh.Uv[v * 2 + axis]);
-                    high[axis] = Math.Max(high[axis], mesh.Uv[v * 2 + axis]);
-                }
-            }
+                Instanced = false,
+                InterleaveSizes = new int[] { 2 },
+                InterleaveOffsets = new int[] { 0 },
+                InterleaveStride = 8,
+                StaticDraw = true
+            };
+            steps.Values = new int[mesh.VerticesCount * 2];
+            steps.SetAllocationSize(mesh.VerticesCount * 2);
+            steps.Count = mesh.VerticesCount * 2;
 
             // Грань це чотири вершини підряд
             for (int face = 0; face + 3 < mesh.VerticesCount; face += 4)
@@ -146,18 +148,17 @@ namespace RailWorld
                 // Торець: уздовж рейки він не тягнеться
                 if (zHigh - zLow < 1e-5) continue;
 
-                // Вісь текстури, що міняється разом з місцем уздовж рейки
+                // Вісь текстури, що міняється разом з місцем уздовж рейки, і на скільки: це і є одна частина
                 float zMiddle = (zLow + zHigh) / 2;
                 int along = -1;
-                float span = 0, start = 0;
+                float span = 0;
                 for (int axis = 0; axis < 2; axis++)
                 {
-                    float atStart = 0, atEnd = 0, least = float.MaxValue;
+                    float atStart = 0, atEnd = 0;
                     int startCount = 0, endCount = 0;
                     for (int n = 0; n < 4; n++)
                     {
                         float uv = mesh.Uv[(face + n) * 2 + axis];
-                        least = Math.Min(least, uv);
                         if (mesh.xyz[(face + n) * 3 + 2] < zMiddle) { atStart += uv; startCount++; }
                         else { atEnd += uv; endCount++; }
                     }
@@ -166,29 +167,34 @@ namespace RailWorld
                     float change = Math.Abs(atEnd / endCount - atStart / startCount);
                     if (change <= span) continue;
                     span = change;
-                    start = least;
                     along = axis;
                 }
                 if (along < 0 || span < 1e-7) continue;
 
-                // Скільки таких частин уміщається в текстуру від місця цієї грані до її кінця
-                int total = (int)Math.Ceiling((high[along] - low[along]) / span - 1e-3);
-                int room = total - (int)Math.Round((start - low[along]) / span);
-                if (room <= 1) continue;
-
-                float shift = variant % room * span;
-                for (int n = 0; n < 4; n++) mesh.Uv[(face + n) * 2 + along] += shift;
+                int size = BitConverter.SingleToInt32Bits(span);
+                for (int n = 0; n < 4; n++)
+                {
+                    steps.Values[(face + n) * 2] = size;
+                    steps.Values[(face + n) * 2 + 1] = along;
+                }
             }
+            return steps;
         }
 
-        /// <summary>Ставить один з двох шматків рейки секції: piece 0 від початку до середини, 1 від середини до кінця.</summary>
-        public void AddRailPiece(Vec3i chunkCoord, Section section, bool left, int piece)
+        /// <summary>
+        /// Ставить один з двох шматків рейки секції: piece 0 від початку до середини, 1 від середини до кінця.
+        /// variant каже, котра частина текстури вздовж рейки лягає на шматок, з нуля.
+        /// </summary>
+        public void AddRailPiece(Vec3i chunkCoord, Section section, bool left, int piece, int variant)
         {
             float offset = section.TrackWidth / 2f * (left ? 1f : -1f);
             Vec3d center = section.GetGlobalPos();
 
-            if (piece == 0) AddPiece(chunkCoord, BuildInstance(section.FullStartPosition, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offset));
-            else AddPiece(chunkCoord, BuildInstance(center, section.CenterNormal, section.CenterTangent, section.FullEndPosition, section.EndNormal, section.EndTangent, offset));
+            RailInstanceData data = piece == 0
+                ? BuildInstance(section.FullStartPosition, section.StartNormal, section.StartTangent, center, section.CenterNormal, section.CenterTangent, offset)
+                : BuildInstance(center, section.CenterNormal, section.CenterTangent, section.FullEndPosition, section.EndNormal, section.EndTangent, offset);
+            if (data != null) data.Variant = variant;
+            AddPiece(chunkCoord, data);
         }
 
         private void AddPiece(Vec3i chunkCoord, RailInstanceData piece)
@@ -366,9 +372,9 @@ namespace RailWorld
                 batch.Floats = new CustomMeshDataPartFloat(size)
                 {
                     Instanced = true,
-                    InterleaveOffsets = new int[] { 0, 16, 32, 48, 64 },
-                    InterleaveSizes = new int[] { 4, 4, 4, 4, 4 },
-                    InterleaveStride = 80,
+                    InterleaveOffsets = new int[] { 0, 16, 32, 48, 64, 80 },
+                    InterleaveSizes = new int[] { 4, 4, 4, 4, 4, 1 },
+                    InterleaveStride = 84,
                     StaticDraw = false
                 };
                 batch.Floats.Values = new float[size];
@@ -401,6 +407,7 @@ namespace RailWorld
                 int j = n * FloatsPerInstance;
                 values[j] = d.Light.R; values[j + 1] = d.Light.G; values[j + 2] = d.Light.B; values[j + 3] = d.Light.A;
                 for (int k = 0; k < 16; k++) values[j + 4 + k] = tmpMat[k];
+                values[j + 20] = d.Variant;
             }
 
             batch.Drawn = count;

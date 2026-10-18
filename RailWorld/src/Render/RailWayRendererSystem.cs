@@ -303,7 +303,7 @@ void main()
         {
             if (parts == null || parts.Count == 0) return;
 
-            RailSectionRenderer renderer = RailRenderer(material, 0);
+            RailSectionRenderer renderer = RailRenderer(material);
             if (renderer == null) return;
 
             if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
@@ -324,23 +324,23 @@ void main()
 
             // Два шматки секції беруть текстуру з різних її частин, а сусідня секція з двох наступних: уздовж
             // колії виходить 1-2-3-4. Номери секцій, покладених одним маршрутом, ідуть підряд
+            RailSectionRenderer renderer = RailRenderer(material);
             for (int piece = 0; piece < 2; piece++)
             {
                 int variant = (section.IndexInChunk * 2 + piece) % RailSectionRenderer.Variants;
-                RailRenderer(material, variant)?.AddRailPiece(chunkCoord, section, left, piece);
+                renderer?.AddRailPiece(chunkCoord, section, left, piece, variant);
             }
         }
 
-        // Рендер рейок з цього металу, з текстурою з variant-ї її частини вздовж рейки. null, якщо предмета немає
-        private RailSectionRenderer RailRenderer(string material, int variant)
+        // Рендер рейок з цього металу. null, якщо предмета немає
+        private RailSectionRenderer RailRenderer(string material)
         {
-            string key = material + "#" + variant;
-            if (railRenderers.TryGetValue(key, out var renderer)) return renderer;
+            if (railRenderers.TryGetValue(material, out var renderer)) return renderer;
 
             ItemStack stack = CreateStack("rail", material);
             if (stack == null) return null;
-            renderer = new RailSectionRenderer(capi, stack, variant);
-            railRenderers[key] = renderer;
+            renderer = new RailSectionRenderer(capi, stack);
+            railRenderers[material] = renderer;
             return renderer;
         }
 

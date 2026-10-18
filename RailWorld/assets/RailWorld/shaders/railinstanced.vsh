@@ -1,7 +1,11 @@
 #version 330 core
-// Copy of the game's instanced.vsh (1.22.3) with one added uniform: origin.
+// Copy of the game's instanced.vsh (1.22.3) with one added uniform, origin, and texture shift for rails.
 // Instance matrices are relative to the corner of their chunk; origin is that corner relative
 // to the camera. If the game changes its instanced.vsh, compare this file against it.
+// Rails: a rail piece is a quarter block and takes the first quarter of its texture; neighbouring pieces
+// take the quarters in turn (textureVariantIn per instance, 0 to 3), so the pattern does not repeat every
+// quarter block. Each vertex says by how much one quarter shifts and along which texture axis
+// (textureStepIn). Other meshes have neither: variant reads 0 and nothing shifts.
 // Comments here are ASCII only: some drivers reject other characters in shader source.
 #extension GL_ARB_explicit_attrib_location: enable
 
@@ -12,6 +16,8 @@ layout(location = 3) in int renderFlagsIn; 	// Per vertex
 
 layout(location = 4) in vec4 rgbaLightIn;		// Per instance
 layout(location = 5) in mat4 transform;	 	// Per instance
+layout(location = 9) in float textureVariantIn;	// Per instance, rails only
+layout(location = 10) in uvec2 textureStepIn;	// Per vertex, rails only: x step size (float bits), y axis
 
 uniform vec4 rgbaFogIn;
 uniform vec3 rgbaAmbientIn;	
@@ -48,6 +54,12 @@ void main()
 	calcShadowMapCoords(modelViewMatrix, worldPos);
 	
 	uv = uvIn;
+	if (textureVariantIn > 0.5)
+	{
+		float shift = floor(textureVariantIn + 0.5) * uintBitsToFloat(textureStepIn.x);
+		if (textureStepIn.y == 0u) uv.x += shift;
+		else uv.y += shift;
+	}
 	color = applyLight(rgbaAmbientIn, rgbaLightIn * rgbaBlockIn, renderFlagsIn, cameraPos);
 	rgbaFog = rgbaFogIn;
 	
