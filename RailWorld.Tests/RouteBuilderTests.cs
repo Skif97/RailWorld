@@ -50,6 +50,20 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void MiddleMarkerOnAStraightKeepsItsHeight()
+        {
+            // Три точки по прямій на схід, середня на чотири блоки вище: маршрут має піднятися до неї
+            RouteMarker high = RouteMarker.OnBlock(new BlockPos(20, 14, 0, 0), 0);
+            List<RoutePoint> route = RouteBuilder.Build(new List<RouteMarker> { Block(0, 0), high, Block(40, 0) });
+
+            Assert.Contains(route, point => point.Position.DistanceTo(high.Position) < 1e-6);
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route);
+            double top = double.MinValue;
+            foreach (PointOnBezierCurve point in points) top = Math.Max(top, point.position.Y);
+            Assert.Equal(high.Position.Y, top, 1);
+        }
+
+        [Fact]
         public void CornerMarkerIsRoundedAndExactMarkerIsPassedThrough()
         {
             // Схід, потім поворот на південь: проміжна точка це кут

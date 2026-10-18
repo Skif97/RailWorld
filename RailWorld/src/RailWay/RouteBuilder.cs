@@ -489,8 +489,23 @@ namespace RailWorld.src.RailWay
                     continue;
                 }
 
-                // Точка на прямій: кута немає
-                if (node.Turn < 0.01) continue;
+                // Точка на прямій: кута немає, і дуги теж. Сама точка лишається: її висота це вузол кривої висоти,
+                // і без неї крива між сусідами пройшла б повз цю висоту. Напрямок уздовж прямої, ухил з кривої
+                if (node.Turn < 0.01)
+                {
+                    Vec3d next = nodes[i + 1].Position;
+                    double alongX = next.X - node.Position.X, alongZ = next.Z - node.Position.Z;
+                    if (leg[i] < 1e-6)
+                    {
+                        // Наступна точка в тому самому стовпчику: напрямок з попередньої
+                        alongX = node.Position.X - nodes[i - 1].Position.X;
+                        alongZ = node.Position.Z - nodes[i - 1].Position.Z;
+                    }
+                    Height(at[i], out double slope);
+                    result.Add(new RoutePoint { Position = node.Position, Tangent = WithSlope(alongX, alongZ, slope) });
+                    from.Add(node.Marker);
+                    continue;
+                }
                 // Розворот назад, або дуга виходить надто короткою для нарізки: точка лишається як є
                 double cut = node.Cut;
                 if (need[i] <= 0 || 2 * cut / Math.Tan(node.Turn / 2) * Math.Sin(node.Turn / 2) < RouteCurve.MinSpan)
