@@ -134,7 +134,22 @@ namespace RailWorld
         public static MeshData BuildLoft(MeshData template, List<LoftPart> parts, out RailFrame basis)
         {
             basis = null;
-            if (template == null || template.VerticesCount == 0 || parts == null) return null;
+            LoftPart first = parts?.Find(part => part != null && part.Stations.Count >= 2);
+            if (first == null) return null;
+
+            LoftStation firstStation = first.Stations[0];
+            LoftPoint origin = firstStation.Points[firstStation.Points.Length / 2];
+            basis = Basis(new RailFrame { Center = origin.Center, Side = origin.Side, Up = origin.Up, Along = firstStation.Along });
+            return BuildLoft(template, parts, basis);
+        }
+
+        /// <summary>
+        /// Те саме, але в заданих осях basis: так обидва крайні положення рухомої деталі збираються в одних
+        /// осях, і та сама вершина в них відрізняється лише зсувом.
+        /// </summary>
+        public static MeshData BuildLoft(MeshData template, List<LoftPart> parts, RailFrame basis)
+        {
+            if (template == null || template.VerticesCount == 0 || parts == null || basis == null) return null;
             parts = parts.FindAll(part => part != null && part.Stations.Count >= 2);
             if (parts.Count == 0) return null;
 
@@ -148,10 +163,6 @@ namespace RailWorld
             // Трохи всередину, щоб на краю не підтягувалися пікселі сусідньої текстури атласу
             float du = (u1 - u0) * 0.01f, dv = (v1 - v0) * 0.01f;
             u0 += du; u1 -= du; v0 += dv; v1 -= dv;
-
-            LoftStation firstStation = parts[0].Stations[0];
-            LoftPoint origin = firstStation.Points[firstStation.Points.Length / 2];
-            basis = Basis(new RailFrame { Center = origin.Center, Side = origin.Side, Up = origin.Up, Along = firstStation.Along });
 
             // Той самий набір даних на вершину, що й у меша рейки
             MeshData mesh = template.Clone();
@@ -374,6 +385,11 @@ namespace RailWorld
             public Vec3d Origin;
             // Світло одним числом: за ним видно, чи воно змінилося
             public int LightKey;
+            // Рухома деталь (гостряк): координати вершин у двох крайніх положеннях і меш, яким у відеокарту
+            // дописуються лише координати між ними. null у нерухомої
+            public float[] From, To;
+            public MeshData Moved;
+            public double Open = double.NaN;
         }
 
         private ICoreClientAPI capi;
@@ -431,6 +447,50 @@ namespace RailWorld
             mesh.CustomFloats = floats;
             blade.MeshRef = capi.Render.UploadMesh(mesh);
             blades[key] = blade;
+        }
+
+        /// <summary>
+        /// Ставить рухому деталь: closed і thrown це її меш у двох крайніх положеннях, зібраний в тих самих осях
+        /// first (BladeMesh.BuildLoft), і open, де вона зараз між ними, від 0 до 1. Далі її переставляє Move.
+        /// false, якщо вершини двох положень не відповідають одна одній: тоді нічого не ставиться.
+        /// </summary>
+        public bool SetMoving(Vec3i chunkCoord, BladeKey key, long hash, MeshData closed, MeshData thrown, RailFrame first, int textureId, double open)
+        {
+            if (closed == null || thrown == null || thrown.VerticesCount != closed.VerticesCount) return false;
+
+            int count = closed.XyzCount;
+            var from = new float[count];
+            var to = new float[count];
+            Array.Copy(closed.xyz, from, count);
+            Array.Copy(thrown.xyz, to, count);
+
+            // Координати в цьому меші переписуються під час руху
+            closed.XyzStatic = false;
+            Set(chunkCoord, key, hash, closed, first, textureId);
+            if (!blades.TryGetValue(key, out Blade blade)) return false;
+
+            blade.From = from;
+            blade.To = to;
+            blade.Moved = new MeshData(false) { xyz = new float[count], VerticesCount = closed.VerticesCount };
+            Move(key, open);
+            return true;
+        }
+
+        /// <summary>
+        /// Переставляє рухому деталь у положення open між двома крайніми: кожна вершина на тій самій частці шляху
+        /// між ними. Нових мешів не створює, дописує координати в той самий. false, якщо такої рухомої деталі немає.
+        /// </summary>
+        public bool Move(BladeKey key, double open)
+        {
+            if (!blades.TryGetValue(key, out Blade blade) || blade.From == null || blade.MeshRef == null) return false;
+            if (open == blade.Open) return true;
+            blade.Open = open;
+
+            float t = (float)open;
+            float[] from = blade.From, to = blade.To, xyz = blade.Moved.xyz;
+            for (int i = 0; i < xyz.Length; i++) xyz[i] = from[i] + (to[i] - from[i]) * t;
+            capi.Render.UpdateMesh(blade.MeshRef, blade.Moved);
+            return true;
         }
 
         // Кладе світло блока, де стоїть деталь, у дані інстанса: rgb це світло від джерел, a сонячне

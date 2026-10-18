@@ -128,21 +128,50 @@ namespace RailWorld
         /// </summary>
         public void MoveBlade(Section section)
         {
-            if (blades.TryGetValue(SectionKey.Of(section), out BladeSetup setup)) PlaceBlade(setup);
+            if (!blades.TryGetValue(SectionKey.Of(section), out BladeSetup setup)) return;
+            double open = Open(setup);
+            if (open < 0) return;
+
+            // Обидва крайні положення вже в рендері: переставити гостряк це змішати їх. Якщо їх там немає
+            // (меші двох положень не збіглися), гостряк збирається заново, як раніше
+            if (!renderer.MoveLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", open)) PlaceBlade(setup);
         }
 
-        // Гостряк гілки і, у першої гілки, тяга, у положенні, де стрілка зараз
-        private void PlaceBlade(BladeSetup setup)
+        // Наскільки гостряк гілки відведений від рамної рейки зараз: 0 притиснутий, 1 відведений на повний хід.
+        // Під час переведення стрілки він між цими положеннями. -1, якщо стрілки в даних уже немає
+        private double Open(BladeSetup setup)
         {
-            // Наскільки гостряк відведений від рамної рейки: 0 притиснутий, 1 відведений на повний хід.
-            // Під час переведення стрілки він між цими положеннями
             DataInChunk switchData = DataInChunk.GetClient(setup.SwitchChunk);
-            if (switchData == null || !switchData.RailWaySections.TryGetValue(setup.TrunkIndex, out Section trunk)) return;
+            if (switchData == null || !switchData.RailWaySections.TryGetValue(setup.TrunkIndex, out Section trunk)) return -1;
             bool active = trunk.GetSwitchPosition(setup.AtStart) == setup.Branch;
             double moved = animator.Progress(setup.SwitchChunk, setup.TrunkIndex, setup.AtStart);
-            double open = active ? 1 - moved : moved;
+            return active ? 1 - moved : moved;
+        }
+
+        // Гостряк гілки і, у першої гілки, тяга, у положенні, де стрілка зараз.
+        // Гостряк і тяга рухаються, лише зсуваючись убік на open × хід (BladeThrow), і перерізів у них стільки ж
+        // за будь-якого open: кожна вершина лежить на прямій між притиснутим і відведеним положенням. Тому рендер
+        // отримує обидва крайні положення і під час переведення лише змішує їх (MoveBlade), а не збирає меш заново.
+        // Так гра рухає й свої деталі: меш один, змінюються лише дані (MechBlockRenderer)
+        private void PlaceBlade(BladeSetup setup)
+        {
+            double open = Open(setup);
+            if (open < 0) return;
+
+            List<LoftPart> closed = BladeParts(setup, 0), thrown = BladeParts(setup, 1);
+            if (closed == null) return;
+            if (renderer.SetMovingLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, closed, thrown, open)) return;
+
+            // Два положення не дали відповідних мешів: деталь збирається в теперішньому, і кожен крок руху заново
+            renderer.SetLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, BladeParts(setup, open));
+        }
+
+        // Частини гостряка гілки і її тяги, коли гостряк відведений на open; null, якщо гостряка немає
+        private List<LoftPart> BladeParts(BladeSetup setup, double open)
+        {
             BranchGeometry own = setup.Own;
             Section section = setup.Section;
+            List<LoftPart> parts = null;
 
             // ── Гостряк ──
             int bladePoints = Math.Min(setup.BladeSections * 2 + 1, own.Frames.Count);
@@ -196,7 +225,7 @@ namespace RailWorld
                 if (blade.Stations.Count >= 2)
                 {
                     blade.EndCaps.AddRange(ends);
-                    var parts = new List<LoftPart> { blade };
+                    parts = new List<LoftPart> { blade };
 
                     // Тяга між двома гостряками: планка, що тримає їх на сталій відстані, тому вони й рухаються
                     // разом. Одна на стрілку, її ставить перша гілка. Лежить між шпалами, біля вістря
@@ -209,9 +238,9 @@ namespace RailWorld
                         }
                     }
 
-                    renderer.SetLoft(setup.Chunk, section.IndexInChunk, setup.Left, "", setup.Material, parts);
                 }
             }
+            return parts;
         }
 
         // На скільки кінці контррейки відігнуті від ходової рейки, блоків

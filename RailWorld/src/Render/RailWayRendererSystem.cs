@@ -325,6 +325,39 @@ void main()
             bladeRenderer.Set(chunkCoord, key, hash, mesh, basis, renderer.TextureId);
         }
 
+        /// <summary>
+        /// Ставить рухому деталь стрілки, гостряк, у двох крайніх положеннях closed і thrown і переставляє її в
+        /// положення open між ними. Поки колія та сама, меші не перезбираються: рух лише змішує положення
+        /// (MoveLoft). false, якщо два положення не дали відповідних мешів: тоді деталь треба поставити через SetLoft.
+        /// </summary>
+        internal bool SetMovingLoft(Vec3i chunkCoord, int index, bool left, string tag, string material, List<LoftPart> closed, List<LoftPart> thrown, double open)
+        {
+            if (closed == null || closed.Count == 0 || thrown == null || thrown.Count == 0) return false;
+
+            RailSectionRenderer renderer = RailRenderer(material);
+            if (renderer == null) return true;
+
+            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
+            var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
+
+            // Відбиток обох крайніх положень, а не теперішнього: рух його не міняє
+            long hash = BladeMesh.Mix(BladeMesh.HashStart, material);
+            foreach (LoftPart part in closed) hash = BladeMesh.Mix(hash, part);
+            foreach (LoftPart part in thrown) hash = BladeMesh.Mix(hash, part);
+            if (bladeRenderer.Keep(key, hash) && bladeRenderer.Move(key, open)) return true;
+
+            MeshData from = BladeMesh.BuildLoft(renderer.TemplateMesh, closed, out RailFrame basis);
+            if (from == null) return true;
+            MeshData to = BladeMesh.BuildLoft(renderer.TemplateMesh, thrown, basis);
+            return bladeRenderer.SetMoving(chunkCoord, key, hash, from, to, basis, renderer.TextureId, open);
+        }
+
+        /// <summary>Переставляє рухому деталь, поставлену SetMovingLoft, у положення open. false, якщо її немає.</summary>
+        internal bool MoveLoft(Vec3i chunkCoord, int index, bool left, string tag, double open)
+        {
+            return bladeRenderer != null && bladeRenderer.Move(new BladeKey(new SectionKey(chunkCoord, index), left, tag), open);
+        }
+
         private void AddRail(Vec3i chunkCoord, Section section, bool left)
         {
             string material = section.GetMaterial(left ? SectionPart.FirstRail : SectionPart.SecondRail) ?? "iron";
