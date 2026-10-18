@@ -178,9 +178,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static bool Cross(Section a, Section b)
         {
-            // Прокладання лишає лише два випадки: колії в одній площині або щонайменше за CrossingClearance
-            // одна над одною. Межа посередині між ними відрізняє їх із запасом
-            if (Math.Abs(a.GetGlobalPos().Y - b.GetGlobalPos().Y) >= RouteCurve.CrossingClearance / 2) return false;
+            if (!TrackLevel.Same(a, b)) return false;
             return AxisCrossing.OfLaid(a, b);
         }
 

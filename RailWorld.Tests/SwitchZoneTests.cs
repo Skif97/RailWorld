@@ -196,7 +196,8 @@ namespace RailWorld.Tests
 
         [Theory]
         [InlineData(1.0, true)]    // блок над колією: шпали однієї в рейках другої
-        [InlineData(2.5, true)]    // трохи менше за просвіт
+        [InlineData(2.0, true)]    // два блоки: менше за просвіт
+        [InlineData(3.0, false)]   // міст на три блоки, найнижчий на рівній землі
         [InlineData(3.5, false)]   // міст
         [InlineData(0.0, false)]   // у тій самій площині: це вже не «над», а поруч
         public void TrackCloselyAboveAnotherIsRefused(double height, bool refused)

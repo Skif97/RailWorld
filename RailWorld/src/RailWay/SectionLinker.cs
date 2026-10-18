@@ -680,7 +680,7 @@ namespace RailWorld.src.RailWay
                 {
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
                     if (own.Contains(Key(other))) continue;
-                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+                    if (!TrackLevel.Same(step.Section, other)) continue;
                     if (!AxisCrossing.OfLaid(step.Section, other)) continue;
 
                     if (step.InBody) return true;
@@ -698,7 +698,7 @@ namespace RailWorld.src.RailWay
                 foreach (Section other in track.Around(middle, TrackSurvey.Reach, RouteCurve.CrossingClearance))
                 {
                     if (own.Contains(Key(other))) continue;
-                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= RouteCurve.CrossingClearance) continue;
+                    if (!TrackLevel.Same(step.Section, other)) continue;
                     if (Footprint.Overlap(step.Section, other)) return true;
                 }
             }

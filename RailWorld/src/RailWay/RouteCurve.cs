@@ -188,7 +188,7 @@ namespace RailWorld.src.RailWay
             List<int> close = SectionLinker.FindTooCloseAbove(facts);
             if (close.Count > 0)
             {
-                conflict = conflict ?? "колія проходить надто близько над чи під іншою: потрібно " + CrossingClearance.ToString("0") + " блоки просвіту";
+                conflict = conflict ?? "колія проходить надто близько над чи під іншою: просвіт менший за " + CrossingClearance.ToString("0.#") + " блока";
                 if (conflictAt != null)
                 {
                     // Підсвічується кожна така секція: її три точки нарізки
@@ -227,11 +227,14 @@ namespace RailWorld.src.RailWay
         private const double SamePlace = 0.01;
 
         /// <summary>
-        /// Якщо колія, яку маршрут перетинає в плані, вища чи нижча за нього менше ніж на стільки блоків,
-        /// це перетин в одному рівні, і маршрут вирівнюється по ній. Якщо більше, маршрут проходить над нею
-        /// або під нею, і вони одна одної не стосуються.
+        /// Найменший просвіт між двома коліями, що проходять одна над одною, блоків. Якщо колія, яку маршрут
+        /// перетинає в плані, вища чи нижча за нього менше ніж на стільки блоків, це перетин в одному рівні,
+        /// і маршрут вирівнюється по ній. Якщо більше, маршрут проходить над нею або під нею, і вони одна
+        /// одної не стосуються. Колії на рівній землі стоять на висотах, кратних блоку, тож зазор між ними
+        /// цілий; межа посередині між двома і трьома блоками не збігається з жодним із них, і похибка
+        /// обчислень на косому перетині не перекидає відповідь. Тобто під мостом потрібно три блоки.
         /// </summary>
-        public const double CrossingClearance = 3;
+        public const double CrossingClearance = 2.5;
 
         // Скільки блоків за краєм перетину маршрут іще йде площиною чужої колії
         private const double CrossingMargin = 0.5;
@@ -419,7 +422,7 @@ namespace RailWorld.src.RailWay
                 {
                     // Сама перетнута колія, і гілка стрілки одразу за її стиком: про стрілку окреме правило
                     if (own.Contains(other) || Footprint.Joined(member, other)) continue;
-                    if (Math.Abs(other.GetGlobalPos().Y - middle.Y) >= CrossingClearance) continue;
+                    if (!TrackLevel.Same(member, other)) continue;
                     if (Footprint.Overlap(member, other)) return true;
                 }
             }
@@ -491,7 +494,10 @@ namespace RailWorld.src.RailWay
 
                     Vec3d where = new Vec3d(a.X + rx * t, a.Y + (b.Y - a.Y) * t, a.Z + rz * t);
                     if (!CrossPlane(section, where, rx, rz, out double planeY, out _)) continue;
-                    // Проїзд над колією або під нею
+                    // Проїзд над колією або під нею. Тут питання не те, що в TrackLevel: висоти маршруту ще
+                    // не остаточні, і маршрут, що проходить ближче за просвіт, опускається в площину колії й
+                    // перетинає її в одному рівні. Далі вже покладена колія і нова лежать або в одній площині,
+                    // або на просвіт одна над одною
                     if (Math.Abs(planeY - where.Y) >= CrossingClearance) continue;
 
                     double cos = Math.Abs(rx * sx + rz * sz) / Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
@@ -501,7 +507,7 @@ namespace RailWorld.src.RailWay
                     {
                         // Колія, від якої маршрут відходить: він лежить у її площині і розходиться з нею
                         // під малим кутом. Усе інше тут це чужа колія під стрілкою або над нею
-                        if (Math.Abs(planeY - where.Y) < 0.1 && angle < minAngle) continue;
+                        if (Math.Abs(planeY - where.Y) <= TrackSurvey.SamePlane && angle < minAngle) continue;
                         conflict = conflict ?? "стрілка маршруту лягає на перетин з іншою колією";
                         Mark(k);
                         continue;

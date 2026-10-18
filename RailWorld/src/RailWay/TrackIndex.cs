@@ -22,9 +22,10 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Секції, середина яких не далі ніж за reach блоків від точки в плані по кожній з двох осей і не далі
-        /// ніж за vertical блоків по висоті. Як далеко дивитися, знає лише той, хто питає: правило, якому
-        /// треба далі, просить далі.
+        /// Секції, середина яких не далі ніж за reach блоків від точки в плані по кожній з двох осей.
+        /// По висоті беруться всі з клітинок, яких сягає vertical: точну висоту відбирає той, хто питає, бо
+        /// порівнює він не середини секцій, а висоти в потрібній йому точці, і на схилі середина може бути
+        /// вище чи нижче за неї. Як далеко дивитися, знає лише той, хто питає: правило, якому треба далі, просить далі.
         /// </summary>
         public List<Section> Around(Vec3d p, double reach, double vertical)
         {
@@ -54,7 +55,7 @@ namespace RailWorld.src.RailWay
             foreach (Section section in candidates)
             {
                 Vec3d middle = section.GetGlobalPos();
-                if (Math.Abs(middle.X - p.X) <= reach && Math.Abs(middle.Z - p.Z) <= reach && Math.Abs(middle.Y - p.Y) <= vertical) found.Add(section);
+                if (Math.Abs(middle.X - p.X) <= reach && Math.Abs(middle.Z - p.Z) <= reach) found.Add(section);
             }
             return found;
         }

@@ -162,7 +162,7 @@ namespace RailWorld.src.RailWay
                     if (other.HasSwitch(atStart)) facts.CoversLever = CoversLever(section, other, atStart, other.GetLeverSide(atStart));
                 }
 
-                bool near = Math.Abs(other.GetGlobalPos().Y - middle.Y) < RouteCurve.CrossingClearance;
+                bool near = TrackLevel.Same(section, other);
                 if (near && !facts.Crossed) facts.Crossed = AxisCrossing.OfPlanned(section, other);
 
                 if (!Footprint.Overlap(section, other, out double x, out double z)) continue;

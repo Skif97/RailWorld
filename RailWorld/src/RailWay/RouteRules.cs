@@ -38,8 +38,9 @@ namespace RailWorld.src.RailWay
         public const double MinRadius = TrackGauge.StandardWidth * 4.5;
         // Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення
         public const double RadiusTolerance = TrackGauge.StandardWidth * 0.3;
-        // Скільки блоків по висоті має бути між двома витками маршруту, що проходять один над одним
-        public const double Clearance = 3;
+        // Скільки блоків по висоті має бути між двома витками маршруту, що проходять один над одним:
+        // той самий просвіт, що й між маршрутом і покладеною колією
+        public const double Clearance = RouteCurve.CrossingClearance;
         // Точки маршруту, ближчі одна до одної за це вздовж колії, на перетин не перевіряються: це сусіди
         private const double NeighbourRun = 6;
         // На скількох точках нарізки в кожен бік міряється радіус (точка це чверть блока)
