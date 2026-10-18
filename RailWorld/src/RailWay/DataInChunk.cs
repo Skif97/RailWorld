@@ -55,10 +55,6 @@ namespace RailWorld.src.RailWay
         [ProtoAfterDeserialization]
         private void OnDeserialized()
         {
-            if (sections == null) sections = new Dictionary<int, Section>();
-            // У збереженнях, зроблених до появи списку стрілок, його немає
-            if (Switches == null) Switches = new Dictionary<int, RailSwitch>();
-            if (Crossings == null) Crossings = new Dictionary<int, RailCrossing>();
             Grid = new ChunkTrackGrid();
             foreach (var kvp in sections)
             {

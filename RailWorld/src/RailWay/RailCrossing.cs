@@ -124,7 +124,7 @@ namespace RailWorld.src.RailWay
         public bool Resolved;
 
         /// <summary>
-        /// Якою версією розрахунку пораховано запис. У записах, зроблених до появи цього поля, тут 0.
+        /// Якою версією розрахунку пораховано запис.
         /// </summary>
         [ProtoMember(5)]
         public int Formula;

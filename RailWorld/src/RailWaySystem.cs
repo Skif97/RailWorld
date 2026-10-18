@@ -186,7 +186,8 @@ namespace RailWorld
                 .WithArgs(api.ChatCommands.Parsers.OptionalInt("radius", 2))
                 .HandleWith(OnRailRecheckCommand);
 
-            // Записи про стрілки для світів, збережених до їх появи, і для стрілок, порахованих неповністю
+            // Записи стрілок і перетинів, пораховані неповністю, іншою версією розрахунку або з посиланням на
+            // секцію, якої вже немає
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
 
             serverChannel = api.Network
@@ -566,7 +567,7 @@ namespace RailWorld
             if (data == null || !data.RailWaySections.TryGetValue(index, out Section section))
                 return "Section " + index + " not found in chunk " + chunk;
 
-            // Заразом доз'єднує колію, прокладену до появи зв'язків
+            // Заразом доз'єднує кінці, сусідній чанк яких не був завантажений, коли колію клали
             string start = DescribeEnd(session, section, true);
             string end = DescribeEnd(session, section, false);
             string switches = DescribeSwitches(session, data, section);

@@ -38,48 +38,46 @@ namespace RailWorld.src.RailWay
         [ProtoMember(8)]
         private Vec3f _centerNormal; //нормализированный вектор
 
-        // Номер 9 був у поля, якого вже немає; старі збереження його ще містять, іншим полям його не давати
-
-        [ProtoMember(10)]
+        [ProtoMember(9)]
         private Vec3d _endPosition;
-        [ProtoMember(11)]
+        [ProtoMember(10)]
         private Vec3f _endTangent; //нормализированный вектор
-        [ProtoMember(12)]
+        [ProtoMember(11)]
         private Vec3f _endNormal; //нормализированный вектор
 
-        [ProtoMember(17)]
+        [ProtoMember(12)]
         private bool _firstRailInstalled;
-        [ProtoMember(18)]
+        [ProtoMember(13)]
         private bool _secondRailInstalled;
-        [ProtoMember(19)]
+        [ProtoMember(14)]
         private bool _sleeperInstalled;
 
-        [ProtoMember(23)]
+        [ProtoMember(15)]
         private string _sleeperMaterial;
-        [ProtoMember(24)]
+        [ProtoMember(16)]
         private string _railMaterial; // матеріал першої рейки
-        [ProtoMember(25)]
+        [ProtoMember(17)]
         private string _secondRailMaterial;
-        [ProtoMember(26)]
+        [ProtoMember(18)]
         private string _sleeperType;
-        [ProtoMember(27)]
+        [ProtoMember(19)]
         private string _firstRailType;
-        [ProtoMember(28)]
+        [ProtoMember(20)]
         private string _secondRailType;
 
         // Сусіди на кожному кінці. Зазвичай по одному; кілька буде на стрілках
-        [ProtoMember(29)]
+        [ProtoMember(21)]
         private List<SectionLink> _startLinks;
-        [ProtoMember(30)]
+        [ProtoMember(22)]
         private List<SectionLink> _endLinks;
         // Який зі зв'язків кінця зараз активний, якщо їх кілька
-        [ProtoMember(31)]
+        [ProtoMember(23)]
         private int _activeStartLink;
-        [ProtoMember(32)]
+        [ProtoMember(24)]
         private int _activeEndLink;
 
         // Довжина шпали впоперек колії. Разом із шириною колії задає тип колії: звичайна, вузька шахтна тощо
-        [ProtoMember(36)]
+        [ProtoMember(25)]
         private float _sleeperLength;
 
         /// <summary>
@@ -87,14 +85,13 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public float SleeperLength
         {
-            // У секцій, збережених до появи цього поля, шпала була завдовжки з блок
-            get { return _sleeperLength > 0 ? _sleeperLength : TrackGauge.LegacySleeperLength; }
+            get { return _sleeperLength; }
         }
 
         // Підсипка: гравій під колією. Матеріал це порода гравію
-        [ProtoMember(34)]
+        [ProtoMember(26)]
         private bool _ballastInstalled;
-        [ProtoMember(35)]
+        [ProtoMember(27)]
         private string _ballastMaterial;
 
         public bool BallastInstalled
@@ -108,7 +105,7 @@ namespace RailWorld.src.RailWay
         }
 
         // Під секцією стоїть чужий блок: деталі ставити не можна, доки його не приберуть
-        [ProtoMember(33)]
+        [ProtoMember(28)]
         private bool _blocked;
 
         public bool Blocked
@@ -126,13 +123,6 @@ namespace RailWorld.src.RailWay
 
         public Section() { }// для серриализатора
 
-        // У секцій, збережених до появи окремого матеріалу другої рейки, обидві рейки були з одного.
-        // Закріплюємо його одразу після читання, щоб заміна першої рейки не міняла другу
-        [ProtoAfterDeserialization]
-        private void OnDeserialized()
-        {
-            if (_secondRailMaterial == null) _secondRailMaterial = _railMaterial;
-        }
 
         /// <summary>
         /// Использовать если начальная, центральная и конечная точки находятся в глобальных координатах.
@@ -395,27 +385,27 @@ namespace RailWorld.src.RailWay
 
         // З якого боку колії стоїть важіль стрілки на цьому кінці: 1 з боку нормалі, -1 з протилежного,
         // 0 якщо ще не визначено. Визначається один раз, коли з кінця секції починає виходити друга колія
-        [ProtoMember(39)]
+        [ProtoMember(29)]
         private int _startLeverSide;
-        [ProtoMember(40)]
+        [ProtoMember(30)]
         private int _endLeverSide;
 
         // Бік важеля на цьому кінці вибрав гравець: сервер його більше не перевибирає
-        [ProtoMember(43)]
+        [ProtoMember(31)]
         private bool _startLeverManual;
-        [ProtoMember(44)]
+        [ProtoMember(32)]
         private bool _endLeverManual;
 
         // До якої стрілки секція належить як частина гілки. Кінець тут це той, яким секція ближча до стрілки:
         // секція може лежати на гілках двох стрілок одразу, по одній з кожного боку. null, якщо не належить
-        [ProtoMember(41)]
+        [ProtoMember(33)]
         private SwitchRef _startSwitchRef;
-        [ProtoMember(42)]
+        [ProtoMember(34)]
         private SwitchRef _endSwitchRef;
 
         // Чи на цій секції стикуються дві рейки: тоді на ній стоять стикові накладки. Вирішується раз,
         // коли колію кладуть: див. RailJoints
-        [ProtoMember(46)]
+        [ProtoMember(35)]
         private bool _railJoint;
 
         /// <summary>Чи на цій секції стик рейок, стягнутий накладками.</summary>
@@ -426,7 +416,7 @@ namespace RailWorld.src.RailWay
         }
 
         // У вузлі якого перетину колій секція лежить. null, якщо ні в якому
-        [ProtoMember(45)]
+        [ProtoMember(36)]
         private CrossingRef _crossingRef;
 
         /// <summary>Перетин, у вузлі якого лежить секція, або null.</summary>

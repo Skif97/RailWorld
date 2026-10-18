@@ -15,9 +15,6 @@ namespace RailWorld.src.RailWay
 
         /// <summary>Довжина шпали. Трохи більша за блок, тому колія займає смугу в три блоки завширшки.</summary>
         public const float StandardSleeperLength = 1.75f;
-
-        /// <summary>Довжина шпали в колії, прокладеній до появи типів.</summary>
-        public const float LegacySleeperLength = 1f;
     }
 
     /// <summary>

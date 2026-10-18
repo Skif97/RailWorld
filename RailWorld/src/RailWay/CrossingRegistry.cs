@@ -66,7 +66,8 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Дописує перетини чанка, яких у записах ще немає (світ збережено до їх появи), і перераховує пораховані
+        /// Дописує перетини чанка, яких у записах ще немає (чанк запису не був завантажений, коли колію клали),
+        /// і перераховує пораховані
         /// неповністю (чанк однієї з колій тоді не був завантажений), іншою версією розрахунку або з посиланням
         /// на секцію, якої вже немає.
         /// </summary>
@@ -110,8 +111,8 @@ namespace RailWorld.src.RailWay
                     // на одному прокладання не дозволяє
                     if (other.GetCrossingRef() != null || !CrossingBuilder.Cross(section, other)) continue;
 
-                    // Основна колія та, що лежала раніше. Якщо обидві покладено до появи записів про перетини,
-                    // вибір лише має бути тим самим, з якого боку на перетин не глянь
+                    // Основна колія та, що лежала раніше. Якщо жодну не поклали щойно (перетин знайшовся, коли
+                    // завантажився чанк), вибір лише має бути тим самим, з якого боку на перетин не глянь
                     bool sectionIsMain = session.WasLaid(section) == session.WasLaid(other) ? Before(section, other) : session.WasLaid(other);
                     Section main = sectionIsMain ? section : other, crossing = sectionIsMain ? other : section;
                     Update(session, main.ChunkAddres, main.IndexInChunk, crossing);

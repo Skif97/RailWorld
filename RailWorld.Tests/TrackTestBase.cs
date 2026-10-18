@@ -32,6 +32,13 @@ namespace RailWorld.Tests
             if (chunks.TryGetValue(section.ChunkAddres, out DataInChunk data)) data.Remove(section.IndexInChunk);
         }
 
+        /// <summary>Дані колії чанка, як їх тримає гра, або null, якщо в чанку нічого не покладено.</summary>
+        protected DataInChunk DataIn(Vec3i chunk)
+        {
+            chunks.TryGetValue(chunk, out DataInChunk data);
+            return data;
+        }
+
         // Записує секцію в дані її чанка, як прокладання в грі: там вона отримує свій номер
         private void Store(Section section)
         {
