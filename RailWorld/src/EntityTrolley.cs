@@ -236,6 +236,10 @@ namespace RailWorld
         private System.Func<SectionLink, Section> findClientSection;
         private EntityBehaviorInterpolatePosition interpolation;
         private readonly TrackChain chain = new TrackChain();
+        // Від якої секції і з якою колією клієнта ланцюжок збудовано: доки ні те, ні інше не змінилося, він
+        // той самий, і щокадру не перебудовується
+        private int chainChunkX, chainChunkY, chainChunkZ, chainSection, chainRevision = -1;
+        private bool chainBuilt;
 
         // Ставить вагонетку на колію між двома положеннями, між якими її зараз веде гра: туди, куди та поставила б
         // її навпростець, тільки колією. Секцію, від якої шукати, каже сервер (SyncTrackPlace); положення й
@@ -255,27 +259,43 @@ namespace RailWorld
             if (interpolation == null) interpolation = GetBehavior<EntityBehaviorInterpolatePosition>();
             if (interpolation == null) return false;
 
-            var chunk = new Vec3i(WatchedAttributes.GetInt(TrackChunkX), WatchedAttributes.GetInt(TrackChunkY), WatchedAttributes.GetInt(TrackChunkZ));
-            DataInChunk data = DataInChunk.GetClient(chunk);
-            Section section = null;
-            if (data == null || !data.RailWaySections.TryGetValue(WatchedAttributes.GetInt(TrackSection), out section)) return false;
-
-            chain.Build(section, ChainReach, findClientSection);
+            if (!UpdateChain()) return false;
 
             double halfHeight = SelectionBox.Y2 / 2;
             PositionSnapshot from = interpolation.pL, to = interpolation.pN;
-            if (!chain.Locate(new Vec3d(from.x, from.y, from.z), halfHeight, OnTrackDistance, out double atFrom)) return false;
-            if (!chain.Locate(new Vec3d(to.x, to.y, to.z), halfHeight, OnTrackDistance, out double atTo)) return false;
+            if (!chain.Locate(from.x, from.y, from.z, halfHeight, OnTrackDistance, out double atFrom)) return false;
+            if (!chain.Locate(to.x, to.y, to.z, halfHeight, OnTrackDistance, out double atTo)) return false;
 
             // Яку частку шляху між ними гра вже пройшла: так само, як рахує вона сама. Поки нового положення
             // немає (wait), вона стоїть у останньому
             float done = interpolation.wait != 0 || to.interval <= 0 ? 1 : GameMath.Clamp(interpolation.dtAccum / to.interval, 0, 1);
-            if (!chain.At(atFrom + (atTo - atFrom) * done, out Section here, out double s, out bool reversed)) return false;
+            if (!chain.At(atFrom + (atTo - atFrom) * done, out Section here, out SectionChord chord, out double s, out bool reversed)) return false;
 
             // Перед дивиться в бік кінця своєї секції або початку; на секції, якою ланцюжок іде назустріч, навпаки
             int facing = WatchedAttributes.GetInt(TrackFacing, 1) < 0 ? -1 : 1;
-            RailPose.PlaceSmooth(Pos, here, s, halfHeight, reversed ? -facing : facing, out cant);
+            RailPose.PlaceSmooth(Pos, here, chord, s, halfHeight, reversed ? -facing : facing, out cant);
             return true;
+        }
+
+        // Ланцюжок колії від секції, яку назвав сервер. Будується заново, лише коли сервер назвав іншу секцію
+        // або колія в клієнта змінилася (ClientRevision): прокладено, розібрано, переведено стрілку.
+        // false, якщо цієї секції клієнт не знає
+        private bool UpdateChain()
+        {
+            int chunkX = WatchedAttributes.GetInt(TrackChunkX), chunkY = WatchedAttributes.GetInt(TrackChunkY), chunkZ = WatchedAttributes.GetInt(TrackChunkZ);
+            int index = WatchedAttributes.GetInt(TrackSection);
+            int revision = railSystem.ClientRevision;
+            if (chainBuilt && revision == chainRevision && index == chainSection && chunkX == chainChunkX && chunkY == chainChunkY && chunkZ == chainChunkZ) return true;
+
+            chainChunkX = chunkX; chainChunkY = chunkY; chainChunkZ = chunkZ;
+            chainSection = index;
+            chainRevision = revision;
+
+            DataInChunk data = DataInChunk.GetClient(new Vec3i(chunkX, chunkY, chunkZ));
+            Section section = null;
+            chainBuilt = data != null && data.RailWaySections.TryGetValue(index, out section);
+            if (chainBuilt) chain.Build(section, ChainReach, findClientSection);
+            return chainBuilt;
         }
 
         // ── Рух на екрані: колеса, гойдання кузова, поштовхи, скрегіт ──

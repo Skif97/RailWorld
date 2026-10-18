@@ -18,11 +18,12 @@ namespace RailWorld.src.RailWay
         private struct Piece
         {
             public Section Section;
+            public SectionChord Chord;
             // Ланцюжок іде по секції від її кінця до початку
             public bool Reversed;
             // Координата ланцюжка там, де він заходить у секцію
             public double From;
-            public double Length;
+            public double Length => Chord.Length;
         }
 
         // По порядку вздовж ланцюжка
@@ -43,7 +44,7 @@ namespace RailWorld.src.RailWay
             taken.Clear();
             if (middle == null) return;
 
-            var center = new Piece { Section = middle, Reversed = false, From = 0, Length = RailPose.Length(middle) };
+            var center = new Piece { Section = middle, Chord = new SectionChord(middle), Reversed = false, From = 0 };
             pieces.Add(center);
             taken.Add(middle);
 
@@ -78,22 +79,22 @@ namespace RailWorld.src.RailWay
 
             // Ідучи вперед, у сусіда заходимо через його початок: тоді по ньому ланцюжок іде від початку до кінця.
             // Ідучи назад, навпаки
-            next = new Piece { Section = section, Reversed = forward != link.AtStart, Length = RailPose.Length(section) };
+            next = new Piece { Section = section, Chord = new SectionChord(section), Reversed = forward != link.AtStart };
             return true;
         }
 
         /// <summary>
-        /// Координата ланцюжка, де стоїть вагонетка з місцем position (див. RailPose.Distance). false, якщо всі
+        /// Координата ланцюжка, де стоїть вагонетка з місцем (x, y, z) (див. RailPose.Distance). false, якщо всі
         /// секції ланцюжка далі за maxDistance від нього.
         /// </summary>
-        public bool Locate(Vec3d position, double halfHeight, double maxDistance, out double at)
+        public bool Locate(double x, double y, double z, double halfHeight, double maxDistance, out double at)
         {
             at = 0;
             double best = maxDistance;
             bool found = false;
             foreach (Piece piece in pieces)
             {
-                double distance = RailPose.Distance(piece.Section, position, halfHeight, out double s);
+                double distance = RailPose.Distance(piece.Chord, x, y, z, halfHeight, out double s);
                 if (distance > best) continue;
 
                 best = distance;
@@ -104,12 +105,13 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Секція і відстань s від її початку за координатою ланцюжка; за краями ланцюжка це його край.
+        /// Секція, її хорда і відстань s від її початку за координатою ланцюжка; за краями ланцюжка це його край.
         /// reversed каже, що ланцюжок іде по цій секції від кінця до початку. false, якщо ланцюжок порожній.
         /// </summary>
-        public bool At(double at, out Section section, out double s, out bool reversed)
+        public bool At(double at, out Section section, out SectionChord chord, out double s, out bool reversed)
         {
             section = null;
+            chord = default;
             s = 0;
             reversed = false;
             if (pieces.Count == 0) return false;
@@ -124,6 +126,7 @@ namespace RailWorld.src.RailWay
 
             double into = GameMath.Clamp(at - piece.From, 0, piece.Length);
             section = piece.Section;
+            chord = piece.Chord;
             s = piece.Reversed ? piece.Length - into : into;
             reversed = piece.Reversed;
             return true;

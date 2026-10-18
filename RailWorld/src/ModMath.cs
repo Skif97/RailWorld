@@ -140,19 +140,27 @@ namespace RailWorld
         /// </summary>
         public static void TrackFrameToEntityAngles(Vec3d along, Vec3d side, Vec3d up, out float yaw, out float tilt, out float cant)
         {
+            TrackFrameToEntityAngles(along.X, along.Y, along.Z, up.X, up.Y, up.Z, out yaw, out tilt, out cant);
+        }
+
+        /// <summary>
+        /// Те саме з рамки, заданої числами: уздовж (a) і вгору (u). Бік для кутів не потрібен, його задають ці два.
+        /// </summary>
+        public static void TrackFrameToEntityAngles(double ax, double ay, double az, double ux, double uy, double uz, out float yaw, out float tilt, out float cant)
+        {
             // Перед моделі це її вісь +X, як заведено в грі: рендер повертає модель на курс плюс чверть оберту,
             // і саме тоді +X моделі збігається з тим, куди дивиться сутність (EntityPos.GetViewVector).
             // Підйом цієї осі над горизонтом це ухил, а її напрямок у плані це курс
-            double turn = Math.Atan2(-along.Z, along.X);
-            double slope = Math.Asin(GameMath.Clamp(along.Y, -1, 1));
+            double turn = Math.Atan2(-az, ax);
+            double slope = Math.Asin(GameMath.Clamp(ay, -1, 1));
 
             double cosTurn = Math.Cos(turn), sinTurn = Math.Sin(turn);
             double cosSlope = Math.Cos(slope), sinSlope = Math.Sin(slope);
 
             // Куди дивилися б верх і бік моделі після курсу й ухилу, без нахилу полотна.
             // Справжній верх повернутий від першого до другого на кут нахилу
-            double levelUp = -cosTurn * sinSlope * up.X + cosSlope * up.Y + sinTurn * sinSlope * up.Z;
-            double levelSide = sinTurn * up.X + cosTurn * up.Z;
+            double levelUp = -cosTurn * sinSlope * ux + cosSlope * uy + sinTurn * sinSlope * uz;
+            double levelSide = sinTurn * ux + cosTurn * uz;
 
             yaw = (float)(turn - Math.PI / 2);
             tilt = (float)slope;

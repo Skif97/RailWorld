@@ -276,8 +276,8 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Міняється щоразу, коли клієнт дізнається про зміну колії в якомусь чанку. Хто запам'ятав щось,
-        /// пораховане з колії, за цим числом бачить, що запам'ятоване застаріло.
+        /// Міняється щоразу, коли клієнт дізнається про зміну колії в якомусь чанку, і коли переводять стрілку.
+        /// Хто запам'ятав щось, пораховане з колії, за цим числом бачить, що запам'ятоване застаріло.
         /// </summary>
         public int ClientRevision { get; private set; }
 
@@ -345,6 +345,7 @@ namespace RailWorld
 
             trunk.SetSwitchPosition(packet.AtStart, packet.Position);
             data.Revision = packet.Revision;
+            ClientRevision++;
             if (!trunk.HasSwitch(packet.AtStart)) return;
             switchAnimator.Track(chunk, trunk, packet.AtStart);
             chunkRenderer?.SwitchToggled(chunk, trunk, packet.AtStart);
