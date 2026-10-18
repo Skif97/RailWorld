@@ -94,34 +94,38 @@ namespace RailWorld.src.RailWay
         public const double SamePlane = 0.15;
 
         /// <summary>
-        /// Як далеко від осі покладеної колії точка розмітки, поставлена на блок, стає на саму колію, блоків у
-        /// плані: маршрут, що починається чи закінчується поруч із колією, до неї й приєднується. Колію впритул
-        /// до іншої так не покладеш, і це навмисно.
+        /// Як далеко від осі покладеної колії точка розмітки, поставлена на блок, стає на саму колію, блоків: і в
+        /// плані, і по висоті вгору чи вниз. Маршрут, що починається чи закінчується поруч із колією, до неї й
+        /// приєднується: на іншій висоті він однаково або перетнув би її, або до неї примкнув. Колію впритул до
+        /// іншої так не покладеш, і це навмисно. По висоті це менше за просвіт над колією (RouteCurve.CrossingClearance),
+        /// тож точка під мостом до колії на мосту не стає.
         /// </summary>
         public const double MarkerReach = 2.5;
 
         /// <summary>
-        /// Секція покладеної колії, вісь якої проходить у плані найближче до точки p, не далі за reach, на тій
-        /// самій висоті (SamePlane), і найближча до p точка її осі. Вісь секції це ламана через її початок,
-        /// середину й кінець. false, якщо такої секції немає.
+        /// Секція покладеної колії, вісь якої проходить найближче до точки p, не далі за reach у плані і не вище
+        /// чи нижче за reach, і найближча до p точка її осі. Найближча рахується з висотою: колія на рівні точки
+        /// виграє в колії над чи під нею. Вісь секції це ламана через її початок, середину й кінець.
+        /// false, якщо такої секції немає.
         /// </summary>
         public static bool NearestAxis(Vec3d p, double reach, TrackIndex track, out Section nearest, out Vec3d at)
         {
             nearest = null;
             at = null;
-            double best = reach;
+            double best = double.MaxValue;
 
             // Середина секції не далі ніж за блок від будь-якої точки її осі
-            foreach (Section section in track.Around(p, reach + 1, SamePlane + 1))
+            foreach (Section section in track.Around(p, reach + 1, reach + 1))
             {
                 Vec3d start = section.FullStartPosition, middle = section.GetGlobalPos(), end = section.FullEndPosition;
                 for (int half = 0; half < 2; half++)
                 {
                     Vec3d point = Closest(half == 0 ? start : middle, half == 0 ? middle : end, p);
-                    if (Math.Abs(point.Y - p.Y) > SamePlane) continue;
+                    double dx = point.X - p.X, dy = point.Y - p.Y, dz = point.Z - p.Z;
+                    if (dx * dx + dz * dz > reach * reach || Math.Abs(dy) > reach) continue;
 
-                    double dx = point.X - p.X, dz = point.Z - p.Z, distance = Math.Sqrt(dx * dx + dz * dz);
-                    if (distance > best) continue;
+                    double distance = dx * dx + dy * dy + dz * dz;
+                    if (distance >= best) continue;
 
                     best = distance;
                     nearest = section;
