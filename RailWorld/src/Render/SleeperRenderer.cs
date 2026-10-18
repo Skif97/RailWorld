@@ -73,6 +73,15 @@ namespace RailWorld
             UseMesh(mesh);
         }
 
+        /// <summary>
+        /// Малює частину готового меша, текстури якої лежать на сторінці атласу textureId (MeshData.SplitByTextureId):
+        /// у такої частини перелік сторінок лишається від цілого меша, тож свою сторінку їй кажуть.
+        /// </summary>
+        public SleeperRenderer(ICoreClientAPI capi, MeshData mesh, int textureId) : this(capi, mesh)
+        {
+            TextureId = textureId;
+        }
+
         private void UseMesh(MeshData mesh)
         {
             itemMesh = mesh;
@@ -116,6 +125,12 @@ namespace RailWorld
             data.light = Light(position);
             batch.Parts[position] = data;
             batch.Dirty = true;
+        }
+
+        /// <summary>Прибирає деталь, що стоїть у чанку chunkCoord на місці position.</summary>
+        public void RemovePart(Vec3i chunkCoord, Vec3d position)
+        {
+            if (batches.TryGetValue(chunkCoord, out Batch batch) && batch.Parts.Remove(position)) batch.Dirty = true;
         }
 
         // Спорожнює пачку чанка перед тим, як його колію покладуть у неї знову. Буфер у відеокарті лишається:

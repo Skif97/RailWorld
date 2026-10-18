@@ -202,7 +202,44 @@ void main()
             return mesh;
         }
 
-        // Важелі стрілок: анімовані моделі, кожен зі своїм положенням
+        /// <summary>
+        /// Ставить деталь із готового меша mesh, якого немає серед моделей shapes/part: нерухомий важіль у
+        /// своїй позі. key відрізняє такі меші між собою. Малюється тим самим рендером деталей, що й шпали.
+        /// </summary>
+        public void AddMeshPart(Vec3i chunkCoord, string key, MeshData mesh, Vec3d position, Vec3f rotation)
+        {
+            foreach (SleeperRenderer renderer in MeshPartRenderers(key, mesh))
+                renderer.AddRailWayPart(position, new SleeperInstance(rotation, 1f, chunkCoord.Clone()));
+        }
+
+        /// <summary>Прибирає деталь із готового меша з ключем key, що стоїть у чанку на місці position.</summary>
+        public void RemoveMeshPart(Vec3i chunkCoord, string key, Vec3d position)
+        {
+            if (!meshParts.TryGetValue(key, out List<SleeperRenderer> renderers)) return;
+            foreach (SleeperRenderer renderer in renderers) renderer.RemovePart(chunkCoord, position);
+        }
+
+        // Рендери деталі з готового меша: по одному на кожну сторінку атласу, на якій лежать його текстури.
+        // Рендер деталей малює меш з однією сторінкою, а модель може брати текстури з кількох
+        private readonly Dictionary<string, List<SleeperRenderer>> meshParts = new Dictionary<string, List<SleeperRenderer>>();
+
+        private List<SleeperRenderer> MeshPartRenderers(string key, MeshData mesh)
+        {
+            if (meshParts.TryGetValue(key, out List<SleeperRenderer> renderers)) return renderers;
+
+            renderers = new List<SleeperRenderer>();
+            MeshData[] pages = mesh.SplitByTextureId();
+            for (int page = 0; page < pages.Length; page++)
+            {
+                var renderer = new SleeperRenderer(capi, pages[page], mesh.TextureIds[page]);
+                sleeperRenderers["@" + key + "#" + page] = renderer;
+                renderers.Add(renderer);
+            }
+            meshParts[key] = renderers;
+            return renderers;
+        }
+
+        // Важелі стрілок: нерухомі малюються деталями, рухомі анімованими моделями
         private SwitchLeverRenderer leverRenderer;
 
         /// <summary>
@@ -211,7 +248,7 @@ void main()
         /// </summary>
         public void SetLever(Vec3i chunkCoord, SectionEndKey key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
         {
-            if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi);
+            if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi, this);
             leverRenderer.Set(chunkCoord, key, position, toTrack, along, thrown);
         }
 
@@ -487,6 +524,7 @@ void main()
             foreach (var renderer in sleeperRenderers.Values)
                 renderer.Dispose();
             sleeperRenderers.Clear();
+            meshParts.Clear();
             foreach (var renderer in railRenderers.Values)
                 renderer.Dispose();
             railRenderers.Clear();

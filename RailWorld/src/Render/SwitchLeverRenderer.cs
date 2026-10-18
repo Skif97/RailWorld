@@ -10,10 +10,12 @@ namespace RailWorld
 {
     /// <summary>
     /// Важелі стрілок. У важеля рухаються ручка, вантаж на ній, щогла з покажчиком і тяги, кожне довкола своєї
-    /// осі, тож це анімована модель, і веде її гра своїми засобами, так само, як двері: AnimationUtil програє
-    /// анімацію за часом і малює модель. Важелю кажуть лише, в якому з двох положень йому бути. В останнє він
-    /// переходить, програючи анімацію, назад у перше, відмотуючи її; якщо його перевели назад, не дочекавшись
-    /// кінця, він розвертається з того кадру, де був.
+    /// осі. Як двері в грі: поки важіль стоїть, він звичайна деталь у пачці чанка (одна з двох поз, зібраних із
+    /// першого й останнього кадру анімації), зі своїм світлом і тінню, і нічого не рахує. Лише на час
+    /// переведення вмикається анімована модель, і веде її гра своїми засобами: AnimationUtil програє анімацію за
+    /// часом. В останнє положення важіль переходить, програючи анімацію, назад у перше, відмотуючи її; якщо його
+    /// перевели назад, не дочекавшись кінця, він розвертається з того кадру, де був. Коли рух скінчився,
+    /// анімована модель звільняється, і на її місце стає нерухома деталь нової пози.
     /// Гостряки веде SwitchAnimator за власним годинником, тож під час руху важіль і гостряки можуть трохи
     /// розходитися; у крайніх положеннях вони збігаються завжди.
     /// Модель shapes/part/switchlever.json збирає tools/make_lever.py зі сцени в shapes/reference.
@@ -30,11 +32,22 @@ namespace RailWorld
         private const float EaseIn = 1000f;
         private const float EaseOut = 0f;
 
+        // Ключі мешів нерухомого важеля в рендері деталей: у першому і в останньому положенні
+        private const string RestKey = "switchlever-rest";
+        private const string ThrownKey = "switchlever-thrown";
+
         private class Lever
         {
             public Vec3i Chunk;
             public Vec3d Position;
+            // Як важіль стоїть у площині колії: для нерухомої деталі і для анімованої моделі
+            public Vec3f Rotation;
+            public float[] Placement;
+            // Анімована модель, лише поки важіль рухається; коли рух почався
             public AnimationUtil Util;
+            public long MovedAtMs;
+            // Анімацію поставлено на останній кадр, щоб відмотати її назад: зупинити її можна, лише коли вона там
+            public bool RewindPending;
             // Чи важіль стоїть або йде в останнє положення
             public bool Thrown;
             // Чи важіль поставили знову за цю перебудову чанка
@@ -42,15 +55,22 @@ namespace RailWorld
         }
 
         private ICoreClientAPI capi;
+        private RailWayRendererSystem parts;
+        private long settleListenerId;
         private Shape shape;
         private MeshData mesh;
+        // Нерухомий важіль у першому і в останньому положенні
+        private MeshData restMesh, thrownMesh;
         private int lastFrame;
         private bool broken;
         private Dictionary<SectionEndKey, Lever> levers = new Dictionary<SectionEndKey, Lever>();
 
-        public SwitchLeverRenderer(ICoreClientAPI capi)
+        public SwitchLeverRenderer(ICoreClientAPI capi, RailWayRendererSystem parts)
         {
             this.capi = capi;
+            this.parts = parts;
+            // Рух закінчується за той самий час, що й у гостряків: тоді анімована модель поступається деталі
+            settleListenerId = capi.Event.RegisterGameTickListener(dt => Settle(), 15);
         }
 
         // Готує модель так само, як AnimationUtil.InitializeShapeAndAnimator у грі: деталям, що рухаються,
@@ -85,7 +105,43 @@ namespace RailWorld
             capi.Tesselator.TesselateShape(meta, loaded, out mesh);
             shape = loaded;
             lastFrame = animation.QuantityFrames - 1;
+
+            AnimationKeyFrame last = animation.KeyFrames.FirstOrDefault(frame => frame.Frame == lastFrame);
+            if (last == null)
+            {
+                capi.Logger.Error("[RailWorld] в анімації " + AnimationCode + " моделі " + ShapeName + " немає ключового кадру " + lastFrame + ": важелі стрілок не малюватимуться");
+                broken = true;
+                mesh = null;
+                return false;
+            }
+            restMesh = Posed(loaded, null);
+            thrownMesh = Posed(loaded, last);
             return true;
+        }
+
+        // Нерухома модель у позі ключового кадру frame; null це вихідна поза, перший кадр. Анімація додає кути кадру
+        // до власного повороту деталі довкола тієї самої точки і зсуває її на зсув кадру у вокселях
+        // (ShapeElement.GetLocalTransformMatrix, Animation): те саме робимо з копією моделі, і збирає її гра
+        private MeshData Posed(Shape source, AnimationKeyFrame frame)
+        {
+            Shape posed = source.Clone();
+            if (frame != null)
+            {
+                foreach (KeyValuePair<string, AnimationKeyFrameElement> pair in frame.Elements)
+                {
+                    ShapeElement element = posed.GetElementByName(pair.Key);
+                    if (element == null) continue;
+                    AnimationKeyFrameElement key = pair.Value;
+                    element.RotationX += key.RotationX ?? 0;
+                    element.RotationY += key.RotationY ?? 0;
+                    element.RotationZ += key.RotationZ ?? 0;
+                    double dx = key.OffsetX ?? 0, dy = key.OffsetY ?? 0, dz = key.OffsetZ ?? 0;
+                    element.From = new[] { element.From[0] + dx, element.From[1] + dy, element.From[2] + dz };
+                    element.To = new[] { element.To[0] + dx, element.To[1] + dy, element.To[2] + dz };
+                }
+            }
+            capi.Tesselator.TesselateShape("RailWorld switchlever", posed, out MeshData result, new ShapeTextureSource(capi, posed, ShapeName));
+            return result;
         }
 
         /// <summary>
@@ -114,7 +170,7 @@ namespace RailWorld
         {
             foreach (SectionEndKey key in levers.Where(which).Select(pair => pair.Key).ToList())
             {
-                levers[key].Util.Dispose();
+                Drop(levers[key]);
                 levers.Remove(key);
             }
         }
@@ -131,37 +187,119 @@ namespace RailWorld
 
             if (levers.TryGetValue(key, out Lever lever) && !Same(lever.Position, position))
             {
-                // Стрілку перебудували, і важіль став в інше місце: рендер гри місця не міняє
-                lever.Util.Dispose();
+                // Стрілку перебудували, і важіль став в інше місце
+                Drop(lever);
                 levers.Remove(key);
                 lever = null;
             }
             if (lever == null)
             {
-                lever = new Lever { Chunk = chunkCoord.Clone(), Position = position.Clone() };
-                lever.Util = new AnimationUtil(capi, lever.Position);
-                lever.Util.InitializeAnimator(ShapeName, mesh, shape, null);
-                // Рендер гри малює модель, лише поки програється анімація: важіль видно завжди
-                lever.Util.renderer.ShouldRender = true;
+                lever = new Lever { Chunk = chunkCoord.Clone(), Position = position.Clone(), Thrown = thrown };
                 levers[key] = lever;
-
-                if (thrown) Play(lever, lastFrame);
-                lever.Thrown = thrown;
             }
             lever.Kept = true;
-            lever.Util.renderer.CustomTransform = Placement(toTrack, along);
+            lever.Rotation = RailWayRendererSystem.InPlane(toTrack, along);
+            lever.Placement = Placement(toTrack, along);
 
-            if (lever.Thrown == thrown) return;
-            lever.Thrown = thrown;
+            if (lever.Thrown != thrown)
+            {
+                lever.Thrown = thrown;
+                Move(lever);
+            }
 
-            if (!thrown)
+            if (lever.Util == null)
+            {
+                Rest(lever);
+                return;
+            }
+            lever.Util.renderer.CustomTransform = lever.Placement;
+            // Поки анімація ще стає на останній кадр, видно нерухому деталь останнього положення
+            if (lever.RewindPending) parts.AddMeshPart(lever.Chunk, ThrownKey, thrownMesh, lever.Position, lever.Rotation);
+        }
+
+        // Нерухомий важіль: деталь у його позі. Перебудова чанка ставить її щоразу знову
+        private void Rest(Lever lever)
+        {
+            parts.AddMeshPart(lever.Chunk, lever.Thrown ? ThrownKey : RestKey, lever.Thrown ? thrownMesh : restMesh, lever.Position, lever.Rotation);
+        }
+
+        // Важіль починає рух у положення lever.Thrown: нерухома деталь поступається анімованій моделі
+        private void Move(Lever lever)
+        {
+            lever.MovedAtMs = capi.ElapsedMilliseconds;
+
+            if (lever.Util == null)
+            {
+                lever.Util = new AnimationUtil(capi, lever.Position);
+                lever.Util.InitializeAnimator(ShapeName, mesh, shape, null);
+                lever.Util.renderer.CustomTransform = lever.Placement;
+                // З першого положення анімація йде вперед. З останнього вона спершу стає на останній кадр, а
+                // відмотується, коли там стане: кадр гра ставить на наступному кадрі, і раніша зупинка просто
+                // зняла б анімацію. Доти модель не малюється, а стоїть нерухома деталь: інакше на кадр було б
+                // видно першу позу
+                Play(lever, lever.Thrown ? 0 : lastFrame);
+                lever.RewindPending = !lever.Thrown;
+                if (lever.RewindPending)
+                {
+                    lever.Util.renderer.ShouldRender = false;
+                    return;
+                }
+                lever.Util.renderer.ShouldRender = true;
+                Unrest(lever);
+                return;
+            }
+
+            // Перевели назад, не дочекавшись кінця: розвертається з того кадру, де був
+            lever.RewindPending = false;
+            lever.Util.renderer.ShouldRender = true;
+            Unrest(lever);
+            if (!lever.Thrown)
             {
                 lever.Util.StopAnimation(AnimationCode);
                 return;
             }
-            // Якщо анімація ще відмотується, рух уперед починається з кадру, до якого вона дійшла
             RunningAnimation state = lever.Util.animator.GetAnimationState(AnimationCode);
             Play(lever, state != null && state.Running ? state.CurrentFrame : 0);
+        }
+
+        // Важелі, що доїхали: анімована модель звільняється, на її місце стає нерухома деталь
+        private void Settle()
+        {
+            long now = capi.ElapsedMilliseconds;
+            foreach (Lever lever in levers.Values)
+            {
+                if (lever.Util == null) continue;
+                if (lever.RewindPending)
+                {
+                    RunningAnimation state = lever.Util.animator.GetAnimationState(AnimationCode);
+                    if (state == null || !state.Running) continue;
+                    lever.Util.StopAnimation(AnimationCode);
+                    lever.Util.renderer.ShouldRender = true;
+                    Unrest(lever);
+                    lever.RewindPending = false;
+                    lever.MovedAtMs = now;
+                    continue;
+                }
+                if (now - lever.MovedAtMs < SwitchAnimator.DurationMs) continue;
+                lever.Util.Dispose();
+                lever.Util = null;
+                Rest(lever);
+            }
+        }
+
+        // Прибирає нерухому деталь важеля: її місце займає анімована модель
+        private void Unrest(Lever lever)
+        {
+            parts.RemoveMeshPart(lever.Chunk, RestKey, lever.Position);
+            parts.RemoveMeshPart(lever.Chunk, ThrownKey, lever.Position);
+        }
+
+        // Важіль зникає: звільняє анімовану модель і прибирає нерухому деталь
+        private void Drop(Lever lever)
+        {
+            lever.Util?.Dispose();
+            lever.Util = null;
+            Unrest(lever);
         }
 
         // Програє переведення від кадру from. Триває воно стільки ж, скільки рух гостряків
@@ -212,6 +350,7 @@ namespace RailWorld
 
         public void Dispose()
         {
+            capi.Event.UnregisterGameTickListener(settleListenerId);
             Remove(pair => true);
         }
     }
