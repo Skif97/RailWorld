@@ -40,19 +40,14 @@ namespace RailWorld
             public bool Moving;
         }
 
-        private Dictionary<string, SwitchState> states = new Dictionary<string, SwitchState>();
-
         // Стрілку визначає кінець секції, з якого колія розходиться
-        private static string SwitchKey(Vec3i chunk, int index, bool atStart)
-        {
-            return $"{chunk.X}_{chunk.Y}_{chunk.Z}_{index}_{(atStart ? "S" : "E")}";
-        }
+        private Dictionary<SectionEndKey, SwitchState> states = new Dictionary<SectionEndKey, SwitchState>();
 
         // Запам'ятовує положення стрілки. Якщо воно не те, що бачили минулого разу, з цієї миті починається рух.
         // Стрілка, яку бачимо вперше, одразу стоїть на місці
         public void Track(Vec3i chunkCoord, Section section, bool atStart)
         {
-            string key = SwitchKey(chunkCoord, section.IndexInChunk, atStart);
+            var key = new SectionEndKey(chunkCoord, section.IndexInChunk, atStart);
             int position = section.GetSwitchPosition(atStart);
 
             if (!states.TryGetValue(key, out SwitchState state))
@@ -84,7 +79,7 @@ namespace RailWorld
         /// <summary>Наскільки стрілка вже стала в теперішнє положення, від 0 до 1. Стрілка, якої ще не бачили, стоїть на місці.</summary>
         public double Progress(Vec3i chunk, int index, bool atStart)
         {
-            if (!states.TryGetValue(SwitchKey(chunk, index, atStart), out SwitchState state)) return 1;
+            if (!states.TryGetValue(new SectionEndKey(chunk, index, atStart), out SwitchState state)) return 1;
             double value = SwitchValue(state);
             return state.Position == 1 ? value : 1 - value;
         }
@@ -107,7 +102,7 @@ namespace RailWorld
         /// <summary>Забуває стрілки чанка, колія в якому зникла.</summary>
         public void Forget(Vec3i chunkCoord)
         {
-            foreach (string key in states.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) states.Remove(key);
+            foreach (SectionEndKey key in states.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) states.Remove(key);
         }
     }
 }

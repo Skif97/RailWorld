@@ -42,7 +42,7 @@ namespace RailWorld.src.RailWay
         public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks)
         {
             var chunks = new List<Vec3i>(changedChunks);
-            var seen = new HashSet<string>();
+            var seen = new HashSet<SectionKey>();
             var targets = new List<CrossingRef>();
 
             foreach (Vec3i chunk in chunks)
@@ -87,9 +87,10 @@ namespace RailWorld.src.RailWay
             Discover(session, chunk);
         }
 
-        private static void Want(HashSet<string> seen, List<CrossingRef> targets, Vec3i chunk, int key)
+        // Перетин впізнається перетнутою секцією основної колії: його ключ це її номер у чанку
+        private static void Want(HashSet<SectionKey> seen, List<CrossingRef> targets, Vec3i chunk, int key)
         {
-            if (seen.Add(chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + key)) targets.Add(new CrossingRef { ChunkX = chunk.X, ChunkY = chunk.Y, ChunkZ = chunk.Z, Key = key });
+            if (seen.Add(new SectionKey(chunk, key))) targets.Add(new CrossingRef { ChunkX = chunk.X, ChunkY = chunk.Y, ChunkZ = chunk.Z, Key = key });
         }
 
         // Шукає перетини секцій чанка, про які ще немає запису, і записує їх

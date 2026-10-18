@@ -345,15 +345,14 @@ namespace RailWorld.src.RailWay
                 }
             }
             // Колія після побудови: нові секції і копії покладених, до яких вони чіпляються, поверх справжніх
-            var overlay = new Dictionary<string, Section>();
-            string Key(Vec3i chunk, int index) => chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + index;
-            Section Find(SectionLink link) => overlay.TryGetValue(Key(link.Chunk, link.Index), out Section found) ? found : resolve(link);
+            var overlay = new Dictionary<SectionKey, Section>();
+            Section Find(SectionLink link) => overlay.TryGetValue(SectionKey.Of(link), out Section found) ? found : resolve(link);
 
             for (int i = 0; i < planned.Count; i++)
             {
                 // Номера в чанку нова секція ще не має: даємо від'ємний, таких у справжніх не буває
                 planned[i].IndexInChunk = -(i + 2);
-                overlay[Key(planned[i].ChunkAddres, planned[i].IndexInChunk)] = planned[i];
+                overlay[SectionKey.Of(planned[i])] = planned[i];
             }
             for (int i = 0; i + 1 < planned.Count; i++)
             {
@@ -362,7 +361,7 @@ namespace RailWorld.src.RailWay
             }
             foreach (Join join in joins)
             {
-                string key = Key(join.Other.Chunk, join.Other.Index);
+                SectionKey key = SectionKey.Of(join.Other);
                 if (!overlay.TryGetValue(key, out join.Copy))
                 {
                     join.Copy = Serializer.DeepClone(resolve(join.Other));
@@ -425,16 +424,16 @@ namespace RailWorld.src.RailWay
                 // колії, який нічого не перетинає. Тіло це обидві гілки, і вже покладена теж
                 if (built != null)
                 {
-                    var own = new HashSet<string> { SectionKey(join.Copy) };
+                    var own = new HashSet<SectionKey> { SectionKey.Of(join.Copy) };
                     foreach (SwitchBranch branch in built.Branches)
                     {
-                        foreach (SectionLink member in branch.Members) own.Add(Key(member.Chunk, member.Index));
+                        foreach (SectionLink member in branch.Members) own.Add(SectionKey.Of(member));
                     }
                     foreach (Section section in body)
                     {
                         // Сама секція тіла, якщо вона вже лежить, серед покладених теж є: це не чужа колія
-                        string self = SectionKey(section);
-                        if (TrackSurvey.Examine(section, track).InPlane.Exists(other => !own.Contains(SectionKey(other)) && SectionKey(other) != self))
+                        SectionKey self = SectionKey.Of(section);
+                        if (TrackSurvey.Examine(section, track).InPlane.Exists(other => !own.Contains(SectionKey.Of(other)) && SectionKey.Of(other) != self))
                             return "стрілка лягає на іншу колію";
                     }
                 }
@@ -649,8 +648,7 @@ namespace RailWorld.src.RailWay
             // Далі за найдовший можливий вузол шукати нема чого
             double reach = RouteCurve.MaxNodeReach;
             var steps = new List<BodyStep>();
-            var own = new HashSet<string>();
-            string Key(Section section) => section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
+            var own = new HashSet<SectionKey>();
 
             // Іде по колії від first, у яку зайшли кінцем entered; перші bodySections секцій це тіло стрілки
             void Walk(Section first, bool entered, int bodySections)
@@ -664,7 +662,7 @@ namespace RailWorld.src.RailWay
                     Section current = walk.Section;
                     bool inBody = n < bodySections;
                     steps.Add(new BodyStep { Section = current, Entered = walk.Entered, InBody = inBody, At = at });
-                    own.Add(Key(current));
+                    own.Add(SectionKey.Of(current));
                     if (!inBody) at += current.FullStartPosition.DistanceTo(current.FullEndPosition);
 
                     if (!walk.Next()) break;
@@ -688,7 +686,7 @@ namespace RailWorld.src.RailWay
                 foreach (Section other in track.Around(middle, TrackSurvey.CrossReach, RouteCurve.CrossingClearance))
                 {
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
-                    if (own.Contains(Key(other))) continue;
+                    if (own.Contains(SectionKey.Of(other))) continue;
                     if (!TrackLevel.Same(step.Section, other)) continue;
                     if (!AxisCrossing.OfLaid(step.Section, other)) continue;
 
@@ -706,7 +704,7 @@ namespace RailWorld.src.RailWay
 
                 foreach (Section other in track.Around(middle, TrackSurvey.Reach, RouteCurve.CrossingClearance))
                 {
-                    if (own.Contains(Key(other))) continue;
+                    if (own.Contains(SectionKey.Of(other))) continue;
                     if (!TrackLevel.Same(step.Section, other)) continue;
                     if (Footprint.Overlap(step.Section, other)) return true;
                 }
@@ -783,7 +781,7 @@ namespace RailWorld.src.RailWay
             int other = OtherSide(trunk, atStart, record, record.Main, resolve);
             if (other == 0) return 0;
 
-            HashSet<string> own = OwnSections(trunk, record);
+            HashSet<SectionKey> own = OwnSections(trunk, record);
             foreach (int side in new[] { -other, other })
             {
                 if (LeverSideFree(trunk, atStart, side, own, track)) return side;
@@ -831,29 +829,24 @@ namespace RailWorld.src.RailWay
         }
 
         // Секції самої стрілки: вони лежать поруч із важелем, але це не чужа колія
-        private static HashSet<string> OwnSections(Section trunk, RailSwitch record)
+        private static HashSet<SectionKey> OwnSections(Section trunk, RailSwitch record)
         {
-            var own = new HashSet<string> { SectionKey(trunk) };
+            var own = new HashSet<SectionKey> { SectionKey.Of(trunk) };
             foreach (SwitchBranch branch in record.Branches)
             {
-                foreach (SectionLink member in branch.Members) own.Add(member.ChunkX + "_" + member.ChunkY + "_" + member.ChunkZ + "_" + member.Index);
+                foreach (SectionLink member in branch.Members) own.Add(SectionKey.Of(member));
             }
             return own;
         }
 
-        private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<string> own, TrackIndex track)
+        private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<SectionKey> own, TrackIndex track)
         {
             Vec3d lever = SectionPicker.LeverPosition(trunk, atStart, side);
             foreach (Section other in track.Around(lever, TrackSurvey.Reach, RouteCurve.CrossingClearance))
             {
-                if (!own.Contains(SectionKey(other)) && TrackSurvey.CoversLever(other, trunk, atStart, side)) return false;
+                if (!own.Contains(SectionKey.Of(other)) && TrackSurvey.CoversLever(other, trunk, atStart, side)) return false;
             }
             return true;
-        }
-
-        private static string SectionKey(Section section)
-        {
-            return section.ChunkAddres.X + "_" + section.ChunkAddres.Y + "_" + section.ChunkAddres.Z + "_" + section.IndexInChunk;
         }
 
         /// <summary>

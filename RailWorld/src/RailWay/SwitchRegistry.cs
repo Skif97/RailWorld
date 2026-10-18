@@ -40,11 +40,11 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks)
         {
-            var seen = new HashSet<string>();
+            var seen = new HashSet<SectionEndKey>();
             var targets = new List<SwitchRef>();
             void Want(int chunkX, int chunkY, int chunkZ, int key)
             {
-                if (seen.Add(chunkX + "_" + chunkY + "_" + chunkZ + "_" + key)) targets.Add(new SwitchRef { ChunkX = chunkX, ChunkY = chunkY, ChunkZ = chunkZ, Key = key });
+                if (seen.Add(SectionEndKey.OfSwitch(new Vec3i(chunkX, chunkY, chunkZ), key))) targets.Add(new SwitchRef { ChunkX = chunkX, ChunkY = chunkY, ChunkZ = chunkZ, Key = key });
             }
 
             foreach (Vec3i chunk in changedChunks)

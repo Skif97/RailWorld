@@ -310,6 +310,42 @@ namespace RailWorld
     }
 
     /// <summary>
+    /// Яка це деталь: секція, якій вона належить (у перетину це перетнута секція основної колії), з якого
+    /// боку колії і котра з деталей цього боку (tag).
+    /// </summary>
+    internal readonly struct BladeKey : IEquatable<BladeKey>
+    {
+        public readonly SectionKey Section;
+        public readonly bool Left;
+        public readonly string Tag;
+
+        public BladeKey(SectionKey section, bool left, string tag)
+        {
+            Section = section;
+            Left = left;
+            Tag = tag ?? "";
+        }
+
+        public bool Equals(BladeKey other)
+        {
+            return Left == other.Left && Section.Equals(other.Section) && string.Equals(Tag, other.Tag, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is BladeKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (Section.GetHashCode() * 397 ^ StringComparer.Ordinal.GetHashCode(Tag)) * 2 + (Left ? 1 : 0);
+            }
+        }
+    }
+
+    /// <summary>
     /// Малює деталі стрілок: гостряки, хрестовини, контррейки. Кожна деталь це власний меш, один інстанс,
     /// тим самим шейдером і за тим самим принципом, що й рейки та шпали: матриця деталі задана відносно кута
     /// чанка її секції і лежить у відеокарті незмінною, а щокадру шейдерові передається лише кут чанка
@@ -340,7 +376,7 @@ namespace RailWorld
         }
 
         private ICoreClientAPI capi;
-        private Dictionary<string, Blade> blades = new Dictionary<string, Blade>();
+        private Dictionary<BladeKey, Blade> blades = new Dictionary<BladeKey, Blade>();
         private Vec3f origin = new Vec3f();
 
         public BladeRenderer(ICoreClientAPI capi)
@@ -349,10 +385,10 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Ставить деталь. key починається з чанка секції, якій вона належить: за ним деталь прибирається.
-        /// mesh у координатах першого перерізу first, як його збирає BladeMesh.
+        /// Ставить деталь секції з чанка chunkCoord: за ним деталь і прибирається. mesh у координатах першого
+        /// перерізу first, як його збирає BladeMesh.
         /// </summary>
-        public void Set(Vec3i chunkCoord, string key, long hash, MeshData mesh, RailFrame first, int textureId)
+        public void Set(Vec3i chunkCoord, BladeKey key, long hash, MeshData mesh, RailFrame first, int textureId)
         {
             Remove(key);
             if (mesh == null) return;
@@ -414,16 +450,11 @@ namespace RailWorld
         /// Чи лежить під цим ключем деталь, зібрана з тих самих даних. Якщо так, вона лишається як є:
         /// ні збирати меш, ні вивантажувати його заново не треба.
         /// </summary>
-        public bool Keep(string key, long hash)
+        public bool Keep(BladeKey key, long hash)
         {
             if (!blades.TryGetValue(key, out Blade blade) || blade.Hash != hash) return false;
             blade.Live = true;
             return true;
-        }
-
-        private static string Prefix(Vec3i chunkCoord)
-        {
-            return $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_";
         }
 
         /// <summary>
@@ -432,10 +463,9 @@ namespace RailWorld
         /// </summary>
         public void BeginChunk(Vec3i chunkCoord)
         {
-            string prefix = Prefix(chunkCoord);
-            foreach (var pair in blades)
+            foreach (Blade blade in blades.Values)
             {
-                if (pair.Key.StartsWith(prefix, StringComparison.Ordinal)) pair.Value.Live = false;
+                if (blade.Chunk.Equals(chunkCoord)) blade.Live = false;
             }
         }
 
@@ -444,11 +474,10 @@ namespace RailWorld
         /// </summary>
         public void EndChunk(Vec3i chunkCoord)
         {
-            string prefix = Prefix(chunkCoord);
-            foreach (string key in blades.Where(pair => !pair.Value.Live && pair.Key.StartsWith(prefix, StringComparison.Ordinal)).Select(pair => pair.Key).ToList()) Remove(key);
+            foreach (BladeKey key in blades.Where(pair => !pair.Value.Live && pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) Remove(key);
         }
 
-        private void Remove(string key)
+        private void Remove(BladeKey key)
         {
             if (!blades.TryGetValue(key, out Blade blade)) return;
             blade.MeshRef?.Dispose();
@@ -457,8 +486,7 @@ namespace RailWorld
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            string prefix = Prefix(chunkCoord);
-            foreach (string key in blades.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)).ToList()) Remove(key);
+            foreach (BladeKey key in blades.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) Remove(key);
         }
 
         /// <summary>

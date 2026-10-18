@@ -21,7 +21,7 @@ namespace RailWorld
         private SwitchPartsBuilder builder;
         private CrossingPartsBuilder crossingBuilder;
         // Рейки перетинів, пораховані за поточну перебудову чанка: їх питає і розкладка рейок, і збирач деталей
-        private Dictionary<string, CrossingRails> crossingRails = new Dictionary<string, CrossingRails>();
+        private Dictionary<SectionKey, CrossingRails> crossingRails = new Dictionary<SectionKey, CrossingRails>();
         private bool disposed;
 
         public TrackChunkRenderer(ICoreClientAPI capi, RailWayRendererSystem renderer, ClientTrack track, SwitchAnimator animator)
@@ -50,8 +50,10 @@ namespace RailWorld
 
             // Секції, на яких лежить хоч одна рейка
             var railSections = new List<Section>();
-            // Розкладки брусів стрілок, які знадобилися цій перебудові: стрілка може лежати і в сусідньому чанку
-            var layouts = new Dictionary<string, TimberLayout>();
+            // Розкладки брусів стрілок і перетинів, які знадобилися цій перебудові: стрілка чи перетин може лежати
+            // і в сусідньому чанку
+            var layouts = new Dictionary<SectionEndKey, TimberLayout>();
+            var crossingLayouts = new Dictionary<SectionKey, TimberLayout>();
             crossingRails.Clear();
 
             foreach (var kvp in sections)
@@ -68,7 +70,7 @@ namespace RailWorld
                 }
 
                 if (!inNode && track.FindCrossing(section, out RailCrossing crossing, out CrossingRef at))
-                    inNode = CrossingLayout(layouts, at.Chunk, crossing).Hidden.Contains(section);
+                    inNode = CrossingLayout(crossingLayouts, at.Chunk, crossing).Hidden.Contains(section);
 
                 if (section.SleeperInstalled && !inNode)
                 {
@@ -134,7 +136,7 @@ namespace RailWorld
                 }
                 foreach (RailCrossing record in data.Crossings.Values)
                 {
-                    List<Timber> timbers = CrossingLayout(layouts, chunkCoord, record).Timbers;
+                    List<Timber> timbers = CrossingLayout(crossingLayouts, chunkCoord, record).Timbers;
                     if (timbers.Count == 0) continue;
                     foreach (Timber timber in timbers) AddTimber(chunkCoord, timber);
 
@@ -147,7 +149,7 @@ namespace RailWorld
             if (railSections.Count > 0)
                 renderer.RebuildRails(chunkCoord, railSections, ReplacedByNode);
 
-            var wood = new Dictionary<string, IList<Timber>>();
+            var wood = new Dictionary<SectionEndKey, IList<Timber>>();
             foreach (Section section in railSections) builder.Build(chunkCoord, section, (chunk, record) => SwitchWood(layouts, wood, chunk, record));
             if (data != null)
             {
@@ -216,8 +218,7 @@ namespace RailWorld
             int branchAtLever = record == null ? -1 : SectionLinker.BranchToward(section, atStart, record, side, track.FindSection);
             bool thrown = LeverPose.Thrown(section.GetSwitchPosition(atStart), 1, branchAtLever) > 0.5;
 
-            string key = chunkCoord.X + "_" + chunkCoord.Y + "_" + chunkCoord.Z + "_" + section.IndexInChunk + (atStart ? "S" : "E");
-            renderer.SetLever(chunkCoord, key, SectionPicker.LeverPosition(section, atStart), toTrack, along, thrown);
+            renderer.SetLever(chunkCoord, new SectionEndKey(chunkCoord, section.IndexInChunk, atStart), SectionPicker.LeverPosition(section, atStart), toTrack, along, thrown);
         }
 
         /// <summary>
@@ -250,9 +251,9 @@ namespace RailWorld
         // Розкладка брусів стрілки із записом record, що лежить у чанку chunk. known це вже пораховані
         // за цю перебудову. У незібраної стрілки, і якщо стрілку прочитати не вдається, розкладка порожня:
         // кожна секція лишається зі своєю шпалою
-        private TimberLayout Layout(Dictionary<string, TimberLayout> known, Vec3i chunk, RailSwitch record)
+        private TimberLayout Layout(Dictionary<SectionEndKey, TimberLayout> known, Vec3i chunk, RailSwitch record)
         {
-            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            var key = new SectionEndKey(chunk, record.TrunkIndex, record.AtStart);
             if (known.TryGetValue(key, out TimberLayout layout)) return layout;
             known[key] = layout = new TimberLayout();
 
@@ -266,9 +267,9 @@ namespace RailWorld
 
         // Усе дерево під стрілкою: її бруси і шпали тих секцій гілок, що лежать на власних шпалах. known це вже
         // зібране за цю перебудову
-        private IList<Timber> SwitchWood(Dictionary<string, TimberLayout> layouts, Dictionary<string, IList<Timber>> known, Vec3i chunk, RailSwitch record)
+        private IList<Timber> SwitchWood(Dictionary<SectionEndKey, TimberLayout> layouts, Dictionary<SectionEndKey, IList<Timber>> known, Vec3i chunk, RailSwitch record)
         {
-            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            var key = new SectionEndKey(chunk, record.TrunkIndex, record.AtStart);
             if (known.TryGetValue(key, out IList<Timber> wood)) return wood;
 
             TimberLayout layout = Layout(layouts, chunk, record);
@@ -457,9 +458,9 @@ namespace RailWorld
 
         // Розкладка шпал перетину із записом record, що лежить у чанку chunk. У незібраного перетину, і якщо
         // його прочитати не вдається, розкладка порожня: кожна секція лишається зі своєю шпалою
-        private TimberLayout CrossingLayout(Dictionary<string, TimberLayout> known, Vec3i chunk, RailCrossing record)
+        private TimberLayout CrossingLayout(Dictionary<SectionKey, TimberLayout> known, Vec3i chunk, RailCrossing record)
         {
-            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_x" + record.Key;
+            var key = new SectionKey(chunk, record.Key);
             if (known.TryGetValue(key, out TimberLayout layout)) return layout;
             known[key] = layout = new TimberLayout();
             if (!CrossingTracks(record, out List<Section>[] tracks, out _, out int[] centers)) return layout;
@@ -473,7 +474,7 @@ namespace RailWorld
         // прочитати не вдається: тоді кожна секція малює власні рейки
         private CrossingRails RailsOf(Vec3i chunk, RailCrossing record)
         {
-            string key = chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + record.Key;
+            var key = new SectionKey(chunk, record.Key);
             if (crossingRails.TryGetValue(key, out CrossingRails rails)) return rails;
 
             rails = CrossingTracks(record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)

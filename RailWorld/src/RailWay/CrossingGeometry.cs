@@ -91,17 +91,17 @@ namespace RailWorld.src.RailWay
     public class CrossingRails
     {
         public List<CrossingRail> Rails = new List<CrossingRail>();
-        private HashSet<string> hidden = new HashSet<string>();
+        private HashSet<(SectionKey Section, SectionPart Part)> hidden = new HashSet<(SectionKey, SectionPart)>();
 
         public void Hide(Section section, SectionPart part)
         {
-            hidden.Add(Key(section, part));
+            hidden.Add((SectionKey.Of(section), part));
         }
 
         /// <summary>Чи цю рейку секції заміняє рейка перетину.</summary>
         public bool Hides(Section section, SectionPart part)
         {
-            return hidden.Contains(Key(section, part));
+            return hidden.Contains((SectionKey.Of(section), part));
         }
 
         /// <summary>
@@ -213,11 +213,6 @@ namespace RailWorld.src.RailWay
             return false;
         }
 
-        private static string Key(Section section, SectionPart part)
-        {
-            Vec3i chunk = section.ChunkAddres;
-            return chunk.X + "_" + chunk.Y + "_" + chunk.Z + "_" + section.IndexInChunk + "_" + (int)part;
-        }
     }
 
     /// <summary>

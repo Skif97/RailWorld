@@ -4,6 +4,7 @@ using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using RailWorld.src.RailWay;
 
 namespace RailWorld
 {
@@ -45,7 +46,7 @@ namespace RailWorld
         private MeshData mesh;
         private int lastFrame;
         private bool broken;
-        private Dictionary<string, Lever> levers = new Dictionary<string, Lever>();
+        private Dictionary<SectionEndKey, Lever> levers = new Dictionary<SectionEndKey, Lever>();
 
         public SwitchLeverRenderer(ICoreClientAPI capi)
         {
@@ -109,9 +110,9 @@ namespace RailWorld
             Remove(pair => pair.Value.Chunk.Equals(chunkCoord));
         }
 
-        private void Remove(System.Func<KeyValuePair<string, Lever>, bool> which)
+        private void Remove(System.Func<KeyValuePair<SectionEndKey, Lever>, bool> which)
         {
-            foreach (string key in levers.Where(which).Select(pair => pair.Key).ToList())
+            foreach (SectionEndKey key in levers.Where(which).Select(pair => pair.Key).ToList())
             {
                 levers[key].Util.Dispose();
                 levers.Remove(key);
@@ -124,7 +125,7 @@ namespace RailWorld
         /// false в першому, true в останньому (LeverPose). Важіль, якого ще не було, одразу стоїть у своєму
         /// положенні; той, що вже стояв в іншому, переходить у нове рухом.
         /// </summary>
-        public void Set(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
+        public void Set(Vec3i chunkCoord, SectionEndKey key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
         {
             if (!Load()) return;
 

@@ -209,7 +209,7 @@ void main()
         /// Ставить важіль стрілки або переводить уже поставлений у положення thrown. key відрізняє важелі між
         /// собою. Викликати під час перебудови чанка, між BeginParts і EndParts.
         /// </summary>
-        public void SetLever(Vec3i chunkCoord, string key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
+        public void SetLever(Vec3i chunkCoord, SectionEndKey key, Vec3d position, Vec3d toTrack, Vec3d along, bool thrown)
         {
             if (leverRenderer == null) leverRenderer = new SwitchLeverRenderer(capi);
             leverRenderer.Set(chunkCoord, key, position, toTrack, along, thrown);
@@ -258,7 +258,7 @@ void main()
             if (renderer == null) return;
 
             if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
-            string key = $"{chunkCoord.X}_{chunkCoord.Y}_{chunkCoord.Z}_{index}_{(left ? "L" : "R")}{tag}";
+            var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
 
             long hash = BladeMesh.Mix(BladeMesh.HashStart, material);
             foreach (LoftPart part in parts) hash = BladeMesh.Mix(hash, part);
