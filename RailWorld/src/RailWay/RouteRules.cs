@@ -19,8 +19,11 @@ namespace RailWorld.src.RailWay
         {
             var reasons = new List<string>();
             if (Broken) reasons.Add("рейки розриваються по висоті");
-            if (MinRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("поворот крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
-            if (MinVerticalRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
+            // Радіус натурний, тож ловить і перелом по висоті. Якщо він порушений і окремо по висоті, причина
+            // саме там; інакше це поворот
+            bool vertical = MinVerticalRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance;
+            if (vertical) reasons.Add("перелом по висоті крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
+            if (MinRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance && !vertical) reasons.Add("поворот крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
             if (CrossesItself) reasons.Add("маршрут перетинає сам себе");
             return reasons;
         }
@@ -52,9 +55,16 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Перевіряє нарізаний маршрут: поворот у плані або перелом по висоті крутіший за найменший радіус,
+        /// Перевіряє нарізаний маршрут: вигин колії або перелом по висоті крутіший за найменший радіус,
         /// сходинка між сусідніми точками, інший виток маршруту ближче за просвіт.
         /// </summary>
+        // Кут між двома напрямками в просторі, радіани; довжина напрямків будь-яка
+        private static double Angle(double ax, double ay, double az, double bx, double by, double bz)
+        {
+            double cx = ay * bz - az * by, cy = az * bx - ax * bz, cz = ax * by - ay * bx;
+            return Math.Atan2(Math.Sqrt(cx * cx + cy * cy + cz * cz), ax * bx + ay * by + az * bz);
+        }
+
         public static RouteCheck Check(List<PointOnBezierCurve> points)
         {
             int count = points.Count;
@@ -84,18 +94,20 @@ namespace RailWorld.src.RailWay
                 run[i] = run[i - 1] + Math.Sqrt(dx * dx + dy * dy + dz * dz);
             }
 
-            // Поворот дотичної в плані між кожними двома сусідніми точками нарізки. Між сусідами колія
-            // повертає на кілька градусів, і кут між ними однозначний. Кут між напрямками на кінцях довшого
-            // відрізка такий не завжди: він не більший за 180°, і петля на 360° дала б нуль
+            // Поворот дотичної між кожними двома сусідніми точками нарізки, у просторі: вигин самої колії,
+            // і вбік, і по ухилу разом, а не його проєкція згори. Між сусідами колія повертає на кілька градусів,
+            // і кут між ними однозначний. Кут між напрямками на кінцях довшого відрізка такий не завжди: він не
+            // більший за 180°, і петля на 360° дала б нуль
             double[] step = new double[count];
             for (int i = 1; i < count; i++)
             {
                 Vec3f t0 = points[i - 1].tangent, t1 = points[i].tangent;
-                step[i] = Math.Abs(Math.Atan2(t0.X * t1.Z - t0.Z * t1.X, t0.X * t1.X + t0.Z * t1.Z));
+                step[i] = Angle(t0.X, t0.Y, t0.Z, t1.X, t1.Y, t1.Z);
             }
 
-            // Радіус це довжина відрізка колії, поділена на кут, на який на ньому повернула дотична:
-            // окремо в плані і окремо по висоті. У плані кут складається з поворотів між сусідніми точками
+            // Радіус це довжина відрізка колії, поділена на кут, на який на ньому повернула дотична. Натурний:
+            // довжина вздовж колії і кут у просторі, як їх проходить колесо; кут складається з поворотів між
+            // сусідніми точками. Окремо ще радіус по висоті
             for (int i = 0; i < count; i++)
             {
                 int a = Math.Max(0, i - RadiusWindow);
@@ -119,14 +131,12 @@ namespace RailWorld.src.RailWay
             // Злам між сусідніми секціями. Попередня перевірка порівнює напрямок на кінцях відрізка
             // у два блоки і не бачить вигину, що вміщається всередину нього: колія пірнає і вирівнюється
             // або звертає вбік і одразу назад, а напрямок на обох кінцях той самий. Колія ж малюється
-            // секціями по дві точки нарізки, і злам це кут між двома сусідніми: його і міряємо.
-            // У плані досить осі: рейки там повторюють її на сталій відстані
+            // секціями по дві точки нарізки, і злам це кут між двома сусідніми: його і міряємо, теж у просторі.
+            // Тут досить осі; як ламаються рейки на нахиленому полотні, міряє перевірка по висоті нижче
             for (int i = 2; i + 2 < count; i++)
             {
                 Vec3d before = points[i - 2].position, here = points[i].position, after = points[i + 2].position;
-                double ax = here.X - before.X, az = here.Z - before.Z;
-                double bx = after.X - here.X, bz = after.Z - here.Z;
-                double turn = Math.Abs(Math.Atan2(ax * bz - az * bx, ax * bx + az * bz));
+                double turn = Angle(here.X - before.X, here.Y - before.Y, here.Z - before.Z, after.X - here.X, after.Y - here.Y, after.Z - here.Z);
                 if (turn < 1e-6) continue;
 
                 // Від середини однієї секції до середини наступної

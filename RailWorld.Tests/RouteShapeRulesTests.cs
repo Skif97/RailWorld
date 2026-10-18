@@ -55,6 +55,37 @@ namespace RailWorld.Tests
             Assert.Contains(points, point => Math.Abs(point.position.X - 10.8) < 1e-6);
         }
 
+        // Точки нарізки гвинтової колії: радіус у плані, ухил, крок чверть блока вздовж колії
+        private static List<PointOnBezierCurve> Helix(double radius, double slope, double length)
+        {
+            var points = new List<PointOnBezierCurve>();
+            double cos = Math.Cos(slope), sin = Math.Sin(slope);
+            for (double s = 0; s <= length; s += RouteCurve.PieceLength)
+            {
+                double phi = s * cos / radius;
+                var tangent = new Vec3f((float)(-Math.Sin(phi) * cos), (float)sin, (float)(Math.Cos(phi) * cos));
+                points.Add(new PointOnBezierCurve
+                {
+                    position = new Vec3d(radius * Math.Cos(phi), s * sin, radius * Math.Sin(phi)),
+                    tangent = tangent,
+                    normal = new Vec3f((float)Math.Cos(phi), 0, (float)Math.Sin(phi))
+                });
+            }
+            return points;
+        }
+
+        [Fact]
+        public void RadiusIsMeasuredAlongTheTrack()
+        {
+            // Гвинтовий підйом на 30°: натурний радіус це радіус у плані, поділений на cos² ухилу. Радіус у
+            // плані на п'яту менший за межу, а натурний більший, тож такий підйом можна. Рівне коло того самого
+            // радіуса в плані вже ні
+            double limit = TrackRules.MinRadius - RouteRules.RadiusTolerance;
+            double plan = limit * 0.8;
+            Assert.Null(RouteRules.FindProblem(Helix(plan, Math.PI / 6, 6)));
+            Assert.NotNull(RouteRules.FindProblem(Helix(plan, 0, 6)));
+        }
+
         [Fact]
         public void CutAlwaysGivesOddCount()
         {
