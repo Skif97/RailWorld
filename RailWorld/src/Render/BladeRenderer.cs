@@ -4,6 +4,7 @@ using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 using RailWorld.src.RailWay;
 
 namespace RailWorld
@@ -421,9 +422,9 @@ namespace RailWorld
             values[4] = (float)first.Side.X; values[5] = (float)first.Side.Y; values[6] = (float)first.Side.Z; values[7] = 0;
             values[8] = (float)first.Up.X; values[9] = (float)first.Up.Y; values[10] = (float)first.Up.Z; values[11] = 0;
             values[12] = (float)first.Along.X; values[13] = (float)first.Along.Y; values[14] = (float)first.Along.Z; values[15] = 0;
-            values[16] = (float)(blade.Origin.X - chunkCoord.X * 32.0);
-            values[17] = (float)(blade.Origin.Y - chunkCoord.Y * 32.0);
-            values[18] = (float)(blade.Origin.Z - chunkCoord.Z * 32.0);
+            values[16] = (float)(blade.Origin.X - chunkCoord.X * GlobalConstants.ChunkSize);
+            values[17] = (float)(blade.Origin.Y - chunkCoord.Y * GlobalConstants.ChunkSize);
+            values[18] = (float)(blade.Origin.Z - chunkCoord.Z * GlobalConstants.ChunkSize);
             values[19] = 1;
             WriteLight(blade);
 
@@ -435,9 +436,8 @@ namespace RailWorld
         // Читає світло блока, де стоїть деталь, і кладе його в дані інстанса: rgb це світло від джерел, a сонячне
         private void WriteLight(Blade blade)
         {
-            int x = (int)Math.Floor(blade.Origin.X), y = (int)Math.Floor(blade.Origin.Y + 0.25), z = (int)Math.Floor(blade.Origin.Z);
-            blade.LightKey = capi.World.BlockAccessor.GetLightRGBsAsInt(x, y, z);
-            Vec4f light = capi.World.BlockAccessor.GetLightRGBs(x, y, z);
+            blade.LightKey = TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin);
+            Vec4f light = TrackLight.Of(capi.World.BlockAccessor, blade.Origin);
 
             float[] values = blade.Floats.Values;
             values[0] = light.R;
@@ -497,7 +497,7 @@ namespace RailWorld
         {
             foreach (Blade blade in blades.Values)
             {
-                int key = capi.World.BlockAccessor.GetLightRGBsAsInt((int)Math.Floor(blade.Origin.X), (int)Math.Floor(blade.Origin.Y + 0.25), (int)Math.Floor(blade.Origin.Z));
+                int key = TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin);
                 if (key == blade.LightKey || blade.MeshRef == null) continue;
 
                 WriteLight(blade);
@@ -515,7 +515,7 @@ namespace RailWorld
             {
                 if (blade.MeshRef == null) continue;
 
-                origin.Set((float)(blade.Chunk.X * 32.0 - cameraPos.X), (float)(blade.Chunk.Y * 32.0 - cameraPos.Y), (float)(blade.Chunk.Z * 32.0 - cameraPos.Z));
+                origin.Set((float)(blade.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(blade.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(blade.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
                 prog.Uniform("origin", origin);
                 bindTexture?.Invoke(blade.TextureId);
                 capi.Render.RenderMeshInstanced(blade.MeshRef, 1);

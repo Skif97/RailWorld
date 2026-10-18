@@ -17,7 +17,7 @@ namespace RailWorld.src.RailWay
         public const int ColumnCount = Columns * Columns;
 
         /// <summary>Сітка вокселів підсипки: як у чізлених блоків, 16 на блок.</summary>
-        public const int Voxels = 16;
+        public const int Voxels = ModMath.VoxelsPerSide;
         public const int VoxelsPerBlock = Voxels * Voxels * Voxels;
 
         /// <summary>Наскільки нижче за площину колії закінчується підсипка: шпала втоплена в неї наполовину.</summary>
@@ -27,7 +27,7 @@ namespace RailWorld.src.RailWay
         public const float NoHeight = -1f;
 
         // Найменша висота колонки з колією, щоб бокс колізії не вироджувався
-        private const float MinHeight = 1 / 16f;
+        private const float MinHeight = (float)ModMath.Voxel;
 
         /// <summary>
         /// Блок вважається вільним місцем, якщо гра дозволяє його замінити не гірше за це: повітря, висока трава,

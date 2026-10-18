@@ -62,8 +62,8 @@ namespace RailWorld.src.RailWay
 
         // Розміри підкладки з моделі shapes/part/fastening.json, блоків: пів довжини вздовж рейки і пів ширини
         // впоперек. Якщо підкладку в моделі змінено, ці числа треба змінити теж
-        public const double PlateHalfLength = 1.6 / 16;
-        public const double PlateHalfWidth = 2.4 / 16;
+        public const double PlateHalfLength = 1.6 * ModMath.Voxel;
+        public const double PlateHalfWidth = 2.4 * ModMath.Voxel;
 
         // Два влучання рейки в той самий брус ближче за це, блоків, це одне місце: рейка це ланцюжок шматків,
         // і на межі двох шматків чи двох секцій той самий перетин знаходиться двічі, з похибкою обчислень
@@ -146,8 +146,8 @@ namespace RailWorld.src.RailWay
 
         // Де в моделі стоять костилі відносно середини скріплення, блоків: уздовж рейки і вбік від її осі
         // (shapes/part/fastening.json і spikepair.json). Якщо костилі в моделі пересунуто, змінити й тут
-        public const double SpikeAlong = 0.75 / 16;
-        public const double SpikeAside = 1.15 / 16;
+        public const double SpikeAlong = 0.75 * ModMath.Voxel;
+        public const double SpikeAside = 1.15 * ModMath.Voxel;
 
         /// <summary>
         /// Де відрізок рейки від from до to перетинає в плані вісь бруса. Кінці відрізка рахуються: на межі

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 
 namespace RailWorld.src.RailWay
 {
@@ -181,8 +182,6 @@ namespace RailWorld.src.RailWay
 
     public static class SectionPicker
     {
-        private const int ChunkSize = 32;
-
         /// <summary>
         /// Стандартні бокси секції: по одному на кожну деталь, встановлену чи ні.
         /// </summary>
@@ -294,9 +293,9 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static SectionSelection Pick(Vec3d origin, Vec3d dir, double range, System.Func<Vec3i, List<SectionBox>> boxesInChunk, System.Func<SectionBox, bool> filter)
         {
-            int cx = (int)Math.Floor(origin.X / ChunkSize);
-            int cy = (int)Math.Floor(origin.Y / ChunkSize);
-            int cz = (int)Math.Floor(origin.Z / ChunkSize);
+            int cx = (int)Math.Floor(origin.X / GlobalConstants.ChunkSize);
+            int cy = (int)Math.Floor(origin.Y / GlobalConstants.ChunkSize);
+            int cz = (int)Math.Floor(origin.Z / GlobalConstants.ChunkSize);
 
             double reach = (range + 1) * (range + 1);
             SectionBox best = null;

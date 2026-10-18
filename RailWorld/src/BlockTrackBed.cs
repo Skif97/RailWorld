@@ -168,7 +168,8 @@ namespace RailWorld
                 // щоб сніг лягав плямами, тому тут вона додається назад
                 float upper = stage + 1 < StageThresholds.Length ? StageThresholds[stage + 1] : StageThresholds[stage] + 0.5f;
                 float level = (StageThresholds[stage] + upper) / 2;
-                accum[(pos.Z & 31) * 32 + (pos.X & 31)] = level + GameMath.MurmurHash3Mod(pos.X, 0, pos.Z, 150) / 300f;
+                const int mask = GlobalConstants.ChunkSize - 1;
+                accum[(pos.Z & mask) * GlobalConstants.ChunkSize + (pos.X & mask)] = level + GameMath.MurmurHash3Mod(pos.X, 0, pos.Z, 150) / 300f;
             }
 
             SetSnowStage(world, pos, stage);

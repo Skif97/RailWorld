@@ -9,6 +9,7 @@ using ProtoBuf;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 using Vintagestory.Common;
 using Vintagestory.GameContent;
@@ -141,9 +142,9 @@ namespace RailWorld.src.RailWay
         {
             _sleeperLength = sleeperLength;
             Vec3i chunkAddres = ModMath.FindChunk(center.position);
-            Vec3d start_ = start.position.SubCopy(chunkAddres.X*32, chunkAddres.Y * 32, chunkAddres.Z * 32);
-            Vec3d center_ = center.position.SubCopy(chunkAddres.X * 32, chunkAddres.Y * 32, chunkAddres.Z * 32);
-            Vec3d end_ = end.position.SubCopy(chunkAddres.X * 32, chunkAddres.Y * 32, chunkAddres.Z * 32);
+            Vec3d start_ = start.position.SubCopy(chunkAddres.X * GlobalConstants.ChunkSize, chunkAddres.Y * GlobalConstants.ChunkSize, chunkAddres.Z * GlobalConstants.ChunkSize);
+            Vec3d center_ = center.position.SubCopy(chunkAddres.X * GlobalConstants.ChunkSize, chunkAddres.Y * GlobalConstants.ChunkSize, chunkAddres.Z * GlobalConstants.ChunkSize);
+            Vec3d end_ = end.position.SubCopy(chunkAddres.X * GlobalConstants.ChunkSize, chunkAddres.Y * GlobalConstants.ChunkSize, chunkAddres.Z * GlobalConstants.ChunkSize);
             Initialization(chunkAddres, trackWidth, start_, start.tangent, start.normal, center_, center.tangent, center.normal, end_, end.tangent, end.normal);
 
         }
@@ -183,13 +184,13 @@ namespace RailWorld.src.RailWay
 
         public Vec3d FullStartPosition
         {
-            get { return new Vec3d(_chunkAddres.X * 32.0 + _startPosition.X, _chunkAddres.Y * 32.0 + _startPosition.Y, _chunkAddres.Z * 32.0 + _startPosition.Z); }
+            get { return new Vec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _startPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _startPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _startPosition.Z); }
 
         }
 
         public Vec3d FullEndPosition
         {
-            get { return new Vec3d(_chunkAddres.X * 32.0 + _endPosition.X, _chunkAddres.Y * 32.0 + _endPosition.Y, _chunkAddres.Z * 32.0 + _endPosition.Z); }
+            get { return new Vec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _endPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _endPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _endPosition.Z); }
 
         }
 
@@ -253,7 +254,7 @@ namespace RailWorld.src.RailWay
 
         public Vec3d GetGlobalPos()
         {
-            return new Vec3d(_chunkAddres.X * 32.0 + _centerPosition.X, _chunkAddres.Y * 32.0 + _centerPosition.Y, _chunkAddres.Z * 32.0 + _centerPosition.Z);
+            return new Vec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _centerPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _centerPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _centerPosition.Z);
         }
 
         public bool InstallationRails(string material) 

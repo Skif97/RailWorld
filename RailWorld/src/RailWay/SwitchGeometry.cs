@@ -11,27 +11,27 @@ namespace RailWorld.src.RailWay
     public static class RailProfile
     {
         /// <summary>Пів ширини головки.</summary>
-        public const double HeadHalfWidth = 0.6 / 16;
+        public const double HeadHalfWidth = 0.6 * ModMath.Voxel;
         /// <summary>Пів ширини підошви.</summary>
-        public const double FootHalfWidth = 1.0 / 16;
+        public const double FootHalfWidth = 1.0 * ModMath.Voxel;
         /// <summary>Пів товщини шийки.</summary>
-        public const double WebHalfWidth = 0.2 / 16;
+        public const double WebHalfWidth = 0.2 * ModMath.Voxel;
         /// <summary>Верх підошви над її низом.</summary>
-        public const double FootTop = 0.3 / 16;
+        public const double FootTop = 0.3 * ModMath.Voxel;
         /// <summary>Низ головки над низом підошви.</summary>
-        public const double HeadBottom = 1.8 / 16;
+        public const double HeadBottom = 1.8 * ModMath.Voxel;
         /// <summary>Верх головки над низом підошви.</summary>
-        public const double Top = 2.5 / 16;
+        public const double Top = 2.5 * ModMath.Voxel;
         /// <summary>
         /// Товщина підкладки, на якій рейка лежить на шпалі (shapes/part/fastening.json). Рейка стоїть на ній,
         /// тому шпала лежить нижче за підошву рейки саме на стільки.
         /// </summary>
-        public const double PlateThickness = 0.25 / 16;
+        public const double PlateThickness = 0.25 * ModMath.Voxel;
         /// <summary>
         /// Верх вкладиша між шийками ходової рейки й контррейки стрілки над низом підошви. Нижчий за головку
         /// рейки, щоб гребінь колеса проходив над ним.
         /// </summary>
-        public const double SpacerTop = 1.5 / 16;
+        public const double SpacerTop = 1.5 * ModMath.Voxel;
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using Vintagestory.API.Server;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 using System;
 using Vintagestory.API.Common.Entities;
 using RailWorld.src.RailWay;
@@ -254,7 +255,7 @@ namespace RailWorld
             int bestPart = 0;
             double bestAlong = 0, bestScore = double.MaxValue;
 
-            const int chunkSize = 32;
+            const int chunkSize = GlobalConstants.ChunkSize;
             for (int dx = -1; dx <= 1; dx += 2)
             {
                 for (int dy = -1; dy <= 1; dy += 2)

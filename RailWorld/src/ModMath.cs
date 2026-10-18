@@ -19,6 +19,18 @@ namespace RailWorld
 {
     public class ModMath
     {
+        /// <summary>
+        /// Скільки вокселів у блоці вздовж кожної осі: як у моделей гри і чізлених блоків. Своєї сталої для цього
+        /// гра не має, вона й сама пише 16 числом.
+        /// </summary>
+        public const int VoxelsPerSide = 16;
+
+        /// <summary>
+        /// Розмір вокселя, блоків. Розміри деталей колії записуються у вокселях моделі: 0.6 * Voxel це 0,6 вокселя,
+        /// як у редакторі моделей.
+        /// </summary>
+        public const double Voxel = 1.0 / VoxelsPerSide;
+
 
         public static Vec3i FindChunk(double X, double Y, double Z)
         {

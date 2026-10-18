@@ -45,6 +45,9 @@ namespace RailWorld.src.RailWay
         // На відрізки якої довжини нарізається крива. Секція це два таких відрізки
         public const double PieceLength = 0.25;
 
+        /// <summary>Довжина секції, блоків: секція займає два шматки нарізки.</summary>
+        public const double SectionLength = PieceLength * 2;
+
         // Точки, ближчі за це, кривою не з'єднуються: нарізці нема чого різати
         public const double MinSpan = 1;
 
@@ -868,7 +871,7 @@ namespace RailWorld.src.RailWay
             // Беремо не просто найближчу: точки можуть стояти густо (початок і кінець кожної дуги теж точки),
             // і перехід до точки за два блоки від стрілки вийшов би горбом. Потрібна перша точка, до якої
             // вистачає місця: ділянка площиною основної колії плюс довжина переходу, що залежить від різниці висот
-            double holdNeeded = HoldSections * PieceLength * 2;
+            double holdNeeded = HoldSections * SectionLength;
             int nearStart = -1, nearEnd = -1;
             int firstFree = -1, lastFree = -1;
             foreach (int joint in joints)
@@ -900,7 +903,7 @@ namespace RailWorld.src.RailWay
                 nearEnd = -1;
             }
 
-            double holdLength = HoldSections * PieceLength * 2;
+            double holdLength = HoldSections * SectionLength;
 
             if (start != null && end != null && nearStart < 0)
             {

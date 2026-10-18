@@ -266,8 +266,8 @@ namespace RailWorld
         // На якому перерізі колії від стрілки стоїть тяга: 2 це кінець першої секції
         private const int TieBarAt = 2;
         private const double TieBarWidth = 0.09;
-        private const double TieBarBottom = 0.5 / 16;
-        private const double TieBarTop = 1.0 / 16;
+        private const double TieBarBottom = 0.5 * ModMath.Voxel;
+        private const double TieBarTop = 1.0 * ModMath.Voxel;
 
         /// <summary>
         /// Тяга між гостряками: планка впоперек колії від шийки одного гостряка до шийки другого.

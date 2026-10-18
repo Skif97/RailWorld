@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 using Vintagestory.Client.NoObf;
 using RailWorld.src.RailWay;
 
@@ -16,7 +17,6 @@ namespace RailWorld
     /// </summary>
     public class RailSelectionRenderer : IRenderer, IDisposable
     {
-        private const int ChunkSize = 32;
 
         private static readonly Vec4f SelectionColor = new Vec4f(0f, 0f, 0f, 0.5f);
         private static readonly Vec4f InstallableOutlineColor = new Vec4f(0.3f, 1f, 0.3f, 0.9f);
@@ -153,9 +153,9 @@ namespace RailWorld
             {
                 // Зі шпалою чи рейкою в руці: чанк гравця і сусідні
                 Vec3d pos = player.Entity.Pos.XYZ;
-                int cx = (int)Math.Floor(pos.X / ChunkSize);
-                int cy = (int)Math.Floor(pos.Y / ChunkSize);
-                int cz = (int)Math.Floor(pos.Z / ChunkSize);
+                int cx = (int)Math.Floor(pos.X / GlobalConstants.ChunkSize);
+                int cy = (int)Math.Floor(pos.Y / GlobalConstants.ChunkSize);
+                int cz = (int)Math.Floor(pos.Z / GlobalConstants.ChunkSize);
 
                 for (int x = cx - 1; x <= cx + 1; x++)
                 {
@@ -187,7 +187,7 @@ namespace RailWorld
         {
             Vec3d cam = capi.World.Player.Entity.CameraPos;
             mat.Set(capi.Render.CameraMatrixOriginf)
-               .Translate((float)(fill.Coord.X * (double)ChunkSize - cam.X), (float)(fill.Coord.Y * (double)ChunkSize - cam.Y), (float)(fill.Coord.Z * (double)ChunkSize - cam.Z));
+               .Translate((float)(fill.Coord.X * (double)GlobalConstants.ChunkSize - cam.X), (float)(fill.Coord.Y * (double)GlobalConstants.ChunkSize - cam.Y), (float)(fill.Coord.Z * (double)GlobalConstants.ChunkSize - cam.Z));
             prog.UniformMatrix("modelViewMatrix", mat.Values);
 
             MeshRef sleepers = sleeperFits ? fill.SleeperInstallable : fill.SleeperGhost;
@@ -258,7 +258,7 @@ namespace RailWorld
             if (count == 0) return null;
 
             MeshData mesh = new MeshData(24 * count, 36 * count, false, false, true, false);
-            double ox = coord.X * (double)ChunkSize, oy = coord.Y * (double)ChunkSize, oz = coord.Z * (double)ChunkSize;
+            double ox = coord.X * (double)GlobalConstants.ChunkSize, oy = coord.Y * (double)GlobalConstants.ChunkSize, oz = coord.Z * (double)GlobalConstants.ChunkSize;
 
             foreach (SectionBox box in boxes)
             {

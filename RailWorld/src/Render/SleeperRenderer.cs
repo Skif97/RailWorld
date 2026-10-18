@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Config;
 
 namespace RailWorld
 {
@@ -131,13 +132,13 @@ namespace RailWorld
         // Світло блока, де лежить шпала: rgb це світло від джерел, a сонячне
         private Vec4f Light(Vec3d pos)
         {
-            return capi.World.BlockAccessor.GetLightRGBs((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
+            return TrackLight.Of(capi.World.BlockAccessor, pos);
         }
 
         // Те саме світло одним числом: щоб перевірити, чи воно змінилося, не створюючи об'єкта
         private int LightKey(Vec3d pos)
         {
-            return capi.World.BlockAccessor.GetLightRGBsAsInt((int)Math.Floor(pos.X), (int)Math.Floor(pos.Y + 0.25), (int)Math.Floor(pos.Z));
+            return TrackLight.KeyOf(capi.World.BlockAccessor, pos);
         }
 
         /// <summary>
@@ -219,7 +220,7 @@ namespace RailWorld
             }
 
             float[] values = batch.Floats.Values;
-            double originX = batch.Chunk.X * 32.0, originY = batch.Chunk.Y * 32.0, originZ = batch.Chunk.Z * 32.0;
+            double originX = batch.Chunk.X * GlobalConstants.ChunkSize, originY = batch.Chunk.Y * GlobalConstants.ChunkSize, originZ = batch.Chunk.Z * GlobalConstants.ChunkSize;
 
             foreach (SleeperInstance part in batch.Parts.Values)
             {
@@ -272,7 +273,7 @@ namespace RailWorld
             {
                 if (batch.Mesh == null || batch.Drawn.Count == 0) continue;
 
-                origin.Set((float)(batch.Chunk.X * 32.0 - cameraPos.X), (float)(batch.Chunk.Y * 32.0 - cameraPos.Y), (float)(batch.Chunk.Z * 32.0 - cameraPos.Z));
+                origin.Set((float)(batch.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(batch.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(batch.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
                 prog.Uniform("origin", origin);
                 capi.Render.RenderMeshInstanced(batch.Mesh, batch.Drawn.Count);
             }
