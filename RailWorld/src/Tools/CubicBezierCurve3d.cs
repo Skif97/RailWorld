@@ -220,50 +220,31 @@ namespace RailWorld
            // else { quntityPoints = approximateQuantityPiece; }
             quntityPoints = ((int)Math.Floor(approximateQuantityPiece / 2f) * 2)+1;
             double pieceLength = fullLength / (quntityPoints - 1f);
-            double timeNext = 0f;
-            double totalLenght = 0;
-            int step = 0;
-            int walkStep = 0;
 
             point.position = InterpolationWithWeight(0f);
             point.tangent = Derivative(0f).ToVec3f();
             point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
             pointsList.Add(point);
-            step++;
 
-            while (timeNext < 1 && step < quntityPoints)
+            // Між першою і останньою точкою їх рівно quntityPoints - 2: кожна там, де пройдено ще один шматок,
+            // на першому кроці обходу, що його перейшов. Остання точка це сам кінець кривої, тож тут її не шукаємо:
+            // інакше похибка суми довжин інколи ставила ще одну впритул до кінця або й за ним, і точок ставало парно
+            int walkStep = 0;
+            for (int step = 1; step < quntityPoints - 1; step++)
             {
-                walkStep++;
-                if (walkStep < times.Count)
-                {
-                    timeNext = times[walkStep];
-                    totalLenght = lengths[walkStep];
-                }
-                else
-                {
-                    // Один крок за кінець кривої: у запам'ятоване він не потрапив
-                    timeNext += minTimeStep;
-                    double x = InterpolationX_WithWeight(timeNext), y = InterpolationY_WithWeight(timeNext), z = InterpolationZ_WithWeight(timeNext);
-                    totalLenght += LenghtLine3D(xPrevious, yPrevious, zPrevious, x, y, z);
-                    xPrevious = x;
-                    yPrevious = y;
-                    zPrevious = z;
-                }
+                double target = pieceLength * step;
+                while (walkStep < times.Count - 1 && lengths[walkStep] <= target) walkStep++;
 
-                if (totalLenght > pieceLength * step)
-                {
-                    point.position = InterpolationWithWeight(timeNext);
-                    point.tangent = Derivative(timeNext).ToVec3f();
-                    point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
-                    pointsList.Add(point);
-                    step++;
-                }
+                double time = times[walkStep];
+                point.position = InterpolationWithWeight(time);
+                point.tangent = Derivative(time).ToVec3f();
+                point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
+                pointsList.Add(point);
             }
             point.position = InterpolationWithWeight(1f);
             point.tangent = Derivative(1f).ToVec3f();
             point.normal = new Vec3f(-point.tangent.Z, 0, point.tangent.X).Normalize();
             pointsList.Add(point);
-            step++;
             return pointsList;
         }
 

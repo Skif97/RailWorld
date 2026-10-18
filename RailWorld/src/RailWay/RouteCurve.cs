@@ -128,11 +128,19 @@ namespace RailWorld.src.RailWay
                 RoutePoint b = route[i + 1];
 
                 List<PointOnBezierCurve> points = cache != null ? cache.Leg(a, b) : Leg(a, b);
-                if (points == null) continue;
+                if (points == null)
+                {
+                    // Між двома точками не вміщається жодна секція. Пропустити ділянку не можна: маршрут далі
+                    // почався б не з тієї точки, де його поставили, або вийшов би не тієї довжини
+                    conflict = conflict ?? "дві точки маршруту стоять ближче за " + MinSpan.ToString("0.#") + " блок одна від одної";
+                    continue;
+                }
 
-                // Кінець попередньої кривої і початок цієї це та сама точка
-                if (all.Count > 0) points.RemoveAt(0);
-                else joints.Add(0);
+                // Кінець попередньої кривої і початок цієї це та сама точка; якщо попередню ділянку пропущено,
+                // то вже ні, і початок цієї лишається
+                bool joined = all.Count > 0 && all[all.Count - 1].position.DistanceTo(points[0].position) < 1e-6;
+                if (joined) points.RemoveAt(0);
+                else joints.Add(all.Count);
                 all.AddRange(points);
                 joints.Add(all.Count - 1);
             }
@@ -142,18 +150,39 @@ namespace RailWorld.src.RailWay
             // Там, де маршрут починається або закінчується стрілкою, він спершу йде поверх основної колії:
             // на цій ділянці бере її висоту і нахил полотна, а зійшовши з неї, плавно переходить на свої
             RoutePoint first = route[0], last = route[route.Count - 1];
-            double[] weight = new double[all.Count];
-            double[] trackCant = new double[all.Count];
+            var shape = new RouteHeights(all.Count);
 
-            bool followed = FollowTracks(all, first, last, resolve, weight, trackCant, joints, ref conflict);
+            bool followed = FollowTracks(all, first, last, resolve, shape, joints, ref conflict);
             // Де маршрут перетинає вже покладену колію на близькій висоті, він лягає в її площину
-            if (track != null && LevelCrossings(all, first, last, resolve, track, cache, weight, trackCant, conflictAt, joints, ref conflict)) followed = true;
+            if (track != null && LevelCrossings(all, first, last, resolve, track, cache, shape, conflictAt, joints, ref conflict)) followed = true;
             if (followed) RecomputeSlopes(all);
 
             ModMath.ApplyCant(all, first.Cant, last.Cant);
-            if (followed) BlendCant(all, weight, trackCant);
+            if (followed) BlendCant(all, shape);
             if (track != null) CheckAgainstLaidTrack(all, resolve, track, cache, conflictAt, ref conflict);
             return all;
+        }
+
+        /// <summary>
+        /// Що відомо про висоту кожної точки нарізки, поки її підганяють під покладену колію.
+        /// Fixed: висота жорстка, точка лежить на полотні покладеної колії (біля стрілки маршруту чи в перетині)
+        /// і зрушити її не можна. Weight: наскільки нахил полотна точки береться з TrackCant, а не власний;
+        /// у переході від колії до власної висоти він плавно згасає, хоча сама висота там уже не жорстка.
+        /// Колись обидва змісти тримав один масив, і перехід від стрілки, записаний туди частками, виглядав
+        /// для перетинів жорсткою умовою на всю свою довжину.
+        /// </summary>
+        private class RouteHeights
+        {
+            public readonly bool[] Fixed;
+            public readonly double[] Weight;
+            public readonly double[] TrackCant;
+
+            public RouteHeights(int count)
+            {
+                Fixed = new bool[count];
+                Weight = new double[count];
+                TrackCant = new double[count];
+            }
         }
 
         // Маршрут не можна будувати, якщо його секції, з'єднавшись із покладеною колією, дали б стрілку в зоні
@@ -433,7 +462,7 @@ namespace RailWorld.src.RailWay
         /// Повертає true, якщо висоти маршруту змінилися.
         /// </summary>
         private static bool LevelCrossings(List<PointOnBezierCurve> points, RoutePoint first, RoutePoint last,
-            Func<SectionLink, Section> resolve, TrackIndex track, RouteCache cache, double[] weight, double[] trackCant,
+            Func<SectionLink, Section> resolve, TrackIndex track, RouteCache cache, RouteHeights shape,
             List<int> conflictAt, List<int> joints, ref string conflict)
         {
             int count = points.Count;
@@ -456,11 +485,11 @@ namespace RailWorld.src.RailWay
             int ownUntil = -1, ownFrom = count;
             if (first.Track != null)
             {
-                while (ownUntil + 1 < count && weight[ownUntil + 1] >= 1) ownUntil++;
+                while (ownUntil + 1 < count && shape.Fixed[ownUntil + 1]) ownUntil++;
             }
             if (last.Track != null)
             {
-                while (ownFrom - 1 >= 0 && weight[ownFrom - 1] >= 1) ownFrom--;
+                while (ownFrom - 1 >= 0 && shape.Fixed[ownFrom - 1]) ownFrom--;
             }
 
             double minAngle = MinCrossingAngleDeg * Math.PI / 180;
@@ -598,10 +627,10 @@ namespace RailWorld.src.RailWay
                     if (!TrackSurface.At(plane, Neighbour(plane, true, resolve), Neighbour(plane, false, resolve), p, travel.X, travel.Z,
                         out double planeY, out double cant)) continue;
 
-                    if (weight[i] > 0)
+                    if (shape.Fixed[i])
                     {
                         // Тут уже своя жорстка умова: стрілка маршруту або інший перетин
-                        if (weight[i] < 1 || Math.Abs(p.Y - planeY) > HeightTolerance)
+                        if (Math.Abs(p.Y - planeY) > HeightTolerance)
                         {
                             conflict = conflict ?? "перетин надто близько до стрілки маршруту або до іншого перетину на іншій висоті";
                             Mark(i);
@@ -609,11 +638,14 @@ namespace RailWorld.src.RailWay
                     }
                     else
                     {
+                        // Точка в переході від стрілки теж іде в площину перетину: перехід потім перебудується
+                        // від краю перетину (Ramp)
                         PointOnBezierCurve point = points[i];
                         point.position = new Vec3d(p.X, planeY, p.Z);
                         points[i] = point;
-                        weight[i] = 1;
-                        trackCant[i] = cant;
+                        shape.Fixed[i] = true;
+                        shape.Weight[i] = 1;
+                        shape.TrackCant[i] = cant;
                     }
 
                     if (from < 0) from = i;
@@ -626,8 +658,8 @@ namespace RailWorld.src.RailWay
             foreach (int[] zone in zones)
             {
                 string before = conflict;
-                Ramp(points, zone[0], -1, original, run, weight, trackCant, routePoints, ref conflict);
-                Ramp(points, zone[1], 1, original, run, weight, trackCant, routePoints, ref conflict);
+                Ramp(points, zone[0], -1, original, run, shape, routePoints, ref conflict);
+                Ramp(points, zone[1], 1, original, run, shape, routePoints, ref conflict);
                 if (conflict != before)
                 {
                     Mark(zone[0]);
@@ -657,7 +689,7 @@ namespace RailWorld.src.RailWay
         /// крізь неї до наступної.
         /// </summary>
         private static void Ramp(List<PointOnBezierCurve> points, int edge, int direction, double[] original, double[] run,
-            double[] weight, double[] trackCant, HashSet<int> routePoints, ref string conflict)
+            RouteHeights shape, HashSet<int> routePoints, ref string conflict)
         {
             int count = points.Count;
             double lift = Math.Abs(points[edge].position.Y - original[edge]);
@@ -668,7 +700,7 @@ namespace RailWorld.src.RailWay
             int target = edge, hit = -1;
             for (int i = edge + direction; i >= 0 && i < count; i += direction)
             {
-                if (weight[i] > 0)
+                if (shape.Fixed[i])
                 {
                     hit = i;
                     break;
@@ -680,9 +712,9 @@ namespace RailWorld.src.RailWay
             if (hit >= 0)
             {
                 if (hit == edge + direction) return;
-                if (weight[hit] < 1 || Math.Abs(hit - edge) < 2)
+                if (Math.Abs(hit - edge) < 2)
                 {
-                    if (weight[hit] < 1 || Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance * 5)
+                    if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance * 5)
                         conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
                     return;
                 }
@@ -691,23 +723,23 @@ namespace RailWorld.src.RailWay
                 // Рейка проходить більшу різницю висот, ніж вісь, якщо полотна двох колій нахилені по-різному:
                 // до різниці висот осі додається те, на скільки рейку піднімає чи опускає перекіс
                 double step = Math.Abs(points[hit].position.Y - points[edge].position.Y)
-                    + TrackGauge.StandardWidth / 2 * Math.Abs(Math.Sin(trackCant[hit]) - Math.Sin(trackCant[edge]));
+                    + TrackGauge.StandardWidth / 2 * Math.Abs(Math.Sin(shape.TrackCant[hit]) - Math.Sin(shape.TrackCant[edge]));
                 if (step > HeightTolerance && Math.Abs(run[hit] - run[edge]) < RampRoom(step))
                     conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
 
                 int low = Math.Min(edge, hit), high = Math.Max(edge, hit);
-                Transition(points, low, high, VirtualSlope(points, run, low, 1), VirtualSlope(points, run, high, -1), run, weight, trackCant, 2);
+                Transition(points, low, high, VirtualSlope(points, run, low, 1), VirtualSlope(points, run, high, -1), run, shape, 2);
                 return;
             }
 
             if (Math.Abs(target - edge) < 2) return;
             if (direction > 0)
             {
-                Transition(points, edge, target, VirtualSlope(points, run, edge, 1), SlopeAlong(points[target].tangent, 1), run, weight, trackCant, 0);
+                Transition(points, edge, target, VirtualSlope(points, run, edge, 1), SlopeAlong(points[target].tangent, 1), run, shape, 0);
             }
             else
             {
-                Transition(points, target, edge, SlopeAlong(points[target].tangent, 1), VirtualSlope(points, run, edge, -1), run, weight, trackCant, 1);
+                Transition(points, target, edge, SlopeAlong(points[target].tangent, 1), VirtualSlope(points, run, edge, -1), run, shape, 1);
             }
         }
 
@@ -799,11 +831,8 @@ namespace RailWorld.src.RailWay
                 b.Position.X, b.Position.Y, b.Position.Z,
                 1, Weight, Weight, 1);
 
+            // Точок нарізки завжди непарна кількість: секція займає три з них, і сусідні ділять крайню
             List<PointOnBezierCurve> points = curve.CutIntoEqualPieces(PieceLength);
-
-            // Нарізка інколи дає зайву точку впритул до кінцевої. Тут це зсунуло б усі наступні секції
-            // на пів секції, тому таку точку прибираємо, і точок у кривої завжди непарна кількість
-            if (points.Count % 2 == 0 && points.Count >= 2) points.RemoveAt(points.Count - 2);
             return points.Count < 3 ? null : points;
         }
 
@@ -835,12 +864,12 @@ namespace RailWorld.src.RailWay
         /// Обидві стрілки рахуються разом, бо ціль переходу однієї залежить від того, де закінчується інша.
         /// </summary>
         private static bool FollowTracks(List<PointOnBezierCurve> points, RoutePoint first, RoutePoint last,
-            Func<SectionLink, Section> resolve, double[] weight, double[] trackCant, List<int> joints, ref string conflict)
+            Func<SectionLink, Section> resolve, RouteHeights shape, List<int> joints, ref string conflict)
         {
             int count = points.Count;
 
-            Follow start = first.Track == null ? null : FollowOnTrack(points, true, first.Track, first.TrackJointAtStart, resolve, weight, trackCant, ref conflict);
-            Follow end = last.Track == null ? null : FollowOnTrack(points, false, last.Track, last.TrackJointAtStart, resolve, weight, trackCant, ref conflict);
+            Follow start = first.Track == null ? null : FollowOnTrack(points, true, first.Track, first.TrackJointAtStart, resolve, shape, ref conflict);
+            Follow end = last.Track == null ? null : FollowOnTrack(points, false, last.Track, last.TrackJointAtStart, resolve, shape, ref conflict);
             if (start == null && end == null) return false;
 
             // Маршрут, що з якоїсь колії так і не зійшов, увесь лежить на ній: переходити нема куди
@@ -910,8 +939,8 @@ namespace RailWorld.src.RailWay
                 // Між двома стрілками жодної справжньої точки: один перехід від опорної точки до опорної
                 double room = run[freeTo] - run[freeFrom];
                 double hold = Math.Min(holdLength, room / 3);
-                HoldPlane(points, start, 1, hold, freeTo, run, weight, trackCant, ref conflict);
-                HoldPlane(points, end, -1, hold, start.Virtual, run, weight, trackCant, ref conflict);
+                HoldPlane(points, start, 1, hold, freeTo, run, shape, ref conflict);
+                HoldPlane(points, end, -1, hold, start.Virtual, run, shape, ref conflict);
 
                 if (end.Virtual - start.Virtual < 2)
                 {
@@ -921,19 +950,19 @@ namespace RailWorld.src.RailWay
                 }
 
                 Transition(points, start.Virtual, end.Virtual, VirtualSlope(points, run, start.Virtual, 1),
-                    VirtualSlope(points, run, end.Virtual, -1), run, weight, trackCant, 2);
+                    VirtualSlope(points, run, end.Virtual, -1), run, shape, 2);
                 return true;
             }
 
             if (start != null)
             {
                 int target = nearStart >= 0 ? nearStart : count - 1;
-                HoldPlane(points, start, 1, Math.Min(holdLength, (run[target] - run[freeFrom]) / 2), target, run, weight, trackCant, ref conflict);
+                HoldPlane(points, start, 1, Math.Min(holdLength, (run[target] - run[freeFrom]) / 2), target, run, shape, ref conflict);
 
                 if (target - start.Virtual >= 2)
                 {
                     Transition(points, start.Virtual, target, VirtualSlope(points, run, start.Virtual, 1),
-                        SlopeAlong(points[target].tangent, 1), run, weight, trackCant, 0);
+                        SlopeAlong(points[target].tangent, 1), run, shape, 0);
                 }
                 else if (Math.Abs(points[start.Virtual].position.Y - points[target].position.Y) > HeightTolerance * 5)
                 {
@@ -944,12 +973,12 @@ namespace RailWorld.src.RailWay
             if (end != null)
             {
                 int target = nearEnd >= 0 ? nearEnd : 0;
-                HoldPlane(points, end, -1, Math.Min(holdLength, (run[freeTo] - run[target]) / 2), target, run, weight, trackCant, ref conflict);
+                HoldPlane(points, end, -1, Math.Min(holdLength, (run[freeTo] - run[target]) / 2), target, run, shape, ref conflict);
 
                 if (end.Virtual - target >= 2)
                 {
                     Transition(points, target, end.Virtual, SlopeAlong(points[target].tangent, 1),
-                        VirtualSlope(points, run, end.Virtual, -1), run, weight, trackCant, 1);
+                        VirtualSlope(points, run, end.Virtual, -1), run, shape, 1);
                 }
                 else if (Math.Abs(points[end.Virtual].position.Y - points[target].position.Y) > HeightTolerance * 5)
                 {
@@ -969,7 +998,7 @@ namespace RailWorld.src.RailWay
 
         // Крок 1: від стрілки поверх основної колії, поки маршрут із неї не зійде
         private static Follow FollowOnTrack(List<PointOnBezierCurve> points, bool fromStart, Section track, bool jointAtStart,
-            Func<SectionLink, Section> resolve, double[] weight, double[] trackCant, ref string conflict)
+            Func<SectionLink, Section> resolve, RouteHeights shape, ref string conflict)
         {
             int count = points.Count;
             int anchor = fromStart ? 0 : count - 1;
@@ -1023,7 +1052,7 @@ namespace RailWorld.src.RailWay
                 follow.Plane = current;
                 follow.PlaneBefore = enteredAtStart ? behind : ahead;
                 follow.PlaneAfter = enteredAtStart ? ahead : behind;
-                if (!PutOnPlane(points, i, current, follow.PlaneBefore, follow.PlaneAfter, weight, trackCant, ref conflict)) break;
+                if (!PutOnPlane(points, i, current, follow.PlaneBefore, follow.PlaneAfter, shape, ref conflict)) break;
                 follow.Virtual = i;
             }
 
@@ -1039,14 +1068,14 @@ namespace RailWorld.src.RailWay
         // Крок 2: ще трохи площиною останньої секції основної колії. step це напрямок від стрілки,
         // length скільки блоків так іти, stop точка, до якої не доходити
         private static void HoldPlane(List<PointOnBezierCurve> points, Follow follow, int step, double length, int stop,
-            double[] run, double[] weight, double[] trackCant, ref string conflict)
+            double[] run, RouteHeights shape, ref string conflict)
         {
             if (follow.Exit < 0 || length <= 0) return;
 
             for (int i = follow.Exit; i >= 0 && i < points.Count && (stop - i) * step > 0; i += step)
             {
                 if (Math.Abs(run[i] - run[follow.Exit]) > length) break;
-                if (!PutOnPlane(points, i, follow.Plane, follow.PlaneBefore, follow.PlaneAfter, weight, trackCant, ref conflict)) break;
+                if (!PutOnPlane(points, i, follow.Plane, follow.PlaneBefore, follow.PlaneAfter, shape, ref conflict)) break;
                 follow.Virtual = i;
             }
         }
@@ -1069,13 +1098,13 @@ namespace RailWorld.src.RailWay
         /// 1 в кінці (наростає до неї), 2 на обох кінцях (переходить від однієї колії до іншої).
         /// </summary>
         private static void Transition(List<PointOnBezierCurve> points, int from, int to, double fromSlope, double toSlope,
-            double[] run, double[] weight, double[] trackCant, int kind)
+            double[] run, RouteHeights shape, int kind)
         {
             double span = run[to] - run[from];
             if (span < 1e-6) return;
 
             double fromY = points[from].position.Y, toY = points[to].position.Y;
-            double fromCant = trackCant[from], toCant = trackCant[to];
+            double fromCant = shape.TrackCant[from], toCant = shape.TrackCant[to];
 
             for (int i = from + 1; i < to; i++)
             {
@@ -1090,20 +1119,22 @@ namespace RailWorld.src.RailWay
                 points[i] = point;
 
                 double smooth = u2 * (3 - 2 * u);
+                // Висота тут уже не жорстка, лише нахил полотна ще береться з колії
+                shape.Fixed[i] = false;
                 if (kind == 0)
                 {
-                    weight[i] = 1 - smooth;
-                    trackCant[i] = fromCant;
+                    shape.Weight[i] = 1 - smooth;
+                    shape.TrackCant[i] = fromCant;
                 }
                 else if (kind == 1)
                 {
-                    weight[i] = smooth;
-                    trackCant[i] = toCant;
+                    shape.Weight[i] = smooth;
+                    shape.TrackCant[i] = toCant;
                 }
                 else
                 {
-                    weight[i] = 1;
-                    trackCant[i] = fromCant + (toCant - fromCant) * smooth;
+                    shape.Weight[i] = 1;
+                    shape.TrackCant[i] = fromCant + (toCant - fromCant) * smooth;
                 }
             }
         }
@@ -1113,14 +1144,14 @@ namespace RailWorld.src.RailWay
         // від осі колії вбік, а там площини сусідніх секцій на крутій кривій розходяться по висоті, і точки
         // маршруту лягли б сходинками. before і after це сусіди section з боку її початку й кінця
         private static bool PutOnPlane(List<PointOnBezierCurve> points, int i, Section section, Section before, Section after,
-            double[] weight, double[] trackCant, ref string conflict)
+            RouteHeights shape, ref string conflict)
         {
             Vec3d p = points[i].position;
             if (!TrackSurface.At(section, before, after, p, points[i].tangent.X, points[i].tangent.Z, out double planeY, out double cant)) return false;
 
             // Ділянки поверх двох різних колій можуть накластися. Обидві жорсткі: якщо вони хочуть
             // різної висоти в одній точці, виконати обидві не можна
-            if (weight[i] >= 1)
+            if (shape.Fixed[i])
             {
                 if (Math.Abs(p.Y - planeY) > HeightTolerance)
                     conflict = conflict ?? "дві стрілки маршруту вимагають різної висоти в одному місці";
@@ -1131,8 +1162,9 @@ namespace RailWorld.src.RailWay
             point.position = new Vec3d(p.X, planeY, p.Z);
             points[i] = point;
 
-            weight[i] = 1;
-            trackCant[i] = cant;
+            shape.Fixed[i] = true;
+            shape.Weight[i] = 1;
+            shape.TrackCant[i] = cant;
             return true;
         }
 
@@ -1191,18 +1223,18 @@ namespace RailWorld.src.RailWay
 
         // Поверх основної колії нахил полотна такий, як у неї; далі він переходить у власний нахил маршруту
         // з тією самою вагою, що й висота
-        private static void BlendCant(List<PointOnBezierCurve> points, double[] weight, double[] trackCant)
+        private static void BlendCant(List<PointOnBezierCurve> points, RouteHeights shape)
         {
             for (int i = 0; i < points.Count; i++)
             {
-                if (weight[i] <= 0) continue;
+                if (shape.Weight[i] <= 0) continue;
 
                 PointOnBezierCurve point = points[i];
                 Vec3f t = point.tangent;
                 if (Math.Sqrt(t.X * t.X + t.Z * t.Z) < 1e-6) continue;
 
                 double own = Math.Asin(GameMath.Clamp(point.normal.Y, -1, 1));
-                double cant = own + (CantAbout(t, trackCant[i]) - own) * weight[i];
+                double cant = own + (CantAbout(t, shape.TrackCant[i]) - own) * shape.Weight[i];
 
                 point.normal = NormalWithCant(t, cant);
                 points[i] = point;
