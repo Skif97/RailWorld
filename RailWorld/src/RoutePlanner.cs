@@ -293,7 +293,7 @@ namespace RailWorld
             RouteMarker free = RouteMarker.OnBlock(block, yaw);
 
             // Блок біля покладеної колії: точка стає на колію, ніби приціл навели на неї в найближчому місці
-            if (onTrack && TrackSurvey.NearestAxis(free.Position, TrackSurvey.MarkerReach,
+            if (onTrack && TrackSurvey.NearestAxis(free.Position, TrackRules.MarkerReach,
                 new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid), out Section near, out Vec3d at))
             {
                 return SnapToTrack(near, at, first, view);

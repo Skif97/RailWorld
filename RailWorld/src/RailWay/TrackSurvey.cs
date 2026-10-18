@@ -94,15 +94,6 @@ namespace RailWorld.src.RailWay
         public const double SamePlane = 0.15;
 
         /// <summary>
-        /// Як далеко від осі покладеної колії точка розмітки, поставлена на блок, стає на саму колію, блоків: і в
-        /// плані, і по висоті вгору чи вниз. Маршрут, що починається чи закінчується поруч із колією, до неї й
-        /// приєднується: на іншій висоті він однаково або перетнув би її, або до неї примкнув. Колію впритул до
-        /// іншої так не покладеш, і це навмисно. По висоті це менше за просвіт над колією (RouteCurve.CrossingClearance),
-        /// тож точка під мостом до колії на мосту не стає.
-        /// </summary>
-        public const double MarkerReach = 2.5;
-
-        /// <summary>
         /// Секція покладеної колії, вісь якої проходить найближче до точки p, не далі за reach у плані і не вище
         /// чи нижче за reach, і найближча до p точка її осі. Найближча рахується з висотою: колія на рівні точки
         /// виграє в колії над чи під нею. Вісь секції це ламана через її початок, середину й кінець.
@@ -149,7 +140,7 @@ namespace RailWorld.src.RailWay
             var facts = new SectionFacts();
             Vec3d middle = section.GetGlobalPos(), start = section.FullStartPosition, end = section.FullEndPosition;
 
-            foreach (Section other in track.Around(middle, Reach, RouteCurve.CrossingClearance))
+            foreach (Section other in track.Around(middle, Reach, TrackRules.Clearance))
             {
                 if (other == section) continue;
                 Vec3d otherStart = other.FullStartPosition, otherEnd = other.FullEndPosition;
@@ -177,7 +168,7 @@ namespace RailWorld.src.RailWay
                 if (!RouteCurve.CrossPlane(section, where, 0, 0, out double ownY, out _) || !RouteCurve.CrossPlane(other, where, 0, 0, out double otherY, out _)) continue;
                 double gap = Math.Abs(ownY - otherY);
 
-                if (gap > SamePlane && gap < RouteCurve.CrossingClearance) facts.TooClose = true;
+                if (gap > SamePlane && gap < TrackRules.Clearance) facts.TooClose = true;
                 if (!joined && gap <= SamePlane) facts.AddInPlane(other);
             }
             return facts;
@@ -191,7 +182,7 @@ namespace RailWorld.src.RailWay
         {
             List<SegmentHit> hits = null;
 
-            foreach (Section section in track.Around(a, CrossReach, RouteCurve.CrossingClearance + 1))
+            foreach (Section section in track.Around(a, CrossReach, TrackRules.Clearance + 1))
             {
                 if (!AxisCrossing.Of(a, b, section, out double t)) continue;
 
@@ -208,7 +199,7 @@ namespace RailWorld.src.RailWay
         public static bool CoversLever(Section section, Section trunk, bool atStart, int side)
         {
             SectionPicker.LeverFootprint(trunk, atStart, side, out Vec3d from, out Vec3d to);
-            if (Math.Abs(from.Y - section.GetGlobalPos().Y) >= RouteCurve.CrossingClearance) return false;
+            if (Math.Abs(from.Y - section.GetGlobalPos().Y) >= TrackRules.Clearance) return false;
 
             return Footprint.Overlap(from, to, SectionBox.LeverReachAcross * 2, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _);
         }

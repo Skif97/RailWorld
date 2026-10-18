@@ -6,5 +6,13 @@
 	"item-creature-trolley-iron": "Вагонетка",
 	"item-creature-trolley-gold": "Моторизована вагонетка",
 	"item-rail": "Рейка ({0})",
-	"item-sleeper": "Шпала ({0})"
+	"item-sleeper": "Шпала ({0})",
+
+	"game:worldconfig-category-railworld": "Залізниця",
+	"game:worldattribute-railMinRadius": "Найменший радіус колії",
+	"game:worldattribute-railMinRadius-desc": "У ширинах колії: 4,5 це 3,5 блока. Діє на нові маршрути після перезапуску світу.",
+	"game:worldattribute-railClearance": "Просвіт між коліями одна над одною",
+	"game:worldattribute-railClearance-desc": "Блоків. При 2,5 під мостом потрібно три блоки. Діє після перезапуску світу.",
+	"game:worldattribute-railMarkerReach": "Притягування точки маршруту до колії",
+	"game:worldattribute-railMarkerReach-desc": "За скільки блоків від колії точка розмітки стає на неї. Діє після перезапуску світу."
 }

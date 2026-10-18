@@ -42,9 +42,9 @@ namespace RailWorld.Tests
             bool closeMiddles = false;
             foreach (Section upper in bridge)
             {
-                foreach (Section lower in SectionsIn.Around(upper.GetGlobalPos(), TrackSurvey.Reach, RouteCurve.CrossingClearance + 4))
+                foreach (Section lower in SectionsIn.Around(upper.GetGlobalPos(), TrackSurvey.Reach, TrackRules.Clearance + 4))
                 {
-                    if (upper.GetGlobalPos().Y - lower.GetGlobalPos().Y < RouteCurve.CrossingClearance) closeMiddles = true;
+                    if (upper.GetGlobalPos().Y - lower.GetGlobalPos().Y < TrackRules.Clearance) closeMiddles = true;
                     Assert.False(TrackLevel.Same(upper, lower));
                 }
 
@@ -79,9 +79,9 @@ namespace RailWorld.Tests
         [Fact]
         public void LevelsSplitHalfwayToTheClearance()
         {
-            Assert.True(TrackLevel.Same(5, 5 + RouteCurve.CrossingClearance / 2 - 0.01));
-            Assert.False(TrackLevel.Same(5, 5 + RouteCurve.CrossingClearance / 2));
-            Assert.False(TrackLevel.Same(5, 5 - RouteCurve.CrossingClearance));
+            Assert.True(TrackLevel.Same(5, 5 + TrackRules.Clearance / 2 - 0.01));
+            Assert.False(TrackLevel.Same(5, 5 + TrackRules.Clearance / 2));
+            Assert.False(TrackLevel.Same(5, 5 - TrackRules.Clearance));
         }
 
         [Theory]

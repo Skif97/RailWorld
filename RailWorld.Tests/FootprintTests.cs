@@ -63,7 +63,7 @@ namespace RailWorld.Tests
             // Це та сама колія: такі секції розпізнаються за спільним стиком
             double angle = Math.PI / 2;
             List<Section> arc = Lay(Point(0, 0, 1, 0),
-                Point(RouteRules.MinRadius * Math.Sin(angle), RouteRules.MinRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+                Point(TrackRules.MinRadius * Math.Sin(angle), TrackRules.MinRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
 
             for (int i = 0; i + 1 < arc.Count; i++)
             {

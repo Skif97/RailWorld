@@ -39,7 +39,7 @@ namespace RailWorld.src.RailWay
                 // Поворот це кут ламаної, який маршрут сам скруглює дугою. Дуга радіуса R забирає від кожної
                 // з двох прямих R * tan(кут / 2); прямі беремо такі, щоб цього вистачило. Кут стоїть на блоці,
                 // тому прямі виходять трохи довші, а радіус трохи більший за заданий, але не менший
-                double radius = Math.Max(lengthOrRadius, Math.Ceiling(RouteRules.MinRadius));
+                double radius = Math.Max(lengthOrRadius, Math.Ceiling(TrackRules.MinRadius));
                 double cut = radius * Math.Tan(eighths * Math.PI / 8);
 
                 BlockPos corner = Along(start, direction, Steps(cut, direction), (int)Math.Round(climb / 2.0));

@@ -19,8 +19,8 @@ namespace RailWorld.src.RailWay
         {
             var reasons = new List<string>();
             if (Broken) reasons.Add("рейки розриваються по висоті");
-            if (MinRadius < RouteRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("поворот крутіший за радіус " + RouteRules.MinRadius.ToString("0.0"));
-            if (MinVerticalRadius < RouteRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + RouteRules.MinRadius.ToString("0.0"));
+            if (MinRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("поворот крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
+            if (MinVerticalRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance) reasons.Add("перелом по висоті крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
             if (CrossesItself) reasons.Add("маршрут перетинає сам себе");
             return reasons;
         }
@@ -33,14 +33,8 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class RouteRules
     {
-        // Найменший радіус повороту в плані і найменший радіус перелому по висоті, в блоках.
-        // У ширинах колії, як і розміри стрілки: при колії 0.78 це 3.51 блока
-        public const double MinRadius = TrackGauge.StandardWidth * 4.5;
         // Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення
         public const double RadiusTolerance = TrackGauge.StandardWidth * 0.3;
-        // Скільки блоків по висоті має бути між двома витками маршруту, що проходять один над одним:
-        // той самий просвіт, що й між маршрутом і покладеною колією
-        public const double Clearance = RouteCurve.CrossingClearance;
         // Точки маршруту, ближчі одна до одної за це вздовж колії, на перетин не перевіряються: це сусіди
         private const double NeighbourRun = 6;
         // На скількох точках нарізки в кожен бік міряється радіус (точка це чверть блока)
@@ -119,7 +113,7 @@ namespace RailWorld.src.RailWay
 
                 if (radius < minRadius) minRadius = radius;
                 if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                if (radius < MinRadius - RadiusTolerance || verticalRadius < MinRadius - RadiusTolerance) problems[i] = true;
+                if (radius < TrackRules.MinRadius - RadiusTolerance || verticalRadius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
             }
 
             // Злам між сусідніми секціями. Попередня перевірка порівнює напрямок на кінцях відрізка
@@ -138,7 +132,7 @@ namespace RailWorld.src.RailWay
                 // Від середини однієї секції до середини наступної
                 double radius = (run[i + 2] - run[i - 2]) / 2 / turn;
                 if (radius < minRadius) minRadius = radius;
-                if (radius < MinRadius - RadiusTolerance) problems[i] = true;
+                if (radius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
             }
 
             // Те саме по висоті.
@@ -158,7 +152,7 @@ namespace RailWorld.src.RailWay
                     // Від середини однієї секції до середини наступної
                     double verticalRadius = (run[i + 2] - run[i - 2]) / 2 / bend;
                     if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                    if (verticalRadius < MinRadius - RadiusTolerance) problems[i] = true;
+                    if (verticalRadius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
                 }
             }
 
@@ -192,7 +186,7 @@ namespace RailWorld.src.RailWay
                             if (j <= i || run[j] - run[i] < NeighbourRun) continue;
 
                             Vec3d q = points[j].position;
-                            if (Math.Abs(q.Y - p.Y) >= Clearance) continue;
+                            if (Math.Abs(q.Y - p.Y) >= TrackRules.Clearance) continue;
                             if (RouteBuilder.HorizontalDistance(p, q) >= reach) continue;
 
                             problems[i] = true;

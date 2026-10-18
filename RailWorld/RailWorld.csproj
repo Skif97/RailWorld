@@ -43,6 +43,9 @@
 		<None Update="modinfo.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="worldconfig.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
 		<OutFiles Include="$(OutDir)/**" Exclude="$(ExcludeFiles)" />
 	</ItemGroup>
 

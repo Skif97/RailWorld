@@ -87,7 +87,7 @@ namespace RailWorld.Tests
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(markers));
 
             RouteCheck check = RouteRules.Check(points);
-            Assert.True(check.MinRadius < RouteRules.MinRadius - RouteRules.RadiusTolerance);
+            Assert.True(check.MinRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance);
             Assert.Contains(check.Reasons(), reason => reason.StartsWith("поворот крутіший"));
         }
     }

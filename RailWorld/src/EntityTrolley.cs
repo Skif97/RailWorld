@@ -355,7 +355,7 @@ namespace RailWorld
         private const float BumpEveryMin = 1.2f;
         private const float BumpEveryMax = 4.5f;
         // З якого радіуса і крутіше колеса скрегочуть об рейки, і на якій швидкості щонайменше
-        private const double SquealRadius = RouteRules.MinRadius * 1.4;
+        private static double SquealRadius => TrackRules.MinRadius * 1.4;
         private const float SquealSpeed = 0.4f;
 
         private Vec3d shownAt;

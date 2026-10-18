@@ -83,13 +83,13 @@ namespace RailWorld.Tests
             Lay(Point(0, 0, 1, 0), Point(20, 0, 1, 0));
 
             // На 2,4 блока збоку від колії: стає на її вісь навпроти себе
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10.3, 0, 2.4), TrackSurvey.MarkerReach, SectionsIn, out Section near, out Vec3d at));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10.3, 0, 2.4), TrackRules.MarkerReach, SectionsIn, out Section near, out Vec3d at));
             Assert.Equal(10.3, at.X, 6);
             Assert.Equal(0, at.Z, 6);
             Assert.InRange(10.3, Math.Min(near.FullStartPosition.X, near.FullEndPosition.X), Math.Max(near.FullStartPosition.X, near.FullEndPosition.X));
 
             // За краєм колії, на 2,4 блока від нього: найближча точка це сам край
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(22.4, 0, 0), TrackSurvey.MarkerReach, SectionsIn, out _, out at));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(22.4, 0, 0), TrackRules.MarkerReach, SectionsIn, out _, out at));
             Assert.Equal(0, at.DistanceTo(new Vec3d(20, 0, 0)), 6);
         }
 
@@ -98,9 +98,9 @@ namespace RailWorld.Tests
         {
             Lay(Point(0, 0, 1, 0), Point(20, 0, 1, 0));
 
-            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, 0, 2.6), TrackSurvey.MarkerReach, SectionsIn, out _, out _));
-            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, 3, 1), TrackSurvey.MarkerReach, SectionsIn, out _, out _));
-            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, -3, 1), TrackSurvey.MarkerReach, SectionsIn, out _, out _));
+            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, 0, 2.6), TrackRules.MarkerReach, SectionsIn, out _, out _));
+            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, 3, 1), TrackRules.MarkerReach, SectionsIn, out _, out _));
+            Assert.False(TrackSurvey.NearestAxis(new Vec3d(10, -3, 1), TrackRules.MarkerReach, SectionsIn, out _, out _));
         }
 
         [Fact]
@@ -109,9 +109,9 @@ namespace RailWorld.Tests
             Lay(Point(0, 0, 1, 0), Point(20, 0, 1, 0));
 
             // На два блоки вище і нижче, навпроти середини колії і за її краєм
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 2, 1), TrackSurvey.MarkerReach, SectionsIn, out _, out Vec3d at));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 2, 1), TrackRules.MarkerReach, SectionsIn, out _, out Vec3d at));
             Assert.Equal(10, at.X, 6);
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(22, -2, 0), TrackSurvey.MarkerReach, SectionsIn, out _, out at));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(22, -2, 0), TrackRules.MarkerReach, SectionsIn, out _, out at));
             Assert.Equal(0, at.DistanceTo(new Vec3d(20, 0, 0)), 6);
         }
 
@@ -123,7 +123,7 @@ namespace RailWorld.Tests
             Lay(new RoutePoint { Position = new Vec3d(0, 2, 1.5), Tangent = new Vec3d(1, 0, 0) },
                 new RoutePoint { Position = new Vec3d(20, 2, 1.5), Tangent = new Vec3d(1, 0, 0) });
 
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 0, 1.2), TrackSurvey.MarkerReach, SectionsIn, out Section near, out _));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 0, 1.2), TrackRules.MarkerReach, SectionsIn, out Section near, out _));
             Assert.Contains(near, level);
         }
 
@@ -133,7 +133,7 @@ namespace RailWorld.Tests
             List<Section> south = Lay(Point(0, 0, 1, 0), Point(20, 0, 1, 0));
             Lay(Point(0, 4, 1, 0), Point(20, 4, 1, 0));
 
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 0, 1.8), TrackSurvey.MarkerReach, SectionsIn, out Section near, out _));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 0, 1.8), TrackRules.MarkerReach, SectionsIn, out Section near, out _));
             Assert.Contains(near, south);
         }
 
@@ -144,7 +144,7 @@ namespace RailWorld.Tests
             Lay(new RoutePoint { Position = new Vec3d(0, 0, 0), Tangent = new Vec3d(1, 0.15, 0).Normalize() },
                 new RoutePoint { Position = new Vec3d(20, 3, 0), Tangent = new Vec3d(1, 0.15, 0).Normalize() });
 
-            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 1.5, 2), TrackSurvey.MarkerReach, SectionsIn, out _, out Vec3d at));
+            Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 1.5, 2), TrackRules.MarkerReach, SectionsIn, out _, out Vec3d at));
             Assert.Equal(10, at.X, 1);
         }
     }

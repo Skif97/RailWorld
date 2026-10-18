@@ -6,5 +6,13 @@
 	"item-creature-trolley-iron": "Trolley",
 	"item-creature-trolley-gold": "Motor trolley",
 	"item-rail": "Rail ({0})",
-	"item-sleeper": "Sleeper ({0})"
+	"item-sleeper": "Sleeper ({0})",
+
+	"game:worldconfig-category-railworld": "Railway",
+	"game:worldattribute-railMinRadius": "Minimum track radius",
+	"game:worldattribute-railMinRadius-desc": "In track gauges: 4.5 is 3.5 blocks. Applies to new routes after the world restarts.",
+	"game:worldattribute-railClearance": "Clearance between tracks above each other",
+	"game:worldattribute-railClearance-desc": "In blocks. At 2.5 a bridge needs three blocks. Applies after the world restarts.",
+	"game:worldattribute-railMarkerReach": "Route point snapping to track",
+	"game:worldattribute-railMarkerReach-desc": "How many blocks from a track a route point snaps onto it. Applies after the world restarts."
 }

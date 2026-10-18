@@ -340,7 +340,7 @@ namespace RailWorld.Tests
         public void TurnOnTheSmallestRadiusIsStillAllowed(double radiusFactor, double degrees)
         {
             // Дуга рівно на найменшому радіусі: суворіша перевірка не має відхиляти те, що правилом дозволено
-            double radius = RouteRules.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
+            double radius = TrackRules.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
             var route = new List<RoutePoint>
             {
                 new RoutePoint { Position = new Vec3d(-5, 0, 0), Tangent = new Vec3d(1, 0, 0) },

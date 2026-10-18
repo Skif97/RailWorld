@@ -499,7 +499,7 @@ namespace RailWorld.src.RailWay
         /// Чи нова ділянка лежить на вже покладеній колії довше, ніж дозволено. Лежить на ній та секція,
         /// чий габарит перекривається з габаритом покладеної: так само рахується тіло стрілки. Коротке накладання
         /// буває на стрілці й на перетині; довге означає, що дві колії йдуть одна поверх одної і не розходяться.
-        /// Колія вище чи нижче на RouteCurve.CrossingClearance і більше не рахується: це міст або тунель.
+        /// Колія вище чи нижче на TrackRules.Clearance і більше не рахується: це міст або тунель.
         /// Рахується колія, яка вийде, а не лише шматок, який кладуть зараз: якщо накладання своїм краєм
         /// стикується з покладеною колією, що теж лежить на іншій, воно продовжується вздовж неї. Інакше
         /// довге накладання можна було б зібрати з кількох коротких.
@@ -683,7 +683,7 @@ namespace RailWorld.src.RailWay
                 Vec3d from = step.Section.GetEndPosition(step.Entered), to = step.Section.GetEndPosition(!step.Entered);
                 Vec3d middle = step.Section.GetGlobalPos();
 
-                foreach (Section other in track.Around(middle, TrackSurvey.CrossReach, RouteCurve.CrossingClearance))
+                foreach (Section other in track.Around(middle, TrackSurvey.CrossReach, TrackRules.Clearance))
                 {
                     // Гілки самої стрілки лежать одна на одній, але це не перетин із чужою колією
                     if (own.Contains(SectionKey.Of(other))) continue;
@@ -702,7 +702,7 @@ namespace RailWorld.src.RailWay
                 if (!step.InBody) continue;
                 Vec3d middle = step.Section.GetGlobalPos();
 
-                foreach (Section other in track.Around(middle, TrackSurvey.Reach, RouteCurve.CrossingClearance))
+                foreach (Section other in track.Around(middle, TrackSurvey.Reach, TrackRules.Clearance))
                 {
                     if (own.Contains(SectionKey.Of(other))) continue;
                     if (!TrackLevel.Same(step.Section, other)) continue;
@@ -715,7 +715,7 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Чи нова ділянка проходить над чи під покладеною колією надто близько. Там, де габарити двох колій
         /// перекриваються, нова або лежить у площині покладеної (це перетин чи стрілка), або вища чи нижча
-        /// щонайменше на RouteCurve.CrossingClearance (це міст чи тунель). Проміжного не буває: інакше шпала
+        /// щонайменше на TrackRules.Clearance (це міст чи тунель). Проміжного не буває: інакше шпала
         /// однієї колії стояла б у рейках другої. Правило не залежить від того, чи перетинаються осі колій:
         /// колія може пройти над самим краєм чи боком іншої.
         /// Повертає номери всіх секцій у planned, де це сталося б: показ підсвічує кожну.
@@ -842,7 +842,7 @@ namespace RailWorld.src.RailWay
         private static bool LeverSideFree(Section trunk, bool atStart, int side, HashSet<SectionKey> own, TrackIndex track)
         {
             Vec3d lever = SectionPicker.LeverPosition(trunk, atStart, side);
-            foreach (Section other in track.Around(lever, TrackSurvey.Reach, RouteCurve.CrossingClearance))
+            foreach (Section other in track.Around(lever, TrackSurvey.Reach, TrackRules.Clearance))
             {
                 if (!own.Contains(SectionKey.Of(other)) && TrackSurvey.CoversLever(other, trunk, atStart, side)) return false;
             }

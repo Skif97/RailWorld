@@ -116,6 +116,8 @@ namespace RailWorld
         {
             base.StartClientSide(api);
             this.capi = api;
+            // Правила прокладання світу: клієнт отримав їх від сервера разом із налаштуваннями світу
+            TrackRules.Load(api.World.Config, false);
 
             // Дані колії лежать у статичному сховищі й могли лишитися від попереднього світу
             DataInChunk.ClearClientCache();
@@ -160,6 +162,7 @@ namespace RailWorld
         {
             base.StartServerSide(api);
             this.sapi = api;
+            TrackRules.Load(api.World.Config, true);
 
             // Кеш статичний і міг лишитися від попереднього світу
             DataInChunk.ClearServerCache();

@@ -188,7 +188,7 @@ namespace RailWorld.src.RailWay
             List<int> close = SectionLinker.FindTooCloseAbove(facts);
             if (close.Count > 0)
             {
-                conflict = conflict ?? "колія проходить надто близько над чи під іншою: просвіт менший за " + CrossingClearance.ToString("0.#") + " блока";
+                conflict = conflict ?? "колія проходить надто близько над чи під іншою: просвіт менший за " + TrackRules.Clearance.ToString("0.#") + " блока";
                 if (conflictAt != null)
                 {
                     // Підсвічується кожна така секція: її три точки нарізки
@@ -225,16 +225,6 @@ namespace RailWorld.src.RailWay
         // Два перетини маршруту ближче один до одного, ніж це, блоків уздовж нього, це один і той самий перетин,
         // знайдений двічі. Справжні два перетини так близько не стоять: їхні вузли наклалися б
         private const double SamePlace = 0.01;
-
-        /// <summary>
-        /// Найменший просвіт між двома коліями, що проходять одна над одною, блоків. Якщо колія, яку маршрут
-        /// перетинає в плані, вища чи нижча за нього менше ніж на стільки блоків, це перетин в одному рівні,
-        /// і маршрут вирівнюється по ній. Якщо більше, маршрут проходить над нею або під нею, і вони одна
-        /// одної не стосуються. Колії на рівній землі стоять на висотах, кратних блоку, тож зазор між ними
-        /// цілий; межа посередині між двома і трьома блоками не збігається з жодним із них, і похибка
-        /// обчислень на косому перетині не перекидає відповідь. Тобто під мостом потрібно три блоки.
-        /// </summary>
-        public const double CrossingClearance = 2.5;
 
         // Скільки блоків за краєм перетину маршрут іще йде площиною чужої колії
         private const double CrossingMargin = 0.5;
@@ -418,7 +408,7 @@ namespace RailWorld.src.RailWay
             foreach (Section member in members)
             {
                 Vec3d middle = member.GetGlobalPos();
-                foreach (Section other in track.Around(middle, TrackSurvey.Reach, CrossingClearance))
+                foreach (Section other in track.Around(middle, TrackSurvey.Reach, TrackRules.Clearance))
                 {
                     // Сама перетнута колія, і гілка стрілки одразу за її стиком: про стрілку окреме правило
                     if (own.Contains(other) || Footprint.Joined(member, other)) continue;
@@ -498,7 +488,7 @@ namespace RailWorld.src.RailWay
                     // не остаточні, і маршрут, що проходить ближче за просвіт, опускається в площину колії й
                     // перетинає її в одному рівні. Далі вже покладена колія і нова лежать або в одній площині,
                     // або на просвіт одна над одною
-                    if (Math.Abs(planeY - where.Y) >= CrossingClearance) continue;
+                    if (Math.Abs(planeY - where.Y) >= TrackRules.Clearance) continue;
 
                     double cos = Math.Abs(rx * sx + rz * sz) / Math.Sqrt((rx * rx + rz * rz) * (sx * sx + sz * sz));
                     double angle = Math.Acos(GameMath.Clamp(cos, -1, 1));
@@ -651,7 +641,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         internal static double RampRoom(double lift)
         {
-            return Math.Sqrt(6 * lift * RouteRules.MinRadius);
+            return Math.Sqrt(6 * lift * TrackRules.MinRadius);
         }
 
         /// <summary>

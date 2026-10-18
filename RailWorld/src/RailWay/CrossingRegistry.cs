@@ -104,7 +104,7 @@ namespace RailWorld.src.RailWay
             {
                 if (section.GetCrossingRef() != null) continue;
 
-                foreach (Section other in track.Around(section.GetGlobalPos(), TrackSurvey.CrossReach, RouteCurve.CrossingClearance))
+                foreach (Section other in track.Around(section.GetGlobalPos(), TrackSurvey.CrossReach, TrackRules.Clearance))
                 {
                     // Секція, що вже лежить у вузлі іншого перетину, другого не починає: два вузли один
                     // на одному прокладання не дозволяє
