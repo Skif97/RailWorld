@@ -1,0 +1,9 @@
+{
+	"worldconfig-category-railworld": "Залізниця",
+	"worldattribute-railMinRadius": "Найменший радіус колії",
+	"worldattribute-railMinRadius-desc": "У ширинах колії: 4,5 це 3,5 блока. Діє на нові маршрути після перезапуску світу.",
+	"worldattribute-railClearance": "Просвіт між коліями одна над одною",
+	"worldattribute-railClearance-desc": "Блоків. При 2,5 під мостом потрібно три блоки. Діє після перезапуску світу.",
+	"worldattribute-railMarkerReach": "Притягування точки маршруту до колії",
+	"worldattribute-railMarkerReach-desc": "За скільки блоків від колії точка розмітки стає на неї. Діє після перезапуску світу."
+}

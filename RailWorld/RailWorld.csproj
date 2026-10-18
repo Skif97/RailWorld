@@ -39,6 +39,11 @@
 		<Content Include="assets/**">
 			<CopyToOutputDirectory>Never</CopyToOutputDirectory>
 		</Content>
+		<!-- Підписи налаштувань світу гра в головному меню читає лише з папки мода (assets/game/lang), а не через
+		     addOrigin, тож у збірці для відладки вони теж потрібні -->
+		<Content Update="assets/game/lang/worldconfig-*.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Content>
 
 		<None Update="modinfo.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>

@@ -1,0 +1,9 @@
+{
+	"worldconfig-category-railworld": "Railway",
+	"worldattribute-railMinRadius": "Minimum track radius",
+	"worldattribute-railMinRadius-desc": "In track gauges: 4.5 is 3.5 blocks. Applies to new routes after the world restarts.",
+	"worldattribute-railClearance": "Clearance between tracks above each other",
+	"worldattribute-railClearance-desc": "In blocks. At 2.5 a bridge needs three blocks. Applies after the world restarts.",
+	"worldattribute-railMarkerReach": "Route point snapping to track",
+	"worldattribute-railMarkerReach-desc": "How many blocks from a track a route point snaps onto it. Applies after the world restarts."
+}
