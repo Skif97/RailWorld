@@ -208,6 +208,16 @@ namespace RailWorld
 
         private float[] scale = new float[] { 1f, 1f, 1f };
 
+        // Спорожнює пачку чанка перед тим, як його рейки покладуть у неї знову. Буфер у відеокарті лишається:
+        // якщо шматків не побільшає, нові ляжуть у той самий
+        public void ClearChunk(Vec3i chunkCoord)
+        {
+            if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
+
+            batch.Pieces.Clear();
+            batch.Dirty = true;
+        }
+
         public void RemoveChunk(Vec3i chunkCoord)
         {
             if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;

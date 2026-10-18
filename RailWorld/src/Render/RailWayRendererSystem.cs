@@ -227,6 +227,18 @@ void main()
         }
 
         /// <summary>
+        /// Спорожнює ті самі пачки чанка перед перебудовою його колії. Буфери у відеокарті лишаються, і нові
+        /// деталі лягають у них, якщо їх не побільшало.
+        /// </summary>
+        public void ClearChunkParts(Vec3i chunkCoord)
+        {
+            foreach (var renderer in sleeperRenderers.Values)
+            {
+                renderer.ClearChunk(chunkCoord);
+            }
+        }
+
+        /// <summary>
         /// Замінює рейки чанка. Кожна рейка малюється рендерером свого матеріалу.
         /// </summary>
         /// <param name="replaced">Каже, чи місце рейки секції займає деталь стрілки або перетину: така рейка
@@ -297,16 +309,18 @@ void main()
 
         public void RemoveRailChunk(Vec3i chunkCoord)
         {
-            ClearRails(chunkCoord);
+            foreach (var renderer in railRenderers.Values)
+                renderer.RemoveChunk(chunkCoord);
             bladeRenderer?.RemoveChunk(chunkCoord);
             leverRenderer?.RemoveChunk(chunkCoord);
         }
 
-        // Прибирає звичайні рейки чанка. Деталі стрілок лишаються: вони перебудовуються окремо
+        // Спорожнює звичайні рейки чанка перед перебудовою; буфери лишаються. Деталі стрілок лишаються теж:
+        // вони перебудовуються окремо
         internal void ClearRails(Vec3i chunkCoord)
         {
             foreach (var renderer in railRenderers.Values)
-                renderer.RemoveChunk(chunkCoord);
+                renderer.ClearChunk(chunkCoord);
         }
 
         /// <summary>

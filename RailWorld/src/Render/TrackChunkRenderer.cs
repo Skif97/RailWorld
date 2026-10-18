@@ -49,7 +49,7 @@ namespace RailWorld
         /// <summary>Збирає заново все, що малюється для колії чанка: шпали, важелі стрілок, рейки і деталі стрілок.</summary>
         public void Rebuild(Vec3i chunkCoord, IReadOnlyDictionary<int, Section> sections)
         {
-            renderer.RemoveChunkParts(chunkCoord);
+            renderer.ClearChunkParts(chunkCoord);
             builder.Forget(chunkCoord);
             renderer.ClearRails(chunkCoord);
             // Деталі стрілок не викидаються наперед: незмінні лишаються з готовим мешем

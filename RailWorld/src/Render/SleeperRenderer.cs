@@ -118,6 +118,16 @@ namespace RailWorld
             batch.Dirty = true;
         }
 
+        // Спорожнює пачку чанка перед тим, як його колію покладуть у неї знову. Буфер у відеокарті лишається:
+        // якщо шпал не побільшає, нові ляжуть у той самий
+        public void ClearChunk(Vec3i chunkCoord)
+        {
+            if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
+
+            batch.Parts.Clear();
+            batch.Dirty = true;
+        }
+
         // Прибирає шпали секцій, що зберігаються в цьому чанку. Саме за чанком секції, а не за місцем шпали:
         // шпала на самій межі може стояти вже в сусідньому чанку, але належить пачці чанка своєї секції
         public void RemoveChunk(Vec3i chunkCoord)
