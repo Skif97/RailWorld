@@ -321,11 +321,13 @@ namespace RailWorld
             return true;
         }
 
-        /// <summary>Сервер: повідомляє клієнтам, що стрілку на кінці секції переведено.</summary>
+        /// <summary>Сервер: повідомляє клієнтам, у яких є чанк стрілки, що її переведено.</summary>
         public void SendSwitchToggled(Section trunk, bool atStart, int revision)
         {
             Vec3i chunk = trunk.ChunkAddres;
-            serverChannel?.BroadcastPacket(new SwitchTogglePacket
+            IServerPlayer[] players = RailWorld.PlayersWithChunk(chunk);
+            if (serverChannel == null || players.Length == 0) return;
+            serverChannel.SendPacket(new SwitchTogglePacket
             {
                 ChunkX = chunk.X,
                 ChunkY = chunk.Y,
@@ -334,7 +336,7 @@ namespace RailWorld
                 AtStart = atStart,
                 Position = trunk.GetSwitchPosition(atStart),
                 Revision = revision
-            });
+            }, players);
         }
 
         // Клієнт: стрілку переведено. Решта чанка не змінилася, тому нічого не перебудовується: важелю кажуть

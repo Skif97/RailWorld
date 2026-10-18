@@ -272,11 +272,30 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Надсилає оновлені дані колії чанка всім гравцям на сервері, після кожного збереження чанка.
+        /// Гравці, яким сервер уже надіслав чанк: лише в них його колія є, і лише їм потрібні її зміни. Решта
+        /// отримають колію разом із самим чанком, бо вона лежить у його даних. Так гра розсилає й зміни блоків.
+        /// Чанк позначається надісланим якраз перед тим, як його пакують, тож зміна не губиться: або вона вже
+        /// в пакеті чанка, або гравець отримає її окремо.
+        /// </summary>
+        internal static IServerPlayer[] PlayersWithChunk(Vec3i chunkCoord)
+        {
+            var found = new List<IServerPlayer>();
+            foreach (IPlayer player in _sapi.World.AllOnlinePlayers)
+            {
+                if (player is IServerPlayer online && online.ConnectionState == EnumClientState.Playing
+                    && _sapi.WorldManager.HasChunk(chunkCoord.X, chunkCoord.Y, chunkCoord.Z, online)) found.Add(online);
+            }
+            return found.ToArray();
+        }
+
+        /// <summary>
+        /// Надсилає оновлені дані колії чанка гравцям, у яких цей чанк є, після кожного збереження чанка.
         /// </summary>
         public static void SendChunkDataToClients(Vec3i chunkCoord, DataInChunk data)
         {
             if (_serverChannel == null || _sapi == null) return;
+            IServerPlayer[] players = PlayersWithChunk(chunkCoord);
+            if (players.Length == 0) return;
 
             byte[] serialized = Vintagestory.API.Util.SerializerUtil.Serialize(data);
 
@@ -288,8 +307,7 @@ namespace RailWorld
                 Data = serialized
             };
 
-            // Надсилаємо всім гравцям (можна звузити до nearby пізніше)
-            _serverChannel.BroadcastPacket(packet);
+            _serverChannel.SendPacket(packet, players);
         }
 
         // ── Клієнт: отримали дані рейок з сервера ────────────────────────────
