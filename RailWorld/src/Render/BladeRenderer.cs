@@ -61,41 +61,23 @@ namespace RailWorld
         // порівну на кожен відрізок між перерізами: перерізи стоять нерівно, біля жолобів і торців густо
         private const double TextureLength = 1;
 
-        // Відбиток вхідних даних деталі: якщо він той самий, що й минулого разу, меш вийде той самий,
-        // і збирати його заново не треба. Числа змішуються по черзі (FNV-1a)
-        public const long HashStart = unchecked((long)14695981039346656037UL);
-
-        public static long Mix(long hash, double value)
-        {
-            return unchecked((hash ^ BitConverter.DoubleToInt64Bits(value)) * 1099511628211L);
-        }
-
-        public static long Mix(long hash, Vec3d value)
-        {
-            return value == null ? Mix(hash, 0) : Mix(Mix(Mix(hash, value.X), value.Y), value.Z);
-        }
-
-        public static long Mix(long hash, string value)
-        {
-            if (value != null) foreach (char c in value) hash = Mix(hash, c);
-            return hash;
-        }
-
+        // Відбиток вхідних даних деталі (Fingerprint): якщо він той самий, що й минулого разу, меш вийде той
+        // самий, і збирати його заново не треба
         public static long Mix(long hash, LoftPoint point)
         {
-            return Mix(Mix(Mix(Mix(Mix(hash, point.Center), point.Side), point.Up), point.X), point.Y);
+            return Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, point.Center), point.Side), point.Up), point.X), point.Y);
         }
 
         public static long Mix(long hash, LoftPart part)
         {
             foreach (LoftStation station in part.Stations)
             {
-                hash = Mix(hash, station.Along);
+                hash = Fingerprint.Mix(hash, station.Along);
                 foreach (LoftPoint point in station.Points) hash = Mix(hash, point);
             }
             foreach (List<LoftPoint[]> caps in new[] { part.StartCaps, part.EndCaps })
             {
-                hash = Mix(hash, caps.Count);
+                hash = Fingerprint.Mix(hash, caps.Count);
                 foreach (LoftPoint[] cap in caps) foreach (LoftPoint point in cap) hash = Mix(hash, point);
             }
             return hash;

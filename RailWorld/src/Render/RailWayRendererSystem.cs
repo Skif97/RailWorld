@@ -316,7 +316,7 @@ void main()
             if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
             var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
 
-            long hash = BladeMesh.Mix(BladeMesh.HashStart, material);
+            long hash = Fingerprint.Mix(Fingerprint.Start, material);
             foreach (LoftPart part in parts) hash = BladeMesh.Mix(hash, part);
             if (bladeRenderer.Keep(key, hash)) return;
 
@@ -341,7 +341,7 @@ void main()
             var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
 
             // Відбиток обох крайніх положень, а не теперішнього: рух його не міняє
-            long hash = BladeMesh.Mix(BladeMesh.HashStart, material);
+            long hash = Fingerprint.Mix(Fingerprint.Start, material);
             foreach (LoftPart part in closed) hash = BladeMesh.Mix(hash, part);
             foreach (LoftPart part in thrown) hash = BladeMesh.Mix(hash, part);
             if (bladeRenderer.Keep(key, hash) && bladeRenderer.Move(key, open)) return true;

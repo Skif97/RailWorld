@@ -79,7 +79,14 @@ namespace RailWorld
         // Стовпчики на точках розмітки: їх небагато, збираються щоразу
         private MeshRef markerMesh;
         private Vec3d meshOrigin = new Vec3d();
-        private string meshKey = "";
+        // Відбиток того, з чого зібрано показ (BuildKey); meshKnown false, поки показу немає
+        private long meshKey;
+        private bool meshKnown;
+        // Відбиток того, від чого залежить точка під прицілом (AimKey), і параметрів готової форми в меню, з якими
+        // побудовано поставлену форму. Поки вони ті самі, точку і форму не рахуємо заново
+        private long aimKey;
+        private bool aimKnown;
+        private long templateKey;
         private Matrixf mat = new Matrixf();
 
         public double RenderOrder => 0.61;
@@ -440,40 +447,40 @@ namespace RailWorld
             {
                 // Розмітка лишається, але показується лише з інструментом у руці
                 hud.Hide();
-                meshKey = "";
+                meshKnown = false;
+                aimKnown = false;
                 return;
             }
 
             bool template = TemplateMode();
-            hover = null;
-            hoverTemplate = null;
+            long parameters = TemplateParameters();
 
             // Поки сервер не відповів, відправлене не чіпаємо
             if (awaitingId == 0)
             {
                 // У меню вибрано інший режим: точки одного режиму іншому не годяться
                 if (markers.Count > 0 && template != (templateAnchor != null)) Cancel();
-                // Параметри в меню могли змінитися
-                if (templateAnchor != null) markers = BuildTemplate(templateAnchor);
+                // Параметри в меню змінилися: поставлена форма будується з новими
+                if (templateAnchor != null && parameters != templateKey)
+                {
+                    markers = BuildTemplate(templateAnchor);
+                    templateKey = parameters;
+                }
             }
 
-            if (template && !preview)
+            long aim = AimKey(template, parameters);
+            if (!aimKnown || aim != aimKey)
             {
-                RouteMarker anchor = MakeMarker(true, false);
-                if (anchor != null) hoverTemplate = BuildTemplate(anchor);
-            }
-            else if (!template && !preview)
-            {
-                hover = MakeMarker(markers.Count == 0);
-                // Повторне наведення на останню точку нічого не додає: там клік означає перехід до перегляду
-                if (hover != null && markers.Count > 0 && hover.Block.Equals(markers[markers.Count - 1].Block)) hover = null;
-                if (hover != null) hover.Exact = hover.Aimed = ExactKeyDown();
+                aimKnown = true;
+                aimKey = aim;
+                Aim(template);
             }
 
-            string key = BuildKey();
-            if (key != meshKey)
+            long key = BuildKey();
+            if (!meshKnown || key != meshKey)
             {
                 meshKey = key;
+                meshKnown = true;
                 RebuildMesh();
             }
 
@@ -494,42 +501,109 @@ namespace RailWorld
             prog.Stop();
         }
 
-        // Опис усього, від чого залежить меш. Поки він той самий, меш не перебудовується
-        private string BuildKey()
+        // Точка під прицілом, або для готової форми її точки від блока під прицілом
+        private void Aim(bool template)
         {
-            var sb = new System.Text.StringBuilder();
+            hover = null;
+            hoverTemplate = null;
+            if (template && !preview)
+            {
+                RouteMarker anchor = MakeMarker(true, false);
+                if (anchor != null) hoverTemplate = BuildTemplate(anchor);
+            }
+            else if (!template && !preview)
+            {
+                hover = MakeMarker(markers.Count == 0);
+                // Повторне наведення на останню точку нічого не додає: там клік означає перехід до перегляду
+                if (hover != null && markers.Count > 0 && hover.Block.Equals(markers[markers.Count - 1].Block)) hover = null;
+                if (hover != null) hover.Exact = hover.Aimed = ExactKeyDown();
+            }
+        }
+
+        // Відбиток того, від чого залежить точка під прицілом: де очі й куди погляд, Ctrl, колія навколо і секція
+        // під прицілом, блок під прицілом (його могли поставити чи зламати, не рухаючи мишею), режим і параметри
+        // форми, перегляд і остання поставлена точка
+        private long AimKey(bool template, long parameters)
+        {
+            EntityPlayer entity = capi.World.Player.Entity;
+            long hash = Fingerprint.Mix(Fingerprint.Start, entity.Pos.X + entity.LocalEyePos.X);
+            hash = Fingerprint.Mix(hash, entity.Pos.Y + entity.LocalEyePos.Y);
+            hash = Fingerprint.Mix(hash, entity.Pos.Z + entity.LocalEyePos.Z);
+            hash = Fingerprint.Mix(hash, entity.Pos.Pitch);
+            hash = Fingerprint.Mix(hash, entity.Pos.Yaw);
+            hash = Fingerprint.Mix(hash, ExactKeyDown());
+            hash = Fingerprint.Mix(hash, system.ClientRevision);
+            hash = Fingerprint.Mix(hash, template);
+            hash = Fingerprint.Mix(hash, parameters);
+            hash = Fingerprint.Mix(hash, preview);
+            hash = Fingerprint.Mix(hash, markers.Count);
+            if (markers.Count > 0)
+            {
+                BlockPos last = markers[markers.Count - 1].Block;
+                hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, last.X), last.Y), last.Z);
+            }
+            BlockSelection block = capi.World.Player.CurrentBlockSelection;
+            hash = Fingerprint.Mix(hash, block != null);
+            if (block != null)
+            {
+                hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, block.Position.X), block.Position.Y), block.Position.Z);
+                hash = Fingerprint.Mix(Fingerprint.Mix(hash, block.Face?.Index ?? -1), capi.World.BlockAccessor.GetBlockId(block.Position));
+            }
+            SectionSelection sel = system.CurrentSelection;
+            hash = Fingerprint.Mix(hash, sel == null ? -1 : sel.Index);
+            if (sel != null)
+            {
+                hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, sel.Chunk.X), sel.Chunk.Y), sel.Chunk.Z);
+                hash = Fingerprint.Mix(Fingerprint.Mix(hash, (int)sel.Part), sel.HitPosition);
+            }
+            return hash;
+        }
+
+        // Відбиток параметрів готової форми в меню
+        private long TemplateParameters()
+        {
+            ITreeAttribute attributes = Tool().Attributes;
+            long hash = Fingerprint.Mix(Fingerprint.Start, attributes.GetString("railMode", RouteTemplate.SingleBlock));
+            hash = Fingerprint.Mix(hash, attributes.GetInt("railLengRad", 30));
+            hash = Fingerprint.Mix(hash, attributes.GetInt("railClimDes", 0));
+            return Fingerprint.Mix(hash, attributes.GetString("railDirection", "Left"));
+        }
+
+        // Відбиток усього, від чого залежить показ. Поки він той самий, показ не перебудовується
+        private long BuildKey()
+        {
             // Номер зміни покладеної колії теж: маршрут рахується відносно неї, і те, що під ним щось поклали
             // чи прибрали, міняє і картинку, і відповідь, чи його можна будувати
-            sb.Append(preview ? 'P' : 'M').Append(awaitingId).Append(serverRefusal).Append('#').Append(system.ClientRevision);
-            foreach (RouteMarker marker in markers) AppendMarker(sb, marker);
-            if (hover != null)
-            {
-                sb.Append('|');
-                AppendMarker(sb, hover);
-            }
-            if (hoverTemplate != null)
-            {
-                sb.Append('|');
-                foreach (RouteMarker marker in hoverTemplate) AppendMarker(sb, marker);
-            }
-            return sb.ToString();
+            long hash = Fingerprint.Mix(Fingerprint.Start, preview);
+            hash = Fingerprint.Mix(hash, awaitingId);
+            hash = Fingerprint.Mix(hash, serverRefusal);
+            hash = Fingerprint.Mix(hash, system.ClientRevision);
+            hash = Fingerprint.Mix(hash, markers.Count);
+            foreach (RouteMarker marker in markers) hash = MixMarker(hash, marker);
+            hash = Fingerprint.Mix(hash, hover != null);
+            if (hover != null) hash = MixMarker(hash, hover);
+            hash = Fingerprint.Mix(hash, hoverTemplate?.Count ?? -1);
+            if (hoverTemplate != null) foreach (RouteMarker marker in hoverTemplate) hash = MixMarker(hash, marker);
+            return hash;
         }
 
         // Усе, з чого RouteBuilder складає точку маршруту: блок і напрямок, а ще точне місце (на стику воно не в
         // середині блока), чи це точна точка, чи напрямок задано навмисно (Ctrl) і до якого стику колії вона прив'язана
-        private static void AppendMarker(System.Text.StringBuilder sb, RouteMarker marker)
+        private static long MixMarker(long hash, RouteMarker marker)
         {
-            sb.Append(marker.Block.X).Append(',').Append(marker.Block.Y).Append(',').Append(marker.Block.Z).Append(':')
-              .Append(Math.Round(marker.Heading.X, 2)).Append(',').Append(Math.Round(marker.Heading.Z, 2)).Append('@')
-              .Append(Math.Round(marker.Position.X, 3)).Append(',').Append(Math.Round(marker.Position.Y, 3)).Append(',').Append(Math.Round(marker.Position.Z, 3))
-              .Append(marker.Exact ? 'E' : '-').Append(marker.Aimed ? 'A' : '-').Append(marker.Snapped ? 'S' : '-');
-            if (marker.Joint != null)
-            {
-                Vec3i chunk = marker.Joint.ChunkAddres;
-                sb.Append('J').Append(chunk.X).Append(',').Append(chunk.Y).Append(',').Append(chunk.Z).Append('/')
-                  .Append(marker.Joint.IndexInChunk).Append(marker.JointAtStart ? 's' : 'e').Append(marker.Sign);
-            }
-            sb.Append(';');
+            hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, marker.Block.X), marker.Block.Y), marker.Block.Z);
+            hash = Fingerprint.Mix(Fingerprint.Mix(hash, Math.Round(marker.Heading.X, 2)), Math.Round(marker.Heading.Z, 2));
+            hash = Fingerprint.Mix(hash, Math.Round(marker.Position.X, 3));
+            hash = Fingerprint.Mix(hash, Math.Round(marker.Position.Y, 3));
+            hash = Fingerprint.Mix(hash, Math.Round(marker.Position.Z, 3));
+            hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, marker.Exact), marker.Aimed), marker.Snapped);
+            hash = Fingerprint.Mix(hash, marker.Joint != null);
+            if (marker.Joint == null) return hash;
+
+            Vec3i chunk = marker.Joint.ChunkAddres;
+            hash = Fingerprint.Mix(Fingerprint.Mix(Fingerprint.Mix(hash, chunk.X), chunk.Y), chunk.Z);
+            hash = Fingerprint.Mix(Fingerprint.Mix(hash, marker.Joint.IndexInChunk), marker.JointAtStart);
+            return Fingerprint.Mix(hash, marker.Sign);
         }
 
         private void DisposeMesh()
