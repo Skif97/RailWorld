@@ -177,6 +177,14 @@ namespace RailWorld
                 return;
             }
 
+            // Ті самі межі, що сервер перевірить, коли маршрут прийде будувати: забагато точок чи надто далеко
+            string limits = RouteRules.MarkersProblem(new List<RouteMarker>(markers) { target });
+            if (limits != null)
+            {
+                capi.ShowChatMessage(limits);
+                return;
+            }
+
             target.Exact = target.Aimed = ExactKeyDown();
             markers.Add(target);
             serverRefusal = null;
@@ -557,6 +565,9 @@ namespace RailWorld
             List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
             // Секції в чужому приваті: сервер такий маршрут не покладе (RailWorld.BuildRoute)
             if (TrackBed.ClaimedSections(capi.World, capi.World.Player, points, conflictAt)) conflict = conflict ?? TrackBed.ClaimedRefusal;
+            // Забагато точок чи надто далеко одна від одної: так само відмовить сервер. Готова форма ставить свої
+            // точки сама, тож для неї межі видно лише тут
+            conflict = conflict ?? RouteRules.MarkersProblem(shown);
 
             RouteCheck check = RouteRules.Check(points);
             bool[] problems = check.Problems;

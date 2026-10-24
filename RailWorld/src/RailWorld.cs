@@ -162,9 +162,6 @@ namespace RailWorld
             }
         }
 
-        // Скільки точок і яку відстань між сусідніми сервер приймає в одному маршруті
-        private const int MaxRoutePoints = 64;
-        private const double MaxRouteSpan = 400;
 
         /// <summary>
         /// Клієнт: відправляє підтверджений маршрут на побудову. id це номер, з яким сервер відповість.
@@ -221,7 +218,8 @@ namespace RailWorld
             if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true) return "предмет для прокладання колії не в руці";
 
             int count = packet.BlockX?.Length ?? 0;
-            if (count < 2 || count > MaxRoutePoints) return "у маршруті має бути від 2 до " + MaxRoutePoints + " точок";
+            // Розмір пакета до того, як щось із нього читати; ті самі межі, що в розмітки (RouteRules)
+            if (count < 2 || count > RouteRules.MaxPoints) return RouteRules.PointsRefusal;
             if (packet.BlockY?.Length != count || packet.BlockZ?.Length != count || packet.Yaw?.Length != count || packet.Exact?.Length != count || packet.Aimed?.Length != count
                 || packet.JointChunkX?.Length != count || packet.JointChunkY?.Length != count || packet.JointChunkZ?.Length != count
                 || packet.JointIndex?.Length != count || packet.JointAtStart?.Length != count || packet.Sign?.Length != count) return "пошкоджений запит";
@@ -252,9 +250,10 @@ namespace RailWorld
                     marker.Aimed = packet.Aimed[i];
                 }
 
-                if (i > 0 && marker.Position.DistanceTo(markers[i - 1].Position) > MaxRouteSpan) return "точки надто далеко одна від одної";
                 markers.Add(marker);
             }
+            string limits = RouteRules.MarkersProblem(markers);
+            if (limits != null) return limits;
 
             var laid = new TrackIndex(chunk => lookup.Get(chunk)?.Grid);
             List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(markers, lookup.GetSection));

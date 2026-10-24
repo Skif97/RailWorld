@@ -45,6 +45,27 @@ namespace RailWorld.src.RailWay
         // Між сусідніми точками нарізки ухил, крутіший за це, означає розрив рейок, а не підйом, градуси
         public const double BreakSlopeDeg = 60;
 
+        /// <summary>Скільки точок може мати маршрут і на скільки блоків щонайбільше відстоять сусідні.</summary>
+        public const int MaxPoints = 64;
+        public const double MaxSpan = 400;
+
+        /// <summary>Відмова, коли точок менше двох або більше за MaxPoints.</summary>
+        public static string PointsRefusal => "у маршруті має бути від 2 до " + MaxPoints + " точок";
+
+        /// <summary>
+        /// Чому маршрут із цих точок не можна прийняти, або null: точок більше за MaxPoints або дві сусідні далі
+        /// за MaxSpan. Ту саму перевірку робить розмітка, коли ставить точку, і сервер, коли приймає маршрут.
+        /// </summary>
+        public static string MarkersProblem(IList<RouteMarker> markers)
+        {
+            if (markers.Count > MaxPoints) return PointsRefusal;
+            for (int i = 1; i < markers.Count; i++)
+            {
+                if (markers[i].Position.DistanceTo(markers[i - 1].Position) > MaxSpan) return "точки надто далеко одна від одної";
+            }
+            return null;
+        }
+
         /// <summary>
         /// Коротка причина, чому нарізаний маршрут не можна будувати, або null, якщо можна.
         /// </summary>
