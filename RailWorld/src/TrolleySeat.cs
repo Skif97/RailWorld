@@ -65,7 +65,11 @@ namespace RailWorld
                 Entity trolley = Entity;
                 float half = trolley.SelectionBox.Y2 / 2;
 
-                GetTrolleyFrame(trolley, modelmat, out Vec3d forward, out _);
+                // Куди дивиться перед: перший стовпець повороту, як у GetTrolleyFrame. Гра множить матрицю на
+                // вектор стовпцями (Mat4f.MulWithVec4), тож вісь X моделі після повороту це числа 0, 1, 2
+                modelmat.Identity();
+                RotateLikeRenderer(trolley, modelmat);
+                float forwardX = modelmat.Values[0], forwardZ = modelmat.Values[2];
 
                 // Точка сидіння нахиляється разом із вагонеткою: рендер обертає модель навколо середини її висоти
                 modelmat.Identity();
@@ -74,15 +78,16 @@ namespace RailWorld
                 modelmat.Translate(0f, -half, 0f);
                 if (config?.RiderOffset != null) modelmat.Translate(config.RiderOffset);
 
-                Vec4f offset = modelmat.TransformVector(new Vec4f(0, 0, 0, 1));
-                seatPos.SetFrom(mountedEntity.Position).Add(offset.X, offset.Y, offset.Z);
+                // Куди переходить початок координат: останній стовпець матриці
+                float[] matrix = modelmat.Values;
+                seatPos.SetFrom(mountedEntity.Position).Add(matrix[12], matrix[13], matrix[14]);
 
                 // Кут сидіння це курс вагонетки по горизонталі. Він не має залежати від гравця: гра додає
                 // до погляду гравця зміну цього кута, і якщо брати його з гравця, погляд розкручується сам від себе.
                 // Нахили вагонетки камері передає TrolleyCameraPatch, тому тут їх немає
                 seatPos.Pitch = 0;
                 seatPos.Roll = 0;
-                seatPos.Yaw = (float)Math.Atan2(forward.X, forward.Z);
+                seatPos.Yaw = (float)Math.Atan2(forwardX, forwardZ);
                 return seatPos;
             }
         }

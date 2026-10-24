@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Vintagestory.API.Common;
 using Vintagestory.API.Client;
 using Vintagestory.API.Config;
+using Vintagestory.API.Util;
 using RailWorld.src.Items;
 using RailWorld.src.RailWay;
 
@@ -191,6 +192,15 @@ namespace RailWorld
         // Варіанти підсипки: зверху «не будувати», далі всі породи, з яких у грі буває гравій
         private string[] BuildBallastOptions(out string[] names)
         {
+            // Блоки гри за світ не міняються, тож перебираємо їх раз, а не на кожне відкриття меню
+            string[][] options = ObjectCacheUtil.GetOrCreate(capi, "railworld-ballast-options", () => FindBallastOptions());
+            names = options[1];
+            return options[0];
+        }
+
+        // Варіанти підсипки і їхні назви: [0] значення, [1] назви
+        private string[][] FindBallastOptions()
+        {
             var values = new List<string> { RailWorld.DontBuild };
             var nameList = new List<string> { "Не будувати" };
 
@@ -205,8 +215,7 @@ namespace RailWorld
                 nameList.Add(block.GetHeldItemName(stack));
             }
 
-            names = nameList.ToArray();
-            return values.ToArray();
+            return new[] { values.ToArray(), nameList.ToArray() };
         }
 
         private ItemStack BallastPreviewStack(string rock)

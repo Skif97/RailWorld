@@ -260,17 +260,22 @@ namespace RailWorld
         /// </summary>
         public void AnimateSwitches()
         {
-            animator.Advance((chunk, index, atStart) =>
-            {
-                DataInChunk data = DataInChunk.GetClient(chunk);
-                if (data == null || !data.RailWaySections.TryGetValue(index, out Section trunk) || !trunk.HasSwitch(atStart)) return;
+            animator.Advance(moveBlades ?? (moveBlades = MoveBlades));
+        }
 
-                foreach (SectionLink link in trunk.GetLinks(atStart))
-                {
-                    Section branch = track.FindSection(link);
-                    if (branch != null) builder.MoveBlade(branch);
-                }
-            });
+        // Що робити з кожною стрілкою, що рухається. Один делегат на рендер, а не новий кожні 15 мс
+        private System.Action<Vec3i, int, bool> moveBlades;
+
+        private void MoveBlades(Vec3i chunk, int index, bool atStart)
+        {
+            DataInChunk data = DataInChunk.GetClient(chunk);
+            if (data == null || !data.RailWaySections.TryGetValue(index, out Section trunk) || !trunk.HasSwitch(atStart)) return;
+
+            foreach (SectionLink link in trunk.GetLinks(atStart))
+            {
+                Section branch = track.FindSection(link);
+                if (branch != null) builder.MoveBlade(branch);
+            }
         }
 
         // Розкладка брусів стрілки із записом record, що лежить у чанку chunk. known це вже пораховані

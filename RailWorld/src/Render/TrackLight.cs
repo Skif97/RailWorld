@@ -51,6 +51,13 @@ namespace RailWorld
             this.blocks = blocks;
         }
 
+        /// <summary>Забуває запитане: новий такт, світло могло змінитися.</summary>
+        public void Clear()
+        {
+            keys.Clear();
+            lights.Clear();
+        }
+
         /// <summary>Світло деталі в точці pos одним числом, як TrackLight.KeyOf.</summary>
         public int KeyOf(Vec3d pos)
         {

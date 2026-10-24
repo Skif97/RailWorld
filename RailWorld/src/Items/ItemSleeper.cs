@@ -135,17 +135,17 @@ namespace RailWorld.src.Items
         public override void OnBeforeRender(ICoreClientAPI capi, ItemStack itemstack, EnumItemRenderTarget target, ref ItemRenderInfo renderinfo)
         {
             base.OnBeforeRender(capi, itemstack, target, ref renderinfo);
-            Dictionary<string, MultiTextureMeshRef> meshRefs = ObjectCacheUtil.GetOrCreate(capi, "SleeperMeshesInventory", () => new Dictionary<string, MultiTextureMeshRef>());
-            //Проверка наличия ссылки на меш в кеше
+            // Меш на тип і матеріал. Ключ двома рівнями, а не склеєним рядком: це питається щокадру на кожен
+            // намальований предмет, а рядок щоразу був би новим
+            var meshRefs = ObjectCacheUtil.GetOrCreate(capi, "SleeperMeshesInventory", () => new Dictionary<string, Dictionary<string, MultiTextureMeshRef>>());
             string type = itemstack.Attributes.GetString("type", "");
             string material = itemstack.Attributes.GetString("material", "");
-            string key = type + "-" + material;
-            MultiTextureMeshRef meshref;
-            if (!meshRefs.TryGetValue(key, out meshref))
+            if (!meshRefs.TryGetValue(type, out Dictionary<string, MultiTextureMeshRef> byMaterial)) meshRefs[type] = byMaterial = new Dictionary<string, MultiTextureMeshRef>();
+            if (!byMaterial.TryGetValue(material, out MultiTextureMeshRef meshref))
             {
                 MeshData mesh = GetOrCreateMesh(type, material, null); //берем из сохраненных или генерирование нового меша
                 meshref = capi.Render.UploadMultiTextureMesh(mesh); //загрузка на видеокарту
-                meshRefs[key] = meshref; //сохранение ссылки в кеш
+                byMaterial[material] = meshref; //сохранение ссылки в кеш
             }
             renderinfo.ModelRef = meshref;
         }

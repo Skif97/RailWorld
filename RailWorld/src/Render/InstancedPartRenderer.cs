@@ -323,7 +323,6 @@ namespace RailWorld
                 InterleaveStride = FloatsPerInstance * sizeof(float),
                 StaticDraw = false
             };
-            floats.Values = new float[size];
             floats.SetAllocationSize(size);
             return floats;
         }

@@ -94,18 +94,23 @@ namespace RailWorld.src.Items
             handHandling = EnumHandHandling.PreventDefaultAction;
         }
 
+        // Як тримати вагонетку в руках, за розміром її сутності. Питається щокадру, а сутність у предмета одна,
+        // тож рахується раз. null, якщо сутності немає: тоді як звичайний предмет
+        private string heldAnimation;
+        private bool heldAnimationKnown;
+
         public override string GetHeldTpIdleAnimation(ItemSlot activeHotbarSlot, Entity byEntity, EnumHand hand)
         {
-            EntityProperties entityType = byEntity.World.GetEntityType(new AssetLocation(Code.Domain, CodeEndWithoutParts(1)));
-            if (entityType == null)
+            if (!heldAnimationKnown)
             {
-                return base.GetHeldTpIdleAnimation(activeHotbarSlot, byEntity, hand);
+                heldAnimationKnown = true;
+                // Сутність має той самий код, що й предмет (див. OnHeldInteractStart). У гри ItemCreature бере
+                // код без першої частини, бо там предмет «creature-вовк»; у нас такого префікса немає
+                EntityProperties entityType = byEntity.World.GetEntityType(new AssetLocation(Code.Domain, Code.Path));
+                if (entityType != null)
+                    heldAnimation = Math.Max(entityType.CollisionBoxSize.X, entityType.CollisionBoxSize.Y) > 1f ? "holdunderarm" : "holdbothhands";
             }
-            if (Math.Max(entityType.CollisionBoxSize.X, entityType.CollisionBoxSize.Y) > 1f)
-            {
-                return "holdunderarm";
-            }
-            return "holdbothhands";
+            return heldAnimation ?? base.GetHeldTpIdleAnimation(activeHotbarSlot, byEntity, hand);
         }
 
         public override WorldInteraction[] GetHeldInteractionHelp(ItemSlot inSlot)

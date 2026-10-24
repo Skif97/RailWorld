@@ -401,7 +401,8 @@ namespace RailWorld
                 InterleaveStride = 80,
                 StaticDraw = false
             };
-            float[] values = floats.Values = new float[20];
+            // Масив на 20 чисел уже створив конструктор
+            float[] values = floats.Values;
             floats.SetAllocationSize(20);
             floats.Count = 20;
 

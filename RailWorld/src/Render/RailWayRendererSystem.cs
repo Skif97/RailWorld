@@ -32,6 +32,10 @@ namespace RailWorld
         private List<IInstancedParts> instanced = new List<IInstancedParts>();
 
         private long lightListenerId;
+        // Один на рендер, а не новий щотакту: між тактами він лише очищається (LightProbe.Clear)
+        private LightProbe lightProbe;
+        // Прив'язка текстури гостряків перед кожним із них. Один делегат на рендер, а не новий щокадру
+        private readonly Action<int> bindBladeTexture;
 
         // Шейдер для карти тіней. Стандартний шейдер інстансів у грі тіней не вміє, а шейдер тіней гри
         // не вміє інстансів, тому тут свій: лише позиція вершини, матриця інстанса і матриця світла
@@ -68,6 +72,7 @@ void main()
         public RailWayRendererSystem(ICoreClientAPI capi)
         {
             this.capi = capi;
+            bindBladeTexture = textureId => chunkProg.BindTexture2D("tex", textureId, 0);
             // Before: готуємо буфери раз на кадр. Далі ті самі буфери малюються в картах тіней і в основному проході
             capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railsection-prepare");
             capi.Event.RegisterRenderer(this, EnumRenderStage.ShadowFar, "railsection-shadowfar");
@@ -437,7 +442,8 @@ void main()
         private void UpdateLights(float dt)
         {
             // Один запас світла на такт для всіх рендерів: деталі одного блока питають той самий блок
-            var probe = new LightProbe(capi.World.BlockAccessor);
+            LightProbe probe = lightProbe ?? (lightProbe = new LightProbe(capi.World.BlockAccessor));
+            probe.Clear();
             foreach (IInstancedParts renderer in instanced)
                 renderer.UpdateLights(LightBudget, probe);
 
@@ -505,7 +511,7 @@ void main()
                 chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
                 renderer.Draw(chunkProg, cameraPos);
             }
-            bladeRenderer?.Draw(chunkProg, cameraPos, textureId => chunkProg.BindTexture2D("tex", textureId, 0));
+            bladeRenderer?.Draw(chunkProg, cameraPos, bindBladeTexture);
             chunkProg.Stop();
 
             capi.Render.GlEnableCullFace();
