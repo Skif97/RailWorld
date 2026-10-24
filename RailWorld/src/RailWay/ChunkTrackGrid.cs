@@ -64,14 +64,14 @@ namespace RailWorld.src.RailWay
         }
 
         // Середина секції в координатах її чанка
-        private static Vec3d Local(Section section)
+        private static FastVec3d Local(Section section)
         {
             Vec3i chunk = section.ChunkAddres;
             int size = GlobalConstants.ChunkSize;
-            return section.GetGlobalPos().Sub(chunk.X * size, chunk.Y * size, chunk.Z * size);
+            return section.Center.Add(-chunk.X * size, -chunk.Y * size, -chunk.Z * size);
         }
 
-        private static void Locate(Vec3d local, out int part, out int cell)
+        private static void Locate(FastVec3d local, out int part, out int cell)
         {
             int x = CellOf(local.X), y = CellOf(local.Y), z = CellOf(local.Z);
             part = PartIndex(x, y, z);

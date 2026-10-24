@@ -278,7 +278,7 @@ namespace RailWorld.src.RailWay
             Vec3d from = Along(sleeper, -sleeper.Half), to = Along(sleeper, sleeper.Half);
             foreach (Section section in track)
             {
-                if (Footprint.Overlap(from, to, SectionBox.SleeperHalfWidth * 2, section.FullStartPosition, section.FullEndPosition, section.SleeperLength, out _, out _)) return true;
+                if (Footprint.Overlap(from, to, SectionBox.SleeperHalfWidth * 2, section, section.SleeperLength, out _, out _)) return true;
             }
             return false;
         }

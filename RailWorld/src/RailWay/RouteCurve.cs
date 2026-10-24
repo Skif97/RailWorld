@@ -357,7 +357,7 @@ namespace RailWorld.src.RailWay
             Vec3d from = points[piece].position, to = points[piece + 1].position;
             foreach (Section section in sections)
             {
-                if (Footprint.Overlap(from, to, Footprint.StandardWidth, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _)) return true;
+                if (Footprint.Overlap(from, to, Footprint.StandardWidth, section, Footprint.Width(section), out _, out _)) return true;
             }
             return false;
         }
@@ -365,11 +365,10 @@ namespace RailWorld.src.RailWay
         // Чи секція лежить габаритом на котромусь зі шматків маршруту від firstPiece до lastPiece
         private static bool SectionOnRoute(Section section, List<PointOnBezierCurve> points, int firstPiece, int lastPiece)
         {
-            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
             double width = Footprint.Width(section);
             for (int piece = Math.Max(firstPiece, 0); piece <= lastPiece && piece + 1 < points.Count; piece++)
             {
-                if (Footprint.Overlap(points[piece].position, points[piece + 1].position, Footprint.StandardWidth, start, end, width, out _, out _)) return true;
+                if (Footprint.Overlap(points[piece].position, points[piece + 1].position, Footprint.StandardWidth, section, width, out _, out _)) return true;
             }
             return false;
         }
@@ -1062,7 +1061,7 @@ namespace RailWorld.src.RailWay
         // Чи шматок маршруту між двома точками нарізки лежить у габариті секції покладеної колії
         private static bool OnFootprint(Vec3d from, Vec3d to, Section section)
         {
-            return Footprint.Overlap(from, to, Footprint.StandardWidth, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _);
+            return Footprint.Overlap(from, to, Footprint.StandardWidth, section, Footprint.Width(section), out _, out _);
         }
 
         // Крок 2: ще трохи площиною останньої секції основної колії. step це напрямок від стрілки,

@@ -191,11 +191,11 @@ namespace RailWorld.src.RailWay
         // Від'ємна, якщо колія з протилежного боку
         private static double Toward(Section section, IList<Section> track, Vec3d side)
         {
-            Vec3d p = Middle(section);
+            FastVec3d p = Middle(section);
             double best = double.MaxValue, bx = 0, bz = 0;
             foreach (Section other in track)
             {
-                Vec3d a = other.FullStartPosition, b = other.FullEndPosition;
+                FastVec3d a = other.Start, b = other.End;
                 double dx = b.X - a.X, dz = b.Z - a.Z, length = dx * dx + dz * dz;
                 double t = length < 1e-12 ? 0 : GameMath.Clamp(((p.X - a.X) * dx + (p.Z - a.Z) * dz) / length, 0, 1);
                 double x = a.X + dx * t - p.X, z = a.Z + dz * t - p.Z;
@@ -211,7 +211,8 @@ namespace RailWorld.src.RailWay
         // На скільки середина секції partner зсунута від середини mine убік, у бік її нормалі
         private static double Offset(Section mine, Section partner)
         {
-            Vec3d a = Middle(mine), b = Middle(partner), normal = Normal(mine);
+            FastVec3d a = Middle(mine), b = Middle(partner);
+            Vec3d normal = Normal(mine);
             return (b.X - a.X) * normal.X + (b.Z - a.Z) * normal.Z;
         }
 
@@ -230,10 +231,10 @@ namespace RailWorld.src.RailWay
             return flat.Length() < 1e-9 ? new Vec3d(1, 0, 0) : flat.Normalize();
         }
 
-        private static Vec3d Middle(Section section)
+        private static FastVec3d Middle(Section section)
         {
-            Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
-            return new Vec3d((start.X + end.X) / 2, 0, (start.Z + end.Z) / 2);
+            FastVec3d start = section.Start, end = section.End;
+            return new FastVec3d((start.X + end.X) / 2, 0, (start.Z + end.Z) / 2);
         }
     }
 }

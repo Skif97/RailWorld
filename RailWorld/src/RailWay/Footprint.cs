@@ -36,7 +36,13 @@ namespace RailWorld.src.RailWay
         /// <summary>Те саме, і ще точка всередині спільної частини: там порівнюють висоти двох колій.</summary>
         public static bool Overlap(Section a, Section b, out double x, out double z)
         {
-            return Overlap(a.FullStartPosition, a.FullEndPosition, Width(a), b.FullStartPosition, b.FullEndPosition, Width(b), out x, out z);
+            return Overlap(a.Start, a.End, Width(a), b.Start, b.End, Width(b), out x, out z);
+        }
+
+        /// <summary>Те саме для відрізка від from до to шириною width і секції b з шириною bWidth.</summary>
+        public static bool Overlap(Vec3d from, Vec3d to, double width, Section b, double bWidth, out double x, out double z)
+        {
+            return Overlap(new FastVec3d(from.X, from.Y, from.Z), new FastVec3d(to.X, to.Y, to.Z), width, b.Start, b.End, bWidth, out x, out z);
         }
 
         /// <summary>
@@ -44,6 +50,13 @@ namespace RailWorld.src.RailWay
         /// (x, z) це середина спільної частини.
         /// </summary>
         public static bool Overlap(Vec3d aFrom, Vec3d aTo, double aWidth, Vec3d bFrom, Vec3d bTo, double bWidth, out double x, out double z)
+        {
+            return Overlap(new FastVec3d(aFrom.X, aFrom.Y, aFrom.Z), new FastVec3d(aTo.X, aTo.Y, aTo.Z), aWidth,
+                new FastVec3d(bFrom.X, bFrom.Y, bFrom.Z), new FastVec3d(bTo.X, bTo.Y, bTo.Z), bWidth, out x, out z);
+        }
+
+        // Те саме з кінцями значенням: так секції віддають їх без нових об'єктів
+        private static bool Overlap(FastVec3d aFrom, FastVec3d aTo, double aWidth, FastVec3d bFrom, FastVec3d bTo, double bWidth, out double x, out double z)
         {
             x = z = 0;
 
@@ -121,7 +134,7 @@ namespace RailWorld.src.RailWay
         }
 
         // Чотири кути прямокутника в плані, проти годинникової стрілки: x і z кожного
-        private static double[] Corners(Vec3d from, Vec3d to, double width)
+        private static double[] Corners(FastVec3d from, FastVec3d to, double width)
         {
             double dx = to.X - from.X, dz = to.Z - from.Z;
             double length = Math.Sqrt(dx * dx + dz * dz);

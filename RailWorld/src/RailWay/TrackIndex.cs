@@ -54,7 +54,7 @@ namespace RailWorld.src.RailWay
             var found = new List<Section>();
             foreach (Section section in candidates)
             {
-                Vec3d middle = section.GetGlobalPos();
+                FastVec3d middle = section.Center;
                 if (Math.Abs(middle.X - p.X) <= reach && Math.Abs(middle.Z - p.Z) <= reach) found.Add(section);
             }
             return found;

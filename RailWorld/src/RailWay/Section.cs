@@ -176,6 +176,21 @@ namespace RailWorld.src.RailWay
 
         }
 
+        /// <summary>
+        /// Початок, кінець і середина секції у світі, ті самі, що FullStartPosition, FullEndPosition і GetGlobalPos(),
+        /// але значенням (FastVec3d): нового об'єкта на кожен виклик не створюють, а змінити через них саму секцію
+        /// не можна. Для циклів, що перебирають багато секцій.
+        /// </summary>
+        public FastVec3d Start => new FastVec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _startPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _startPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _startPosition.Z);
+        public FastVec3d End => new FastVec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _endPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _endPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _endPosition.Z);
+        public FastVec3d Center => new FastVec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _centerPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _centerPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _centerPosition.Z);
+
+        /// <summary>Кінець секції значенням: початок, якщо atStart, інакше кінець.</summary>
+        public FastVec3d EndOf(bool atStart)
+        {
+            return atStart ? Start : End;
+        }
+
         public Vec3d FullStartPosition
         {
             get { return new Vec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _startPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _startPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _startPosition.Z); }

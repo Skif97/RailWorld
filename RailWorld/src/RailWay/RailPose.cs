@@ -21,8 +21,8 @@ namespace RailWorld.src.RailWay
 
         public SectionChord(Section section)
         {
-            Vec3d start = section.FullStartPosition;
-            Vec3d end = section.FullEndPosition;
+            FastVec3d start = section.Start;
+            FastVec3d end = section.End;
             StartX = start.X; StartY = start.Y; StartZ = start.Z;
 
             double ax = end.X - start.X, ay = end.Y - start.Y, az = end.Z - start.Z;
@@ -60,7 +60,7 @@ namespace RailWorld.src.RailWay
         /// <summary>Довжина секції, якою її проїжджає вагонетка: хорда від початку до кінця.</summary>
         public static double Length(Section section)
         {
-            return section.FullStartPosition.DistanceTo(section.FullEndPosition);
+            return Math.Sqrt(section.Start.DistanceSq(section.End));
         }
 
         /// <summary>

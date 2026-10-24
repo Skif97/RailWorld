@@ -212,16 +212,17 @@ namespace RailWorld.src.RailWay
         public static bool HasSameSection(IEnumerable<Section> sections, Section section)
         {
             if (sections == null) return false;
-            Vec3d start = section.FullStartPosition;
-            Vec3d end = section.FullEndPosition;
+            FastVec3d start = section.Start;
+            FastVec3d end = section.End;
+            double tolerance = PositionTolerance * PositionTolerance;
 
             foreach (Section other in sections)
             {
-                Vec3d otherStart = other.FullStartPosition;
-                Vec3d otherEnd = other.FullEndPosition;
+                FastVec3d otherStart = other.Start;
+                FastVec3d otherEnd = other.End;
 
-                bool same = otherStart.DistanceTo(start) <= PositionTolerance && otherEnd.DistanceTo(end) <= PositionTolerance;
-                bool reversed = otherStart.DistanceTo(end) <= PositionTolerance && otherEnd.DistanceTo(start) <= PositionTolerance;
+                bool same = otherStart.DistanceSq(start) <= tolerance && otherEnd.DistanceSq(end) <= tolerance;
+                bool reversed = otherStart.DistanceSq(end) <= tolerance && otherEnd.DistanceSq(start) <= tolerance;
                 if (same || reversed) return true;
             }
             return false;
