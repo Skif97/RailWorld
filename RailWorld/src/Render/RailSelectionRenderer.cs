@@ -22,11 +22,18 @@ namespace RailWorld
         private static readonly Vec4f InstallableOutlineColor = new Vec4f(0.3f, 1f, 0.3f, 0.9f);
         private static readonly Vec4f WholeSectionColor = new Vec4f(1f, 0.3f, 0.3f, 0.9f);
 
-        // Кольори заливки: червоний, зелений, синій, непрозорість
-        private static readonly int[] GhostRgba = { 255, 255, 255, 60 };
-        private static readonly int[] InstallableRgba = { 70, 255, 70, 90 };
+        // Кольори заливки: червоний, зелений, синій, непрозорість. Меш заливки білий, колір дає шейдер railfill
+        private static readonly Vec4f GhostTint = Tint(255, 255, 255, 60);
+        private static readonly Vec4f InstallableTint = Tint(70, 255, 70, 90);
+        private static readonly Vec4f BlockedTint = Tint(255, 60, 60, 110);
+        private static readonly Vec4f NoTint = new Vec4f(1, 1, 1, 1);
+        private static readonly int[] WhiteRgba = { 255, 255, 255, 255 };
         private static readonly int[] SelectedRgba = { 70, 255, 70, 150 };
-        private static readonly int[] BlockedRgba = { 255, 60, 60, 110 };
+
+        private static Vec4f Tint(int r, int g, int b, int a)
+        {
+            return new Vec4f(r / 255f, g / 255f, b / 255f, a / 255f);
+        }
 
         // Чотири кути кожної грані куба від -1 до 1 в осях боксу (бік, верх, уздовж) і яскравість грані
         private static readonly float[][] Faces =
@@ -40,22 +47,20 @@ namespace RailWorld
         };
         private static readonly float[] FaceShading = { 0.8f, 0.8f, 1f, 0.5f, 0.65f, 0.65f };
 
-        // Заливка порожніх місць одного чанка: місця під шпали і під рейки, кожне білим і зеленим
+        // Заливка порожніх місць одного чанка: по мешу на групу, білому; білим чи зеленим його робить колір,
+        // з яким його малюють
         private class ChunkFill
         {
             public Vec3i Coord;
-            public MeshRef SleeperGhost, SleeperInstallable, RailGhost, RailInstallable, BallastGhost, BallastInstallable;
+            public MeshRef Sleepers, Rails, Ballast;
             // Місця в секціях, під якими стоїть чужий блок
             public MeshRef Blocked;
 
             public void Dispose()
             {
-                SleeperGhost?.Dispose();
-                SleeperInstallable?.Dispose();
-                RailGhost?.Dispose();
-                RailInstallable?.Dispose();
-                BallastGhost?.Dispose();
-                BallastInstallable?.Dispose();
+                Sleepers?.Dispose();
+                Rails?.Dispose();
+                Ballast?.Dispose();
                 Blocked?.Dispose();
             }
         }
@@ -64,6 +69,10 @@ namespace RailWorld
         private RailWaySystem system;
         private WireframeCube cube;
         private MeshRef selectedFill;
+
+        // Свій шейдер заливки: копія ігрового blockhighlights з кольором, на який множиться колір вершин
+        // (assets/railworld/shaders/railfill.*). null, якщо не зібрався: тоді заливки не малюються
+        private IShaderProgram fillProg;
 
         private Dictionary<Vec3i, ChunkFill> fills = new Dictionary<Vec3i, ChunkFill>();
         private HashSet<Vec3i> dirtyChunks = new HashSet<Vec3i>();
@@ -90,8 +99,25 @@ namespace RailWorld
             foreach (Vec3i coord in system.ClientChunkCoords)
                 dirtyChunks.Add(coord.Clone());
 
+            capi.Event.ReloadShader += LoadShader;
+            LoadShader();
+
             capi.Event.RegisterRenderer(this, EnumRenderStage.Opaque, "railselection");
             capi.Event.RegisterRenderer(this, EnumRenderStage.OIT, "railselection-fill");
+        }
+
+        // Збирає шейдер заливки. Викликається при старті і щоразу, коли гра перезбирає шейдери
+        private bool LoadShader()
+        {
+            IShaderProgram loaded = capi.Shader.NewShaderProgram();
+            loaded.AssetDomain = "railworld";
+            loaded.VertexShader = capi.Shader.NewShader(EnumShaderType.VertexShader);
+            loaded.FragmentShader = capi.Shader.NewShader(EnumShaderType.FragmentShader);
+            capi.Shader.RegisterFileShaderProgram("railfill", loaded);
+            bool ok = loaded.Compile();
+            fillProg = ok ? loaded : null;
+            if (!ok) capi.Logger.Error("[RailWorld] шейдер railfill не зібрався: порожні місця під деталі не підсвічуватимуться");
+            return ok;
         }
 
         /// <summary>
@@ -128,7 +154,7 @@ namespace RailWorld
         // Порожні місця під деталі: зелені, якщо предмет у руці сюди підходить, інакше білі
         private void RenderFills(IClientPlayer player, SectionSelection sel)
         {
-            RebuildDirtyChunks();
+            if (fillProg == null || fillProg.Disposed) return;
 
             SectionHandler handler = system.Handler;
             ItemStack held = player.InventoryManager.ActiveHotbarSlot?.Itemstack;
@@ -138,7 +164,11 @@ namespace RailWorld
             bool showAll = handler.ShowsAllEmptyParts(held);
             if (!sleeperFits && !railFits && !ballastFits && !showAll) return;
 
-            IShaderProgram prog = capi.Shader.GetProgram((int)EnumShaderProgram.Blockhighlights);
+            // Заливки збираються лише тоді, коли їх показують: чанк, у якому гравець так і не візьме деталь у руки,
+            // меша заливки не отримує зовсім
+            RebuildDirtyChunks();
+
+            IShaderProgram prog = fillProg;
             prog.Use();
             prog.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
             capi.Render.GlDisableCullFace();
@@ -176,6 +206,8 @@ namespace RailWorld
             {
                 SetBoxMatrix(sel.Box);
                 prog.UniformMatrix("modelViewMatrix", mat.Values);
+                // Колір цього меша в його вершинах
+                prog.Uniform("tint", NoTint);
                 capi.Render.RenderMesh(selectedFill);
             }
 
@@ -190,13 +222,17 @@ namespace RailWorld
                .Translate((float)(fill.Coord.X * (double)GlobalConstants.ChunkSize - cam.X), (float)(fill.Coord.Y * (double)GlobalConstants.ChunkSize - cam.Y), (float)(fill.Coord.Z * (double)GlobalConstants.ChunkSize - cam.Z));
             prog.UniformMatrix("modelViewMatrix", mat.Values);
 
-            MeshRef sleepers = sleeperFits ? fill.SleeperInstallable : fill.SleeperGhost;
-            MeshRef rails = railFits ? fill.RailInstallable : fill.RailGhost;
-            if (sleepers != null) capi.Render.RenderMesh(sleepers);
-            if (rails != null) capi.Render.RenderMesh(rails);
-            MeshRef ballast = ballastFits ? fill.BallastInstallable : fill.BallastGhost;
-            if (ballast != null) capi.Render.RenderMesh(ballast);
-            if (fill.Blocked != null) capi.Render.RenderMesh(fill.Blocked);
+            DrawFill(prog, fill.Sleepers, sleeperFits ? InstallableTint : GhostTint);
+            DrawFill(prog, fill.Rails, railFits ? InstallableTint : GhostTint);
+            DrawFill(prog, fill.Ballast, ballastFits ? InstallableTint : GhostTint);
+            DrawFill(prog, fill.Blocked, BlockedTint);
+        }
+
+        private void DrawFill(IShaderProgram prog, MeshRef mesh, Vec4f tint)
+        {
+            if (mesh == null) return;
+            prog.Uniform("tint", tint);
+            capi.Render.RenderMesh(mesh);
         }
 
         private void RebuildDirtyChunks()
@@ -242,18 +278,15 @@ namespace RailWorld
             return new ChunkFill
             {
                 Coord = coord,
-                SleeperGhost = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0], GhostRgba),
-                SleeperInstallable = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0], InstallableRgba),
-                RailGhost = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1], GhostRgba),
-                RailInstallable = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1], InstallableRgba),
-                BallastGhost = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3], GhostRgba),
-                BallastInstallable = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3], InstallableRgba),
-                Blocked = BuildFillMesh(coord, boxes, FillGroup.Blocked, counts[2], BlockedRgba)
+                Sleepers = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0]),
+                Rails = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1]),
+                Ballast = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3]),
+                Blocked = BuildFillMesh(coord, boxes, FillGroup.Blocked, counts[2])
             };
         }
 
         // Один меш з усіх порожніх місць чанка однієї групи. Координати вершин відносно початку чанка
-        private MeshRef BuildFillMesh(Vec3i coord, List<SectionBox> boxes, FillGroup group, int count, int[] rgba)
+        private MeshRef BuildFillMesh(Vec3i coord, List<SectionBox> boxes, FillGroup group, int count)
         {
             if (count == 0) return null;
 
@@ -263,7 +296,7 @@ namespace RailWorld
             foreach (SectionBox box in boxes)
             {
                 if (box.Installed || GroupOf(box) != group) continue;
-                AddBox(mesh, rgba, box.Center.X - ox, box.Center.Y - oy, box.Center.Z - oz,
+                AddBox(mesh, WhiteRgba, box.Center.X - ox, box.Center.Y - oy, box.Center.Z - oz,
                     box.AxisSide, box.AxisUp, box.AxisAlong, box.HalfSide, box.MinUp, box.MaxUp, box.HalfAlong);
             }
 
@@ -322,6 +355,7 @@ namespace RailWorld
 
         public void Dispose()
         {
+            capi.Event.ReloadShader -= LoadShader;
             capi.Event.UnregisterRenderer(this, EnumRenderStage.Opaque);
             capi.Event.UnregisterRenderer(this, EnumRenderStage.OIT);
             cube?.Dispose();
