@@ -622,7 +622,7 @@ namespace RailWorld.src.RailWay
                     // Висота й нахил з полотна колії, спільного для сусідніх секцій: маршрут іде навскоси над
                     // кількома секціями поспіль, а площини сусідніх секцій на крутій кривій збоку від осі
                     // розходяться по висоті, і він ліг би сходинками (TrackSurface)
-                    Section plane = NearestInChain(crossing.Section, p, resolve);
+                    Section plane = NearestInChain(crossing, p);
                     if (!TrackSurface.At(plane, Neighbour(plane, true, resolve), Neighbour(plane, false, resolve), p, travel.X, travel.Z,
                         out double planeY, out double cant)) continue;
 
@@ -750,22 +750,22 @@ namespace RailWorld.src.RailWay
             return links.Count == 1 && resolve != null ? resolve(links[0]) : null;
         }
 
-        // Секція тієї самої колії, що й section, найближча в плані до точки: полотно колії міняється вздовж неї
-        private static Section NearestInChain(Section section, Vec3d p, Func<SectionLink, Section> resolve)
+        // Секція перетнутої колії, найближча в плані до точки: полотно колії міняється вздовж неї. Шукає в ланцюгах,
+        // які вже зібрав MeasureNode тим самим обходом колії (TrackWalker.Leaving до MaxNodeSections), а не обходить
+        // колію заново на кожну точку. У кожен бік лише доти, доки секції не стали далі за найближчу більш ніж на блок
+        private static Section NearestInChain(Crossing crossing, Vec3d p)
         {
-            Section best = section;
-            double bestDistance = PlanDistance(section, p);
-            if (resolve == null) return best;
+            Section best = crossing.Section;
+            double bestDistance = PlanDistance(best, p);
 
             for (int end = 0; end < 2; end++)
             {
-                TrackWalker walk = TrackWalker.Leaving(section, end == 0, resolve);
-                for (int hop = 0; hop < MaxNodeSections && walk.Next(); hop++)
+                foreach (Section section in crossing.Chain[end])
                 {
-                    double distance = PlanDistance(walk.Section, p);
+                    double distance = PlanDistance(section, p);
                     if (distance < bestDistance)
                     {
-                        best = walk.Section;
+                        best = section;
                         bestDistance = distance;
                     }
                     else if (distance > bestDistance + 1) break;
