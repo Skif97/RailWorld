@@ -72,12 +72,22 @@ namespace RailWorld
             public List<TPart> Drawn = new List<TPart>();
             public CustomMeshDataPartFloat Floats;
             public MeshRef Mesh;
-            public bool Dirty = true;
+            // У пачці щось змінилося, і вона чекає в dirty на перебудову
+            public bool Dirty;
         }
 
         private Dictionary<Vec3i, Batch> batches = new Dictionary<Vec3i, Batch>();
         // Пачки по порядку, для обходу світла по колу
         private List<Batch> order = new List<Batch>();
+        // Пачки, у яких щось змінилося: їх і лише їх PrepareFrame збирає заново
+        private readonly List<Batch> dirty = new List<Batch>();
+
+        private void MarkDirty(Batch batch)
+        {
+            if (batch.Dirty) return;
+            batch.Dirty = true;
+            dirty.Add(batch);
+        }
         private int lightCursor;
 
         private float[] tmpMat = Mat4f.Create();
@@ -162,13 +172,13 @@ namespace RailWorld
             part.LightKey = TrackLight.KeyOf(capi.World.BlockAccessor, part.Position);
             part.Light = TrackLight.Of(capi.World.BlockAccessor, part.Position);
             batch.Parts[key] = part;
-            batch.Dirty = true;
+            MarkDirty(batch);
         }
 
         /// <summary>Прибирає деталь з ключем key із пачки чанка chunkCoord.</summary>
         public void Remove(Vec3i chunkCoord, TKey key)
         {
-            if (batches.TryGetValue(chunkCoord, out Batch batch) && batch.Parts.Remove(key)) batch.Dirty = true;
+            if (batches.TryGetValue(chunkCoord, out Batch batch) && batch.Parts.Remove(key)) MarkDirty(batch);
         }
 
         // Спорожнює пачку чанка перед тим, як його колію покладуть у неї знову. Буфер у відеокарті лишається:
@@ -178,7 +188,7 @@ namespace RailWorld
             if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
 
             batch.Parts.Clear();
-            batch.Dirty = true;
+            MarkDirty(batch);
         }
 
         // Прибирає деталі секцій, що зберігаються в цьому чанку, разом з буфером
@@ -189,6 +199,7 @@ namespace RailWorld
             batch.Mesh?.Dispose();
             batches.Remove(chunkCoord);
             order.Remove(batch);
+            if (batch.Dirty) dirty.Remove(batch);
         }
 
         /// <summary>
@@ -234,10 +245,9 @@ namespace RailWorld
         /// </summary>
         public void PrepareFrame()
         {
-            foreach (Batch batch in order)
-            {
-                if (batch.Dirty) Rebuild(batch);
-            }
+            if (dirty.Count == 0) return;
+            foreach (Batch batch in dirty) Rebuild(batch);
+            dirty.Clear();
         }
 
         private int FloatsPerInstance => LightFloats + MatrixFloats + ExtraFloats;
@@ -348,6 +358,7 @@ namespace RailWorld
             foreach (Batch batch in order) batch.Mesh?.Dispose();
             batches.Clear();
             order.Clear();
+            dirty.Clear();
         }
     }
 }
