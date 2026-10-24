@@ -45,10 +45,17 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public void Collect(Vec3d from, Vec3d to, List<Section> into)
         {
-            int fromX = CellOf(from.X), toX = CellOf(to.X);
-            int fromY = CellOf(from.Y), toY = CellOf(to.Y);
-            int fromZ = CellOf(from.Z), toZ = CellOf(to.Z);
+            Collect(from.X, from.Y, from.Z, to.X, to.Y, to.Z, into);
+        }
 
+        /// <summary>Те саме з коробкою, заданою числами.</summary>
+        public void Collect(double fromX, double fromY, double fromZ, double toX, double toY, double toZ, List<Section> into)
+        {
+            Collect(CellOf(fromX), CellOf(fromY), CellOf(fromZ), CellOf(toX), CellOf(toY), CellOf(toZ), into);
+        }
+
+        private void Collect(int fromX, int fromY, int fromZ, int toX, int toY, int toZ, List<Section> into)
+        {
             for (int y = fromY; y <= toY; y++)
             {
                 for (int z = fromZ; z <= toZ; z++)
