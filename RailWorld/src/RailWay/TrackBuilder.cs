@@ -25,30 +25,9 @@ namespace RailWorld.src.RailWay
 
             RailDataSession session = new RailDataSession(world);
 
-            // Нова колія не може довго лежати на покладеній і не може дати стрілку в зоні іншої стрілки.
-            // Клієнт це вже перевірив для попереднього перегляду, але вирішує сервер, і світ за цей час міг
-            // змінитися. Перевіряємо до того, як щось зміниться у світі. Секції тут одноразові: перевірка
-            // зв'язує їх між собою, тож далі вони створюються заново
-            var planned = new List<Section>();
-            for (int i = 0; i < pointList.Count - 2; i += 2)
-            {
-                var section = new Section(
-                    pointList[i], pointList[i + 1], pointList[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
-                DataInChunk data = session.Get(section.ChunkAddres);
-                if (!session.IsChunkLoaded(section.ChunkAddres) || (data != null && SectionLinker.HasSameSection(data, section))) continue;
-                planned.Add(section);
-            }
+            // Правила щодо покладеної колії вже перевірено (RailWorld.BuildRoute → RouteCurve.BuildPoints) тим самим
+            // кодом, що й перегляд у клієнта, на даних сервера і в тому самому такті: тут лише кладемо
             var track = new TrackIndex(chunk => session.Get(chunk)?.Grid);
-            string refusal = null;
-            if (SectionLinker.FindLongOverlap(planned, track, session.GetSection, out _, out _)) refusal = "колії надто довго йдуть одна поверх одної";
-            else if (SectionLinker.FindTooCloseAbove(planned, track).Count > 0) refusal = "колія проходить надто близько над чи під іншою";
-            else if (SectionLinker.FindLeverInTrack(planned, track) >= 0) refusal = "колія проходить по важелю стрілки";
-            else refusal = SectionLinker.FindSwitchProblem(planned, track, session.GetSection, out _);
-            if (refusal != null)
-            {
-                (byPlayer as IServerPlayer)?.SendIngameError("railrefused", "Колію не покладено: " + refusal);
-                return refusal;
-            }
 
             List<Section> stretch = new List<Section>();
             int existing = 0, blocked = 0, unloaded = 0;
@@ -68,8 +47,8 @@ namespace RailWorld.src.RailWay
                     continue;
                 }
 
-                // Якщо тут уже лежить така сама секція, другу поверх неї не кладемо
-                if (SectionLinker.HasSameSection(data, section))
+                // Якщо тут уже лежить така сама секція, другу поверх неї не кладемо. Так само її не рахував перегляд
+                if (SectionLinker.FindSame(section, track) != null)
                 {
                     existing++;
                     continue;

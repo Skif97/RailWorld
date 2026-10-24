@@ -145,7 +145,7 @@ namespace RailWorld.src.RailWay
                 if (other == section) continue;
                 Vec3d otherStart = other.FullStartPosition, otherEnd = other.FullEndPosition;
 
-                if (!facts.AlreadyLaid) facts.AlreadyLaid = SameEnds(start, end, otherStart, otherEnd);
+                if (!facts.AlreadyLaid) facts.AlreadyLaid = SectionLinker.SameSection(section, other);
 
                 for (int side = 0; side < 2 && !facts.CoversLever; side++)
                 {
@@ -205,11 +205,5 @@ namespace RailWorld.src.RailWay
         }
 
         // Ті самі кінці, в будь-якому з двох напрямків
-        private static bool SameEnds(Vec3d start, Vec3d end, Vec3d otherStart, Vec3d otherEnd)
-        {
-            double tolerance = SectionLinker.PositionTolerance;
-            return (otherStart.DistanceTo(start) <= tolerance && otherEnd.DistanceTo(end) <= tolerance)
-                || (otherStart.DistanceTo(end) <= tolerance && otherEnd.DistanceTo(start) <= tolerance);
-        }
     }
 }

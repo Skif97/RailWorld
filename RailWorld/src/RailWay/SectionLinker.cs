@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using ProtoBuf;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
 namespace RailWorld.src.RailWay
@@ -206,30 +207,29 @@ namespace RailWorld.src.RailWay
         public const int MaxLinksPerEnd = 2;
 
         /// <summary>
-        /// Чи лежить у чанку секція з тими самими кінцями, в будь-якому з двох напрямків.
+        /// Чи це та сама секція: кінці збігаються, у тому самому напрямку чи навпаки. Така вдруге не кладеться,
+        /// і правила щодо покладеної колії її не рахують.
         /// </summary>
-        public static bool HasSameSection(DataInChunk data, Section section)
+        public static bool SameSection(Section a, Section b)
         {
-            return HasSameSection(data.RailWaySections.Values, section);
+            FastVec3d start = a.Start, end = a.End, otherStart = b.Start, otherEnd = b.End;
+            double tolerance = PositionTolerance * PositionTolerance;
+            return (otherStart.DistanceSq(start) <= tolerance && otherEnd.DistanceSq(end) <= tolerance)
+                || (otherStart.DistanceSq(end) <= tolerance && otherEnd.DistanceSq(start) <= tolerance);
         }
 
-        public static bool HasSameSection(IEnumerable<Section> sections, Section section)
+        /// <summary>
+        /// Така сама секція, що вже лежить у колії track, або null. Шукає поруч з усіх чанків: та сама секція має
+        /// ті самі кінці, і її середина не далі за блок від середини цієї. Цим користуються і перегляд маршруту
+        /// (TrackSurvey.Examine), і будування на сервері (TrackBuilder), тож обидва вирішують однаково.
+        /// </summary>
+        public static Section FindSame(Section section, TrackIndex track)
         {
-            if (sections == null) return false;
-            FastVec3d start = section.Start;
-            FastVec3d end = section.End;
-            double tolerance = PositionTolerance * PositionTolerance;
-
-            foreach (Section other in sections)
+            foreach (Section other in track.Around(section.GetGlobalPos(), 1, 1))
             {
-                FastVec3d otherStart = other.Start;
-                FastVec3d otherEnd = other.End;
-
-                bool same = otherStart.DistanceSq(start) <= tolerance && otherEnd.DistanceSq(end) <= tolerance;
-                bool reversed = otherStart.DistanceSq(end) <= tolerance && otherEnd.DistanceSq(start) <= tolerance;
-                if (same || reversed) return true;
+                if (other != section && SameSection(section, other)) return other;
             }
-            return false;
+            return null;
         }
 
         /// <summary>

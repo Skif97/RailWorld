@@ -147,5 +147,35 @@ namespace RailWorld.Tests
             Assert.True(TrackSurvey.NearestAxis(new Vec3d(10, 1.5, 2), TrackRules.MarkerReach, SectionsIn, out _, out Vec3d at));
             Assert.Equal(10, at.X, 1);
         }
+
+        [Fact]
+        public void SameSectionIsFoundNearby()
+        {
+            // Колія з явними кінцями секцій через пів блока. Ті самі секції вже лежать, і розвернуті теж (ті самі
+            // кінці навпаки); зсунуті на пів блока вгору ні
+            var ends = new List<(double X, double Z)>();
+            for (int i = 0; i <= 40; i++) ends.Add((i * 0.5, 3));
+            Lay(Through(ends.ToArray()));
+
+            foreach (Section planned in Through(ends.ToArray()))
+                Assert.NotNull(SectionLinker.FindSame(planned, SectionsIn));
+
+            var back = new List<(double X, double Z)>(ends);
+            back.Reverse();
+            foreach (Section planned in Through(back.ToArray()))
+                Assert.NotNull(SectionLinker.FindSame(planned, SectionsIn));
+
+            foreach (Section planned in Plan(Point(0, 3, 1, 0), Point(20, 3, 1, 0)))
+            {
+                Section lifted = new Section(Lifted(planned.Start, planned), Lifted(planned.Center, planned), Lifted(planned.End, planned), TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                Assert.Null(SectionLinker.FindSame(lifted, SectionsIn));
+            }
+        }
+
+        // Точка секції section, піднята на пів блока
+        private static PointOnBezierCurve Lifted(FastVec3d p, Section section)
+        {
+            return new PointOnBezierCurve { position = new Vec3d(p.X, p.Y + 0.5, p.Z), tangent = section.CenterTangent, normal = section.CenterNormal };
+        }
     }
 }
