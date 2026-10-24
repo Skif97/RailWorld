@@ -405,40 +405,38 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void RecheckAround(IWorldAccessor world, BlockPos changed)
         {
-            // Секція зберігається в чанку свого центру, а центр не далі ніж за півтора блока від її клітинок
-            var chunks = new HashSet<Vec3i>();
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dy = -1; dy <= 1; dy++)
-                    for (int dz = -1; dz <= 1; dz++)
-                        chunks.Add(ModMath.FindChunk(changed.X + 0.5 + dx * 1.5, changed.Y + 0.5 + dy * 1.5, changed.Z + 0.5 + dz * 1.5));
+            // Секції, середина яких не далі за 2.5 блока від зміненого: секція займає клітинки не далі за
+            // півтора блока від своєї середини. Через сітку чанків, а не всі секції сусідніх чанків: це питається
+            // на кожен зламаний чи поставлений блок
+            var track = new TrackIndex(chunk => DataInChunk.Get(world, chunk)?.Grid);
+            double x = changed.X + 0.5, y = changed.Y + 0.5, z = changed.Z + 0.5;
+            List<Section> near = track.Around(new Vec3d(x, y, z), 2.5, 2.5);
+            if (near.Count == 0) return;
 
-            foreach (Vec3i chunkCoord in chunks)
+            // Змінені секції по чанках, де вони зберігаються, і ті з них, що звільнилися
+            var touched = new Dictionary<Vec3i, List<Section>>();
+            foreach (Section section in near)
             {
-                DataInChunk data = DataInChunk.Get(world, chunkCoord);
+                FastVec3d center = section.Center;
+                if (Math.Abs(center.Y - y) > 2.5) continue;
+
+                bool free = CanAttach(world, section);
+                if (free == !section.Blocked) continue;
+
+                // Прапорець міняємо до встановлення блоків: воно саме викликає зміни сусідів
+                section.Blocked = !free;
+                if (!touched.TryGetValue(section.ChunkAddres, out List<Section> list)) touched[section.ChunkAddres] = list = new List<Section>();
+                if (free) list.Add(section);
+            }
+
+            foreach (KeyValuePair<Vec3i, List<Section>> pair in touched)
+            {
+                DataInChunk data = DataInChunk.Get(world, pair.Key);
                 if (data == null) continue;
 
-                var freed = new List<Section>();
-                bool changedAny = false;
-
-                foreach (Section section in data.RailWaySections.Values)
-                {
-                    Vec3d center = section.GetGlobalPos();
-                    if (Math.Abs(center.X - changed.X - 0.5) > 2.5 || Math.Abs(center.Y - changed.Y - 0.5) > 2.5 || Math.Abs(center.Z - changed.Z - 0.5) > 2.5) continue;
-
-                    bool free = CanAttach(world, section);
-                    if (free == !section.Blocked) continue;
-
-                    // Прапорець міняємо до встановлення блоків: воно саме викликає зміни сусідів
-                    section.Blocked = !free;
-                    changedAny = true;
-                    if (free) freed.Add(section);
-                }
-
-                if (!changedAny) continue;
-
-                DataInChunk.Save(world, chunkCoord, data);
-                foreach (Section section in freed) Attach(world, section);
-                RailWorld.SendChunkDataToClients(chunkCoord, data);
+                DataInChunk.Save(world, pair.Key, data);
+                foreach (Section section in pair.Value) Attach(world, section);
+                RailWorld.SendChunkDataToClients(pair.Key, data);
             }
         }
 
