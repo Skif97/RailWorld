@@ -64,6 +64,8 @@ namespace RailWorld
         private int lastFrame;
         private bool broken;
         private Dictionary<SectionEndKey, Lever> levers = new Dictionary<SectionEndKey, Lever>();
+        // Ті з них, що зараз рухаються анімованою моделлю (Util): лише їм щось потрібно кожні 15 мс
+        private readonly List<Lever> animated = new List<Lever>();
 
         public SwitchLeverRenderer(ICoreClientAPI capi, RailWayRendererSystem parts)
         {
@@ -231,6 +233,7 @@ namespace RailWorld
             if (lever.Util == null)
             {
                 lever.Util = new AnimationUtil(capi, lever.Position);
+                animated.Add(lever);
                 lever.Util.InitializeAnimator(ShapeName, mesh, shape, null);
                 lever.Util.renderer.CustomTransform = lever.Placement;
                 // З першого положення анімація йде вперед. З останнього вона спершу стає на останній кадр, а
@@ -266,9 +269,10 @@ namespace RailWorld
         private void Settle()
         {
             long now = capi.ElapsedMilliseconds;
-            foreach (Lever lever in levers.Values)
+            // З кінця: той, що доїхав, тут же виходить зі списку
+            for (int i = animated.Count - 1; i >= 0; i--)
             {
-                if (lever.Util == null) continue;
+                Lever lever = animated[i];
                 if (lever.RewindPending)
                 {
                     RunningAnimation state = lever.Util.animator.GetAnimationState(AnimationCode);
@@ -283,6 +287,7 @@ namespace RailWorld
                 if (now - lever.MovedAtMs < SwitchAnimator.DurationMs) continue;
                 lever.Util.Dispose();
                 lever.Util = null;
+                animated.RemoveAt(i);
                 Rest(lever);
             }
         }
@@ -297,6 +302,7 @@ namespace RailWorld
         // Важіль зникає: звільняє анімовану модель і прибирає нерухому деталь
         private void Drop(Lever lever)
         {
+            if (lever.Util != null) animated.Remove(lever);
             lever.Util?.Dispose();
             lever.Util = null;
             Unrest(lever);

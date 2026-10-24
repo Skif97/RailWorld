@@ -42,6 +42,8 @@ namespace RailWorld
 
         // Стрілку визначає кінець секції, з якого колія розходиться
         private Dictionary<SectionEndKey, SwitchState> states = new Dictionary<SectionEndKey, SwitchState>();
+        // Ті з них, що зараз рухаються: лише їх Advance і обходить
+        private readonly List<SwitchState> moving = new List<SwitchState>();
 
         // Запам'ятовує положення стрілки. Якщо воно не те, що бачили минулого разу, з цієї миті починається рух.
         // Стрілка, яку бачимо вперше, одразу стоїть на місці
@@ -62,6 +64,7 @@ namespace RailWorld
             state.From = SwitchValue(state);
             state.Position = position;
             state.ChangedAtMs = capi.ElapsedMilliseconds;
+            if (!state.Moving) moving.Add(state);
             state.Moving = true;
         }
 
@@ -90,12 +93,14 @@ namespace RailWorld
         /// </summary>
         public void Advance(Action<Vec3i, int, bool> redraw)
         {
-            foreach (SwitchState state in states.Values)
+            // З кінця: та, що доїхала, після останнього кроку виходить зі списку
+            for (int i = moving.Count - 1; i >= 0; i--)
             {
-                if (!state.Moving) continue;
+                SwitchState state = moving[i];
                 if (capi.ElapsedMilliseconds - state.ChangedAtMs >= DurationMs) state.Moving = false;
 
                 redraw(state.Chunk, state.Index, state.AtStart);
+                if (!state.Moving) moving.RemoveAt(i);
             }
         }
 
@@ -103,6 +108,7 @@ namespace RailWorld
         public void Forget(Vec3i chunkCoord)
         {
             foreach (SectionEndKey key in states.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) states.Remove(key);
+            moving.RemoveAll(state => state.Chunk.Equals(chunkCoord));
         }
     }
 }
