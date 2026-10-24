@@ -31,7 +31,11 @@ namespace RailWorld.src.RailWay
             AtStart = atStart;
         }
 
-        public Vec3i Chunk => new Vec3i(ChunkX, ChunkY, ChunkZ);
+        // Чанк одним об'єктом на посилання: рахується при першому зверненні, бо посилання після створення не
+        // міняються, а через нього йде кожен крок обходу колії. Спільний, тож змінювати його не можна.
+        // У збереження не потрапляє
+        private Vec3i chunk;
+        public Vec3i Chunk => chunk ?? (chunk = new Vec3i(ChunkX, ChunkY, ChunkZ));
 
         public bool PointsTo(Section section)
         {
