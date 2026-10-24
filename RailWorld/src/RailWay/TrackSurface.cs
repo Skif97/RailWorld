@@ -17,11 +17,12 @@ namespace RailWorld.src.RailWay
         // На скільки блоків убік від точки міряти нахил поверхні
         private const double CantProbe = 0.05;
 
-        // Поперечна лінія полотна: точка осі і нормаль у ній
+        // Поперечна лінія полотна: точка осі і нормаль у ній. Значеннями (FastVec3d): висоту питають на кожну
+        // точку маршруту поверх колії, по кілька разів, і нових об'єктів на це не йде
         private struct Station
         {
-            public Vec3d Axis;
-            public Vec3d Normal;
+            public FastVec3d Axis;
+            public FastVec3d Normal;
         }
 
         /// <summary>
@@ -48,9 +49,9 @@ namespace RailWorld.src.RailWay
         private static bool Height(Section section, Section before, Section after, double x, double z, out double height)
         {
             height = 0;
-            Station start = Of(section.FullStartPosition, section.StartNormal);
-            Station middle = Of(section.GetGlobalPos(), section.CenterNormal);
-            Station end = Of(section.FullEndPosition, section.EndNormal);
+            Station start = Of(section.Start, section.StartNormal);
+            Station middle = Of(section.Center, section.CenterNormal);
+            Station end = Of(section.End, section.EndNormal);
 
             // Перша половина секції; якщо точка за серединою, друга
             if (!Solve(start, middle, x, z, out double t)) return false;
@@ -72,27 +73,27 @@ namespace RailWorld.src.RailWay
             return Lift(middle, start, 1 - t, x, z, true, out height);
         }
 
-        private static Station Of(Vec3d axis, Vec3f normal)
+        private static Station Of(FastVec3d axis, Vec3f normal)
         {
-            return new Station { Axis = axis, Normal = new Vec3d(normal.X, normal.Y, normal.Z) };
+            return new Station { Axis = axis, Normal = new FastVec3d(normal.X, normal.Y, normal.Z) };
         }
 
         // Половина сусідньої секції, що прилягає до стику joint: її поперечна лінія на стику і посередині
-        private static bool Nearest(Section neighbour, Vec3d joint, out Station atJoint, out Station middle)
+        private static bool Nearest(Section neighbour, FastVec3d joint, out Station atJoint, out Station middle)
         {
-            Vec3d start = neighbour.FullStartPosition, end = neighbour.FullEndPosition;
-            bool byStart = start.SquareDistanceTo(joint) <= end.SquareDistanceTo(joint);
+            FastVec3d start = neighbour.Start, end = neighbour.End;
+            bool byStart = start.DistanceSq(joint) <= end.DistanceSq(joint);
             atJoint = byStart ? Of(start, neighbour.StartNormal) : Of(end, neighbour.EndNormal);
-            middle = Of(neighbour.GetGlobalPos(), neighbour.CenterNormal);
+            middle = Of(neighbour.Center, neighbour.CenterNormal);
             // Сусід справді прилягає: колія могла обірватися, а посилання лишитися
-            return atJoint.Axis.DistanceTo(joint) <= SectionLinker.PositionTolerance;
+            return Math.Sqrt(atJoint.Axis.DistanceSq(joint)) <= SectionLinker.PositionTolerance;
         }
 
         // Нормаль другої лінії, повернута в той самий бік, що й перша: у сусідніх секцій вони можуть дивитися
         // в різні боки, а поперечній лінії це байдуже
-        private static Vec3d Aligned(Vec3d first, Vec3d second)
+        private static FastVec3d Aligned(FastVec3d first, FastVec3d second)
         {
-            return first.X * second.X + first.Z * second.Z < 0 ? new Vec3d(-second.X, -second.Y, -second.Z) : second;
+            return first.X * second.X + first.Z * second.Z < 0 ? new FastVec3d(-second.X, -second.Y, -second.Z) : second;
         }
 
         // Де між лініями a (0) і b (1) лежить та, що проходить у плані через точку. Вісь і нормаль між a і b
@@ -101,7 +102,7 @@ namespace RailWorld.src.RailWay
         private static bool Solve(Station a, Station b, double x, double z, out double t)
         {
             t = 0;
-            Vec3d nb = Aligned(a.Normal, b.Normal);
+            FastVec3d nb = Aligned(a.Normal, b.Normal);
             double dx = x - a.Axis.X, dz = z - a.Axis.Z;
             double ex = b.Axis.X - a.Axis.X, ez = b.Axis.Z - a.Axis.Z;
             double mx = nb.X - a.Normal.X, mz = nb.Z - a.Normal.Z;
@@ -132,7 +133,7 @@ namespace RailWorld.src.RailWay
         private static bool Lift(Station a, Station b, double t, double x, double z, bool flat, out double height)
         {
             height = 0;
-            Vec3d nb = Aligned(a.Normal, b.Normal);
+            FastVec3d nb = Aligned(a.Normal, b.Normal);
             double turn = flat ? Math.Min(t, 1) : t;
             if (flat && t > 1)
             {
