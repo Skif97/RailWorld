@@ -313,6 +313,9 @@ namespace RailWorld
         // і в скільки разів він зростає в крутій кривій: до 1 + SwayCurveSpeedup
         private const float SwayBaseSpeed = 0.9f;
         private const float SwayCurveSpeedup = 1.8f;
+        // На кривій такого радіуса і крутіше кузов гойдається найшвидше, на пологішій повільніше, за кривизною.
+        // У ширинах колії: 13.5 це 10.5 блока, три найменші радіуси маршруту
+        private const double SwayCurveRadius = TrackGauge.StandardWidth * 13.5;
         // Поштовхи йдуть через випадковий проміжок у цих межах, секунди руху
         private const float BumpEveryMin = 1.2f;
         private const float BumpEveryMax = 4.5f;
@@ -375,7 +378,7 @@ namespace RailWorld
 
             // Наскільки вагонетка їде, від 0 до 1, і наскільки крута крива під нею
             float moving = GameMath.Clamp(shownSpeed / 1.5f, 0, 1);
-            float curved = GameMath.Clamp(shownCurve * (float)ModMath.CantFromRadius, 0, 1);
+            float curved = GameMath.Clamp(shownCurve * (float)SwayCurveRadius, 0, 1);
 
             // Аніматор з'являється не одразу: гра створює його, коли збере модель сутності. Доти анімацій
             // немає, і питати про них не можна. Так само це перевіряє човен гри

@@ -16,7 +16,7 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Нахил полотна в цій точці, радіани, якщо точка стоїть на вже покладеній колії: маршрут має
-        /// почати або закінчити з нього, а не з нуля. Знак як у ModMath.ApplyCant. NaN, якщо точка вільна.
+        /// почати або закінчити з нього, а не з нуля. Знак як у ModMath.RampEndCant. NaN, якщо точка вільна.
         /// Має зміст лише для першої і останньої точки маршруту.
         /// </summary>
         public double Cant = double.NaN;
@@ -157,7 +157,7 @@ namespace RailWorld.src.RailWay
             if (track != null && LevelCrossings(all, first, last, resolve, track, cache, shape, conflictAt, joints, ref conflict)) followed = true;
             if (followed) RecomputeSlopes(all);
 
-            ModMath.ApplyCant(all, first.Cant, last.Cant);
+            ModMath.RampEndCant(all, first.Cant, last.Cant);
             if (followed) BlendCant(all, shape);
             if (track != null) CheckAgainstLaidTrack(all, resolve, track, cache, conflictAt, ref conflict);
             return all;
@@ -1256,7 +1256,7 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Нормаль точки з нахилом полотна cant: горизонтальна нормаль ліворуч від руху, повернута на cant
-        /// довкола дотичної. Так само її будує ModMath.ApplyCant.
+        /// довкола дотичної. Так само її будує ModMath.RampEndCant.
         /// </summary>
         internal static Vec3f NormalWithCant(Vec3f tangent, double cant)
         {

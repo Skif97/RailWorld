@@ -167,95 +167,49 @@ namespace RailWorld
             cant = (float)Math.Atan2(levelSide, levelUp);
         }
 
-        // Нахил полотна в поворотах (підвищення зовнішньої рейки)
-        /// <summary>
-        /// Чи нахиляти полотно в поворотах. Якщо вимкнути, нова колія лежить рівно і в кривих; там, де вона
-        /// примикає до вже покладеної нахиленої колії, нахил плавно сходить до нуля.
-        /// Вимкнено 2026-10-14: у грі вираж дає лише вигляд (відцентрової сили немає), а поперечний нахил
-        /// полотна ускладнював геометрію стрілок і перетинів і був частиною кількох помилок. Якщо його не
-        /// забракне, код виражу прибрати зовсім.
-        /// </summary>
-        public static readonly bool CantInCurves = false;
-
-        /// <summary>
-        /// Нахил є лише в крутих поворотах. На радіусі CantFromRadius і більшому його немає зовсім, на
-        /// CantTightRadius і меншому він найбільший, між ними плавно наростає. Обидва в ширинах колії:
-        /// при колії 0.78 це 10.5 і 5.3 блока, тобто три і півтора найменших радіуси маршруту.
-        /// Пологі криві, а з ними й перетини через них, лежать рівно.
-        /// </summary>
-        public const double CantFromRadius = TrackGauge.StandardWidth * 13.5;
-        public const double CantTightRadius = TrackGauge.StandardWidth * 6.75;
-
-        public const double MaxCantRad = 6 * Math.PI / 180;  // найбільший кут нахилу
-        // На скільки блоків від краю кривої нахил наростає з нуля і на якому відрізку він усереднюється
+        // На скільки блоків від кінця маршруту, що примикає до нахиленої колії, нахил полотна сходить до нуля
         public const double CantRampLength = TrackGauge.StandardWidth * 8.0;
 
         /// <summary>
-        /// Нахиляє нормалі точок кривої в бік повороту. Кут залежить від кривизни, усередненої по відрізку
-        /// колії довжиною CantRampLength навколо точки: там, де сходяться дуги різної кривизни, нахил
-        /// міняється поступово, а не стрибком між двома секціями. На краях кривої він плавно сходить до нуля,
-        /// щоб стикуватися з сусідніми ділянками.
+        /// Кінці кривої, що примикають до вже покладеної колії, нахиленої в цьому місці впоперек (гілка стрілки
+        /// на схилі лягає в полотно основної колії): на кінці нахил такий, як у тієї колії, і плавно сходить до
+        /// нуля на відрізку CantRampLength. Далі крива лежить рівно. Виражу в кривих немає: його прибрано
+        /// 2026-10-24, бо в грі він давав лише вигляд (відцентрової сили немає), а геометрію стрілок і перетинів
+        /// ускладнював.
         /// </summary>
-        /// <param name="startCant">Нахил, з якого крива має початися, радіани; NaN, якщо з нуля.
-        /// Потрібен, коли крива починається від уже покладеної колії, а та в цьому місці нахилена.</param>
+        /// <param name="startCant">Нахил колії, від якої крива починається, радіани; NaN, якщо з нуля.</param>
         /// <param name="endCant">Те саме для кінця кривої.</param>
-        public static void ApplyCant(List<PointOnBezierCurve> points, double startCant = double.NaN, double endCant = double.NaN)
+        public static void RampEndCant(List<PointOnBezierCurve> points, double startCant = double.NaN, double endCant = double.NaN)
         {
             if (double.IsNaN(startCant)) startCant = 0;
             if (double.IsNaN(endCant)) endCant = 0;
 
             int count = points.Count;
-            if (count < 3) return;
+            // Майже завжди обидва кінці рівні, і робити нічого
+            if (count < 3 || (startCant == 0 && endCant == 0)) return;
 
             double[] dist = new double[count];
             for (int i = 1; i < count; i++)
             {
-                Vec3d d = points[i].position - points[i - 1].position;
-                dist[i] = dist[i - 1] + d.Length();
+                Vec3d a = points[i - 1].position, b = points[i].position;
+                double dx = b.X - a.X, dy = b.Y - a.Y, dz = b.Z - a.Z;
+                dist[i] = dist[i - 1] + Math.Sqrt(dx * dx + dy * dy + dz * dz);
             }
             double total = dist[count - 1];
             double ramp = Math.Min(CantRampLength, total / 2);
             if (ramp <= 0) return;
 
-            // Нахил, якого просить кривизна в самій точці
-            double[] raw = new double[count];
             for (int i = 0; i < count; i++)
             {
-                int a = Math.Max(i - 1, 0);
-                int b = Math.Min(i + 1, count - 1);
-                Vec3f ta = points[a].tangent;
-                Vec3f tb = points[b].tangent;
-                double turn = Math.Atan2(tb.X * ta.Z - tb.Z * ta.X, ta.X * tb.X + ta.Z * tb.Z);
-                // Сусідні точки можуть збігтися (остання точка нарізки з кінцем кривої), тоді вийде 0 / 0.
-                // У такій точці кривизну вважаємо нульовою
-                double span = dist[b] - dist[a];
-                double curvature = span > 1e-9 ? turn / span : 0;
-                if (double.IsNaN(curvature) || double.IsInfinity(curvature)) curvature = 0;
-
-                // Частка найбільшого нахилу: нуль на пологій кривій, одиниця на крутій, між ними плавно
-                double tight = GameMath.Clamp((Math.Abs(curvature) - 1 / CantFromRadius) / (1 / CantTightRadius - 1 / CantFromRadius), 0, 1);
-                tight = tight * tight * (3 - 2 * tight);
-                raw[i] = CantInCurves ? Math.Sign(curvature) * MaxCantRad * tight : 0;
-            }
-
-            // Середнє по відрізку навколо точки. Вікно їде разом із точкою, тому межі лише зсуваються вперед
-            double half = CantRampLength / 2;
-            int from = 0, to = 0;
-            double sum = 0;
-
-            for (int i = 0; i < count; i++)
-            {
-                while (to < count && dist[to] <= dist[i] + half) sum += raw[to++];
-                while (dist[from] < dist[i] - half) sum -= raw[from++];
-
-                // На краю кривої нахил такий, як у колії, до якої вона примикає, і плавно переходить у свій
+                // Ближчий кінець і його нахил. Далі за ramp від кінця нахилу немає, і нормаль лишається як є
                 bool nearStart = dist[i] <= total - dist[i];
                 double edge = nearStart ? startCant : endCant;
                 double fromEdge = nearStart ? dist[i] : total - dist[i];
+                if (edge == 0 || fromEdge >= ramp) continue;
 
-                double k = GameMath.Clamp(fromEdge / ramp, 0, 1);
+                double k = fromEdge / ramp;
                 k = k * k * (3 - 2 * k);
-                double cant = edge + (sum / (to - from) - edge) * k;
+                double cant = edge - edge * k;
 
                 PointOnBezierCurve p = points[i];
                 Vec3f n = p.normal;
