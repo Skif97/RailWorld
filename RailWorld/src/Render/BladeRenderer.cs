@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -375,7 +374,8 @@ namespace RailWorld
         }
 
         private ICoreClientAPI capi;
-        private Dictionary<BladeKey, Blade> blades = new Dictionary<BladeKey, Blade>();
+        // Деталі по чанках їхніх секцій: перебудова чанка бере лише свої
+        private readonly ChunkKeyed<BladeKey, Blade> blades = new ChunkKeyed<BladeKey, Blade>(key => key.Section);
         private Vec3f origin = new Vec3f();
 
         public BladeRenderer(ICoreClientAPI capi)
@@ -429,7 +429,7 @@ namespace RailWorld
 
             mesh.CustomFloats = floats;
             blade.MeshRef = capi.Render.UploadMesh(mesh);
-            blades[key] = blade;
+            blades.Set(key, blade);
         }
 
         /// <summary>
@@ -505,10 +505,9 @@ namespace RailWorld
         /// </summary>
         public void BeginChunk(Vec3i chunkCoord)
         {
-            foreach (Blade blade in blades.Values)
-            {
-                if (blade.Chunk.Equals(chunkCoord)) blade.Live = false;
-            }
+            Dictionary<BladeKey, Blade> inChunk = blades.In(chunkCoord);
+            if (inChunk == null) return;
+            foreach (Blade blade in inChunk.Values) blade.Live = false;
         }
 
         /// <summary>
@@ -516,7 +515,15 @@ namespace RailWorld
         /// </summary>
         public void EndChunk(Vec3i chunkCoord)
         {
-            foreach (BladeKey key in blades.Where(pair => !pair.Value.Live && pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) Remove(key);
+            Dictionary<BladeKey, Blade> inChunk = blades.In(chunkCoord);
+            if (inChunk == null) return;
+
+            List<BladeKey> gone = null;
+            foreach (KeyValuePair<BladeKey, Blade> pair in inChunk)
+            {
+                if (!pair.Value.Live) (gone ?? (gone = new List<BladeKey>())).Add(pair.Key);
+            }
+            if (gone != null) foreach (BladeKey key in gone) Remove(key);
         }
 
         private void Remove(BladeKey key)
@@ -528,7 +535,8 @@ namespace RailWorld
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            foreach (BladeKey key in blades.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) Remove(key);
+            Dictionary<BladeKey, Blade> removed = blades.TakeChunk(chunkCoord);
+            if (removed != null) foreach (Blade blade in removed.Values) blade.MeshRef?.Dispose();
         }
 
         /// <summary>
@@ -537,13 +545,16 @@ namespace RailWorld
         /// </summary>
         public void UpdateLights(LightProbe probe)
         {
-            foreach (Blade blade in blades.Values)
+            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
             {
-                int key = probe.KeyOf(blade.Origin);
-                if (key == blade.LightKey || blade.MeshRef == null) continue;
+                foreach (Blade blade in inChunk.Values)
+                {
+                    int key = probe.KeyOf(blade.Origin);
+                    if (key == blade.LightKey || blade.MeshRef == null) continue;
 
-                WriteLight(blade, key, probe.Of(blade.Origin));
-                capi.Render.UpdateMesh(blade.MeshRef, blade.Update);
+                    WriteLight(blade, key, probe.Of(blade.Origin));
+                    capi.Render.UpdateMesh(blade.MeshRef, blade.Update);
+                }
             }
         }
 
@@ -553,20 +564,26 @@ namespace RailWorld
         /// </summary>
         public void Draw(IShaderProgram prog, Vec3d cameraPos, Action<int> bindTexture)
         {
-            foreach (Blade blade in blades.Values)
+            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
             {
-                if (blade.MeshRef == null) continue;
+                foreach (Blade blade in inChunk.Values)
+                {
+                    if (blade.MeshRef == null) continue;
 
-                origin.Set((float)(blade.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(blade.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(blade.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
-                prog.Uniform("origin", origin);
-                bindTexture?.Invoke(blade.TextureId);
-                capi.Render.RenderMeshInstanced(blade.MeshRef, 1);
+                    origin.Set((float)(blade.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(blade.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(blade.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
+                    prog.Uniform("origin", origin);
+                    bindTexture?.Invoke(blade.TextureId);
+                    capi.Render.RenderMeshInstanced(blade.MeshRef, 1);
+                }
             }
         }
 
         public void Dispose()
         {
-            foreach (Blade blade in blades.Values) blade.MeshRef?.Dispose();
+            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
+            {
+                foreach (Blade blade in inChunk.Values) blade.MeshRef?.Dispose();
+            }
             blades.Clear();
         }
     }

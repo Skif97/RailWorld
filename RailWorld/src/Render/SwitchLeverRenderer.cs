@@ -63,7 +63,7 @@ namespace RailWorld
         private MeshData restMesh, thrownMesh;
         private int lastFrame;
         private bool broken;
-        private Dictionary<SectionEndKey, Lever> levers = new Dictionary<SectionEndKey, Lever>();
+        private readonly ChunkKeyed<SectionEndKey, Lever> levers = new ChunkKeyed<SectionEndKey, Lever>(key => key.Section);
         // Ті з них, що зараз рухаються анімованою моделлю (Util): лише їм щось потрібно кожні 15 мс
         private readonly List<Lever> animated = new List<Lever>();
 
@@ -152,29 +152,33 @@ namespace RailWorld
         /// </summary>
         public void BeginChunk(Vec3i chunkCoord)
         {
-            foreach (Lever lever in levers.Values)
-            {
-                if (lever.Chunk.Equals(chunkCoord)) lever.Kept = false;
-            }
+            Dictionary<SectionEndKey, Lever> inChunk = levers.In(chunkCoord);
+            if (inChunk == null) return;
+            foreach (Lever lever in inChunk.Values) lever.Kept = false;
         }
 
         public void EndChunk(Vec3i chunkCoord)
         {
-            Remove(pair => pair.Value.Chunk.Equals(chunkCoord) && !pair.Value.Kept);
+            Dictionary<SectionEndKey, Lever> inChunk = levers.In(chunkCoord);
+            if (inChunk == null) return;
+
+            List<SectionEndKey> gone = null;
+            foreach (KeyValuePair<SectionEndKey, Lever> pair in inChunk)
+            {
+                if (!pair.Value.Kept) (gone ?? (gone = new List<SectionEndKey>())).Add(pair.Key);
+            }
+            if (gone == null) return;
+            foreach (SectionEndKey key in gone)
+            {
+                Drop(inChunk[key]);
+                levers.Remove(key);
+            }
         }
 
         public void RemoveChunk(Vec3i chunkCoord)
         {
-            Remove(pair => pair.Value.Chunk.Equals(chunkCoord));
-        }
-
-        private void Remove(System.Func<KeyValuePair<SectionEndKey, Lever>, bool> which)
-        {
-            foreach (SectionEndKey key in levers.Where(which).Select(pair => pair.Key).ToList())
-            {
-                Drop(levers[key]);
-                levers.Remove(key);
-            }
+            Dictionary<SectionEndKey, Lever> removed = levers.TakeChunk(chunkCoord);
+            if (removed != null) foreach (Lever lever in removed.Values) Drop(lever);
         }
 
         /// <summary>
@@ -197,7 +201,7 @@ namespace RailWorld
             if (lever == null)
             {
                 lever = new Lever { Chunk = chunkCoord.Clone(), Position = position.Clone(), Thrown = thrown };
-                levers[key] = lever;
+                levers.Set(key, lever);
             }
             lever.Kept = true;
             lever.Rotation = RailWayRendererSystem.InPlane(toTrack, along);
@@ -357,7 +361,11 @@ namespace RailWorld
         public void Dispose()
         {
             capi.Event.UnregisterGameTickListener(settleListenerId);
-            Remove(pair => true);
+            foreach (Dictionary<SectionEndKey, Lever> inChunk in levers.All)
+            {
+                foreach (Lever lever in inChunk.Values) Drop(lever);
+            }
+            levers.Clear();
         }
     }
 }

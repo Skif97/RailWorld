@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -81,7 +80,7 @@ namespace RailWorld
                 BladeSections = record.BranchOf(place).BladeSections, SwitchChunk = switchChunk.Clone(), TrunkIndex = record.TrunkIndex,
                 AtStart = record.AtStart, Branch = place.Branch
             };
-            blades[SectionKey.Of(section)] = setup;
+            blades.Set(SectionKey.Of(section), setup);
             PlaceBlade(setup);
 
             // Хрестовина одна на обидві колії: її ставить перша з них
@@ -113,12 +112,12 @@ namespace RailWorld
         }
 
         // Гілки стрілок, пораховані в перебудовах чанків, за першою секцією гілки
-        private readonly Dictionary<SectionKey, BladeSetup> blades = new Dictionary<SectionKey, BladeSetup>();
+        private readonly ChunkKeyed<SectionKey, BladeSetup> blades = new ChunkKeyed<SectionKey, BladeSetup>(key => key);
 
         /// <summary>Забуває гілки, що малюються в чанку: чанк перебудовується або колія з нього зникла.</summary>
         public void Forget(Vec3i chunkCoord)
         {
-            foreach (SectionKey key in blades.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) blades.Remove(key);
+            blades.TakeChunk(chunkCoord);
         }
 
         /// <summary>

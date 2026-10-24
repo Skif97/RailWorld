@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -41,7 +40,7 @@ namespace RailWorld
         }
 
         // Стрілку визначає кінець секції, з якого колія розходиться
-        private Dictionary<SectionEndKey, SwitchState> states = new Dictionary<SectionEndKey, SwitchState>();
+        private readonly ChunkKeyed<SectionEndKey, SwitchState> states = new ChunkKeyed<SectionEndKey, SwitchState>(key => key.Section);
         // Ті з них, що зараз рухаються: лише їх Advance і обходить
         private readonly List<SwitchState> moving = new List<SwitchState>();
 
@@ -54,7 +53,7 @@ namespace RailWorld
 
             if (!states.TryGetValue(key, out SwitchState state))
             {
-                states[key] = new SwitchState { Chunk = chunkCoord.Clone(), Index = section.IndexInChunk, AtStart = atStart, Position = position, From = position };
+                states.Set(key, new SwitchState { Chunk = chunkCoord.Clone(), Index = section.IndexInChunk, AtStart = atStart, Position = position, From = position });
                 return;
             }
             if (state.Position == position) return;
@@ -107,7 +106,7 @@ namespace RailWorld
         /// <summary>Забуває стрілки чанка, колія в якому зникла.</summary>
         public void Forget(Vec3i chunkCoord)
         {
-            foreach (SectionEndKey key in states.Where(pair => pair.Value.Chunk.Equals(chunkCoord)).Select(pair => pair.Key).ToList()) states.Remove(key);
+            states.TakeChunk(chunkCoord);
             moving.RemoveAll(state => state.Chunk.Equals(chunkCoord));
         }
     }
