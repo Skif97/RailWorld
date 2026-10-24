@@ -37,6 +37,7 @@ namespace RailWorld.src.RailWay
         public static void Refresh(RailDataSession session, IEnumerable<Vec3i> changedChunks, IEnumerable<Section> changedSections)
         {
             var chunks = new List<Vec3i>(changedChunks);
+            var sections = new List<Section>(changedSections);
             var seen = new HashSet<SectionKey>();
             var targets = new List<CrossingRef>();
 
@@ -51,17 +52,19 @@ namespace RailWorld.src.RailWay
                     CrossingRef member = section.GetCrossingRef();
                     if (member != null) Want(seen, targets, member.Chunk, member.Key);
                 }
-                // Посилання на запис мають лише секції вузла, а запис тримає ще й запас за ним
-                foreach (SectionKey record in TouchedBy(chunk, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
             }
-            // Секції, у яких змінилися лише деталі: перетин, у вузлі якого вона лежить, і ті, у запасі яких. Нові
-            // перетини від деталей не з'являються, тож їх тут не шукаємо
-            foreach (Section section in changedSections)
+            // Секції, у яких змінилися лише деталі: перетин, у вузлі якого вона лежить. Нові перетини від деталей
+            // не з'являються, тож їх тут не шукаємо
+            var sectionKeys = new List<SectionKey>(sections.Count);
+            foreach (Section section in sections)
             {
                 CrossingRef member = section.GetCrossingRef();
                 if (member != null) Want(seen, targets, member.Chunk, member.Key);
-                foreach (SectionKey record in TouchedBy(section, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
+                sectionKeys.Add(SectionKey.Of(section));
             }
+            // Посилання на запис мають лише секції вузла, а запис тримає ще й запас за ним: ці записи шукаються
+            // одним проходом на всі зміни разом
+            foreach (SectionKey record in TouchedBy(chunks, sectionKeys, coord => session.Get(coord))) Want(seen, targets, new Vec3i(record.ChunkX, record.ChunkY, record.ChunkZ), record.Index);
 
             foreach (CrossingRef target in targets) Update(session, target.Chunk, target.Key, null);
 
@@ -95,42 +98,58 @@ namespace RailWorld.src.RailWay
 
         // Перетин впізнається перетнутою секцією основної колії: його ключ це її номер у чанку
         /// <summary>
-        /// Записи перетинів, серед секцій яких є секція чанка chunk: чанк запису і його ключ. Посилання на запис
-        /// мають лише секції вузла, а запис пам'ятає ще й запас за ним (CrossingBuilder.MarginSections), тож зміна
-        /// колії в запасі, що лежить в іншому чанку, знаходить свій запис лише так. Записи шукаються в сусідніх
-        /// чанках: усі секції запису лежать не далі за вузол і запас від перетину, тобто ближче за чанк.
-        /// dataIn дає дані колії завантаженого чанка або null.
+        /// Записи перетинів, серед секцій яких є секція одного з чанків chunks або одна із секцій sections: чанк
+        /// запису і його ключ. Посилання на запис мають лише секції вузла, а запис пам'ятає ще й запас за ним
+        /// (CrossingBuilder.MarginSections), тож зміна колії в запасі, що лежить в іншому чанку, знаходить свій
+        /// запис лише так. Записи шукаються в сусідніх чанках: усі секції запису лежать не далі за вузол і запас
+        /// від перетину, тобто ближче за чанк. Кожен запис поруч зі змінами переглядається один раз, хоч би
+        /// скільки змін його оточувало. dataIn дає дані колії завантаженого чанка або null.
         /// </summary>
-        public static List<SectionKey> TouchedBy(Vec3i chunk, System.Func<Vec3i, DataInChunk> dataIn)
+        public static List<SectionKey> TouchedBy(IEnumerable<Vec3i> chunks, IEnumerable<SectionKey> sections, System.Func<Vec3i, DataInChunk> dataIn)
         {
-            return TouchedBy(chunk, link => link.ChunkX == chunk.X && link.ChunkY == chunk.Y && link.ChunkZ == chunk.Z, dataIn);
-        }
+            var changedChunks = new HashSet<(int, int, int)>();
+            var changedSections = new HashSet<SectionKey>(sections);
+            var around = new HashSet<(int, int, int)>();
+            foreach (Vec3i chunk in chunks)
+            {
+                changedChunks.Add((chunk.X, chunk.Y, chunk.Z));
+                AddAround(around, chunk.X, chunk.Y, chunk.Z);
+            }
+            foreach (SectionKey section in changedSections) AddAround(around, section.ChunkX, section.ChunkY, section.ChunkZ);
 
-        /// <summary>Те саме для однієї секції: записи перетинів, серед секцій яких є вона.</summary>
-        public static List<SectionKey> TouchedBy(Section section, System.Func<Vec3i, DataInChunk> dataIn)
-        {
-            return TouchedBy(section.ChunkAddres, link => link.PointsTo(section), dataIn);
-        }
-
-        // Записи перетинів у чанку chunk і сусідніх, серед секцій яких є така, що відповідає member
-        private static List<SectionKey> TouchedBy(Vec3i chunk, System.Func<SectionLink, bool> member, System.Func<Vec3i, DataInChunk> dataIn)
-        {
             var found = new List<SectionKey>();
+            foreach ((int x, int y, int z) in around)
+            {
+                var coord = new Vec3i(x, y, z);
+                DataInChunk data = dataIn(coord);
+                if (data == null) continue;
+
+                foreach (RailCrossing record in data.Crossings.Values)
+                {
+                    if (Touches(record, changedChunks, changedSections)) found.Add(new SectionKey(coord, record.Key));
+                }
+            }
+            return found;
+        }
+
+        private static void AddAround(HashSet<(int, int, int)> around, int x, int y, int z)
+        {
             for (int dx = -1; dx <= 1; dx++)
                 for (int dy = -1; dy <= 1; dy++)
-                    for (int dz = -1; dz <= 1; dz++)
-                    {
-                        var coord = new Vec3i(chunk.X + dx, chunk.Y + dy, chunk.Z + dz);
-                        DataInChunk data = dataIn(coord);
-                        if (data == null) continue;
+                    for (int dz = -1; dz <= 1; dz++) around.Add((x + dx, y + dy, z + dz));
+        }
 
-                        foreach (RailCrossing record in data.Crossings.Values)
-                        {
-                            if (record.Tracks.Exists(track => track.Members.Exists(link => member(link))))
-                                found.Add(new SectionKey(coord, record.Key));
-                        }
-                    }
-            return found;
+        // Чи лежить серед секцій запису секція змінених чанків або сама змінена секція
+        private static bool Touches(RailCrossing record, HashSet<(int, int, int)> changedChunks, HashSet<SectionKey> changedSections)
+        {
+            foreach (CrossingTrack track in record.Tracks)
+            {
+                foreach (SectionLink link in track.Members)
+                {
+                    if (changedChunks.Contains((link.ChunkX, link.ChunkY, link.ChunkZ)) || changedSections.Contains(SectionKey.Of(link))) return true;
+                }
+            }
+            return false;
         }
 
         private static void Want(HashSet<SectionKey> seen, List<CrossingRef> targets, Vec3i chunk, int key)

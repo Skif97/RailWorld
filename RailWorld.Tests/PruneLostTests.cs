@@ -88,10 +88,15 @@ namespace RailWorld.Tests
 
             var next = new Vec3i(home.X + 1, home.Y, home.Z);
             Assert.Contains(record.Tracks[0].Members, link => link.Chunk.Equals(next));
-            Assert.Contains(new SectionKey(home, record.Key), CrossingRegistry.TouchedBy(next, DataIn));
+            Assert.Contains(new SectionKey(home, record.Key), CrossingRegistry.TouchedBy(new[] { next }, new SectionKey[0], DataIn));
 
-            // Чанк, якого запис не торкається, його не знаходить
-            Assert.Empty(CrossingRegistry.TouchedBy(new Vec3i(home.X, home.Y, home.Z + 3), DataIn));
+            // Секція запасу в сусідньому чанку знаходить запис і сама, без свого чанка
+            SectionLink margin = record.Tracks[0].Members.Find(link => link.Chunk.Equals(next));
+            Assert.Contains(new SectionKey(home, record.Key), CrossingRegistry.TouchedBy(new Vec3i[0], new[] { SectionKey.Of(margin) }, DataIn));
+
+            // Чанк і секція, яких запис не торкається, його не знаходять
+            var far = new Vec3i(home.X, home.Y, home.Z + 3);
+            Assert.Empty(CrossingRegistry.TouchedBy(new[] { far }, new[] { new SectionKey(far, 0) }, DataIn));
         }
     }
 }
