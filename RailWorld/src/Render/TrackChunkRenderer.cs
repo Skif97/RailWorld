@@ -22,6 +22,19 @@ namespace RailWorld
         private CrossingPartsBuilder crossingBuilder;
         // Рейки перетинів, пораховані за поточну перебудову чанка: їх питає і розкладка рейок, і збирач деталей
         private Dictionary<SectionKey, CrossingRails> crossingRails = new Dictionary<SectionKey, CrossingRails>();
+        // Так само гілки стрілок і колії перетинів: їх питають і розкладка брусів, і скріплення, і дерево під
+        // стрілкою. Лише на час перебудови: поза нею рахується свіже
+        private Dictionary<SectionEndKey, List<Section>[]> switchBranches = new Dictionary<SectionEndKey, List<Section>[]>();
+        private Dictionary<SectionKey, NodeTracks> crossingTracks = new Dictionary<SectionKey, NodeTracks>();
+
+        // Секції двох колій перетину крізь вузол, котрим кінцем у кожну заїжджають і де перетнуті секції
+        private class NodeTracks
+        {
+            public bool Read;
+            public List<Section>[] Tracks;
+            public List<bool>[] Entered;
+            public int[] Centers;
+        }
         private bool disposed;
 
         public TrackChunkRenderer(ICoreClientAPI capi, RailWayRendererSystem renderer, ClientTrack track, SwitchAnimator animator)
@@ -62,6 +75,8 @@ namespace RailWorld
             var layouts = new Dictionary<SectionEndKey, TimberLayout>();
             var crossingLayouts = new Dictionary<SectionKey, TimberLayout>();
             crossingRails.Clear();
+            switchBranches.Clear();
+            crossingTracks.Clear();
 
             foreach (var kvp in sections)
             {
@@ -148,7 +163,7 @@ namespace RailWorld
                     foreach (Timber timber in timbers) AddTimber(chunkCoord, timber);
 
                     CrossingRails crossingRails = RailsOf(chunkCoord, record);
-                    if (CrossingTracks(record, out List<Section>[] tracks, out _, out _))
+                    if (CrossingTracks(chunkCoord, record, out List<Section>[] tracks, out _, out _))
                         AddNodeFastenings(chunkCoord, timbers, tracks, (rail, at) => crossingRails != null && crossingRails.GuardBeside(at) ? FasteningKind.GuardSpikes : (FasteningKind?)null, crossingRails);
                 }
             }
@@ -163,6 +178,8 @@ namespace RailWorld
                 foreach (RailCrossing record in data.Crossings.Values) crossingBuilder.Build(chunkCoord, record, RailsOf(chunkCoord, record));
             }
             renderer.EndParts(chunkCoord);
+            switchBranches.Clear();
+            crossingTracks.Clear();
         }
 
         // Чанки, вигляд колії в яких треба зібрати заново, бо змінилася колія в сусідньому
@@ -312,6 +329,15 @@ namespace RailWorld
             DataInChunk data = DataInChunk.GetClient(chunk);
             if (data == null || !record.Complete || record.Branches.Count != 2 || !data.RailWaySections.TryGetValue(record.TrunkIndex, out trunk)) return null;
 
+            var key = new SectionEndKey(chunk, record.TrunkIndex, record.AtStart);
+            if (switchBranches.TryGetValue(key, out List<Section>[] known)) return known;
+            List<Section>[] branches = ReadBranches(record);
+            switchBranches[key] = branches;
+            return branches;
+        }
+
+        private List<Section>[] ReadBranches(RailSwitch record)
+        {
             var branches = new List<Section>[2];
             for (int k = 0; k < 2; k++)
             {
@@ -471,7 +497,7 @@ namespace RailWorld
             var key = new SectionKey(chunk, record.Key);
             if (known.TryGetValue(key, out TimberLayout layout)) return layout;
             known[key] = layout = new TimberLayout();
-            if (!CrossingTracks(record, out List<Section>[] tracks, out _, out int[] centers)) return layout;
+            if (!CrossingTracks(chunk, record, out List<Section>[] tracks, out _, out int[] centers)) return layout;
 
             layout = NodeTimbers.LayCrossing(tracks[0], centers[0], tracks[1], centers[1]);
             known[key] = layout;
@@ -485,7 +511,7 @@ namespace RailWorld
             var key = new SectionKey(chunk, record.Key);
             if (crossingRails.TryGetValue(key, out CrossingRails rails)) return rails;
 
-            rails = CrossingTracks(record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
+            rails = CrossingTracks(chunk, record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
                 ? CrossingGeometry.Build(tracks, entered, centers) : null;
             crossingRails[key] = rails;
             return rails;
@@ -494,7 +520,22 @@ namespace RailWorld
         // Секції двох колій зібраного перетину по порядку крізь вузол: від перетнутої секції в обидва боки,
         // до першої секції без шпали чи рейок. entered каже, котрим кінцем у секцію заїжджають у цьому
         // порядку, centers номери перетнутих секцій. false, якщо перетин не зібрано або прочитати його не вдається
-        private bool CrossingTracks(RailCrossing record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
+        private bool CrossingTracks(Vec3i chunk, RailCrossing record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
+        {
+            var key = new SectionKey(chunk, record.Key);
+            if (!crossingTracks.TryGetValue(key, out NodeTracks known))
+            {
+                known = new NodeTracks();
+                known.Read = ReadTracks(record, out known.Tracks, out known.Entered, out known.Centers);
+                crossingTracks[key] = known;
+            }
+            tracks = known.Tracks;
+            entered = known.Entered;
+            centers = known.Centers;
+            return known.Read;
+        }
+
+        private bool ReadTracks(RailCrossing record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
         {
             tracks = new List<Section>[2];
             entered = new List<bool>[2];
