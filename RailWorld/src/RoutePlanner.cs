@@ -507,10 +507,21 @@ namespace RailWorld
             return sb.ToString();
         }
 
+        // Усе, з чого RouteBuilder складає точку маршруту: блок і напрямок, а ще точне місце (на стику воно не в
+        // середині блока), чи це точна точка, чи напрямок задано навмисно (Ctrl) і до якого стику колії вона прив'язана
         private static void AppendMarker(System.Text.StringBuilder sb, RouteMarker marker)
         {
             sb.Append(marker.Block.X).Append(',').Append(marker.Block.Y).Append(',').Append(marker.Block.Z).Append(':')
-              .Append(Math.Round(marker.Heading.X, 2)).Append(',').Append(Math.Round(marker.Heading.Z, 2)).Append(';');
+              .Append(Math.Round(marker.Heading.X, 2)).Append(',').Append(Math.Round(marker.Heading.Z, 2)).Append('@')
+              .Append(Math.Round(marker.Position.X, 3)).Append(',').Append(Math.Round(marker.Position.Y, 3)).Append(',').Append(Math.Round(marker.Position.Z, 3))
+              .Append(marker.Exact ? 'E' : '-').Append(marker.Aimed ? 'A' : '-').Append(marker.Snapped ? 'S' : '-');
+            if (marker.Joint != null)
+            {
+                Vec3i chunk = marker.Joint.ChunkAddres;
+                sb.Append('J').Append(chunk.X).Append(',').Append(chunk.Y).Append(',').Append(chunk.Z).Append('/')
+                  .Append(marker.Joint.IndexInChunk).Append(marker.JointAtStart ? 's' : 'e').Append(marker.Sign);
+            }
+            sb.Append(';');
         }
 
         private void DisposeMesh()
