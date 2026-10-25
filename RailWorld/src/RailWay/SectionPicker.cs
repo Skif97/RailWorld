@@ -332,6 +332,12 @@ namespace RailWorld.src.RailWay
 
             for (double from = 0; from < range; from += Step)
             {
+                // Як гра зупиняється на першому блоці, у який влучила. Середина секції, у бокс якої промінь влучає
+                // на відстані d, не далі за reach від точки влучання, тож її бере відрізок, на який припадає d.
+                // Секції, яких іще не брали, дають влучання не ближче за початок цього відрізка: якщо знайдене
+                // ближче, далі шукати нема чого
+                if (best != null && bestDist <= from) break;
+
                 double to = Math.Min(from + Step, range);
                 double ax = origin.X + dir.X * from, ay = origin.Y + dir.Y * from, az = origin.Z + dir.Z * from;
                 double bx = origin.X + dir.X * to, by = origin.Y + dir.Y * to, bz = origin.Z + dir.Z * to;

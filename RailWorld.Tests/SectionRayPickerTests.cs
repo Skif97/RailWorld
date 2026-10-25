@@ -85,6 +85,20 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void LongRangeStopsOnceTheNearestPartIsFound()
+        {
+            List<Section> track = Lay(Point(2, 4, 1, 0), Point(60, 4, 1, 0));
+            Boxes(track);
+
+            // Дальність 500, промінь іде вздовж усієї колії, але деталь знайдено біля ока: далі пошук не йде
+            SectionSelection sel = Pick(new Vec3d(5, 0.5, 4), new Vec3d(1, -0.1, 0), 500);
+
+            Assert.NotNull(sel);
+            Assert.InRange(sel.HitPosition.X, 5, 11);
+            Assert.True(asked < 40, "перевірено секцій: " + asked + " з " + track.Count);
+        }
+
+        [Fact]
         public void FarSectionIsFoundWhenTheRangeIsLong()
         {
             List<Section> track = Lay(Point(2, 4, 1, 0), Point(60, 4, 1, 0));
