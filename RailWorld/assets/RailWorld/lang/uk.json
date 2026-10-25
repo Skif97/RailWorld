@@ -9,7 +9,7 @@
 	"item-sleeper": "Шпала ({0})",
 	"trolley-gear": "Передача {0} з {1}: {2} блоків за секунду",
 	"trolley-brake": "Гальмо",
-	"menu-title": "Train World: вибір колії для прокладання",
+	"menu-title": "RailWorld: вибір колії для прокладання",
 	"menu-mode-points": "По точках",
 	"menu-mode-singleblock": "Один блок",
 	"menu-mode-turn90": "Поворот 90°",
@@ -23,5 +23,10 @@
 	"menu-rails": "Рейки",
 	"menu-ballast": "Підсипка",
 	"menu-replace": "Замінювати блоки на шляху",
-	"menu-dontbuild": "Не будувати"
+	"menu-dontbuild": "Не будувати",
+	"hotkey-railmenu": "RailWorld: меню колії",
+	"game:material-mossy": "моховите дерево",
+	"game:material-veryrotten": "дуже гниле дерево",
+	"game:ingameerror-railleverside": "З того боку важелю заважає інша колія",
+	"game:ingameerror-railblocked": "Під колією стоять блоки, спершу приберіть їх"
 }

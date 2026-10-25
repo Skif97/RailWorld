@@ -43,6 +43,8 @@ namespace RailWorld.src.Items
                 materials = (from p in prop.Variants select p.Code.Path).ToArray().Append(materials);
                 //заполнение списка материалов из файла параметров мира, (список дерева)
             }
+            // Лише матеріали, для яких у грі є текстура: інакше варіант малювався б «невідомою» текстурою
+            materials = TrackPartMaterials.WithTextures(api, materials, textures);
 
             List<JsonItemStack> stacks = new List<JsonItemStack>();
             foreach (string type in types)

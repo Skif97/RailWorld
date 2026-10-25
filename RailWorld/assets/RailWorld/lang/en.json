@@ -9,7 +9,7 @@
 	"item-sleeper": "Sleeper ({0})",
 	"trolley-gear": "Gear {0} of {1}: {2} blocks per second",
 	"trolley-brake": "Brake",
-	"menu-title": "Train World: Selecting the type of rails to be placed",
+	"menu-title": "RailWorld: Selecting the type of rails to be placed",
 	"menu-mode-points": "By points",
 	"menu-mode-singleblock": "Single block",
 	"menu-mode-turn90": "Turn 90°",
@@ -23,5 +23,10 @@
 	"menu-rails": "Rails",
 	"menu-ballast": "Ballast",
 	"menu-replace": "Replace blocks in the way",
-	"menu-dontbuild": "Don't build"
+	"menu-dontbuild": "Don't build",
+	"hotkey-railmenu": "RailWorld: Open rail menu",
+	"game:material-mossy": "mossy wood",
+	"game:material-veryrotten": "very rotten wood",
+	"game:ingameerror-railleverside": "Another track is in the way of the lever on that side",
+	"game:ingameerror-railblocked": "There are blocks under the track, remove them first"
 }

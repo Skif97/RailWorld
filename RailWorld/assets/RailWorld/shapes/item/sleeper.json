@@ -12,7 +12,7 @@
 		]
 	},
 	"textures": {
-		"main": "block/wood/debarked/pine"
+		"main": "game:block/wood/debarked/pine"
 	},
 	"elements": [
 		{

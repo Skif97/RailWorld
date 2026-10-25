@@ -7,8 +7,7 @@
     "drawtype": "Json",
     "textures": {
 		"iron": { "base": "game:block/metal/plate/iron" },
-		"charred": { "base": "game:block/wood/charred" },
-		"chromium":{"base": "game:block/metal/plate/chromium"},
+		"oak-rail": { "base": "game:block/wood/debarked/oak" }
     },
 	"attributes": {"AllowGuiDialogRailMenu": true},
     "faceCullMode": "NeverCull",

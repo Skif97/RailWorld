@@ -12,7 +12,7 @@
 		]
 	},
 	"textures": {
-		"rusty-iron2": "block/metal/tarnished/rusty-iron2"
+		"rusty-iron2": "game:block/metal/tarnished/rusty-iron2"
 	},
 	"elements": [
 		{

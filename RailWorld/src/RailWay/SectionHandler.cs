@@ -184,7 +184,7 @@ namespace RailWorld.src.RailWay
             if (!SectionLinker.LeverSideFree(section, atStart, side, record, new TrackIndex(chunk => session.Get(chunk)?.Grid)))
             {
                 if (session.HasChanges) session.SaveAll();
-                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railleverside", "З того боку важелю заважає інша колія");
+                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railleverside");
                 return;
             }
 
@@ -218,7 +218,7 @@ namespace RailWorld.src.RailWay
                     DataInChunk.Save(world, sel.Chunk, data);
                     RailWorld.SendChunkDataToClients(sel.Chunk, data);
                 }
-                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railblocked", "Під колією стоять блоки, спершу приберіть їх");
+                (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railblocked");
                 return;
             }
             section.Blocked = false;

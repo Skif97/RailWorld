@@ -3,7 +3,7 @@
     "maxstacksize": 32,
 	"attributes": {
 		"types": ["normal"],
-		"materials": { "loadFromProperties": "block/wood", "states": ["veryaged", "veryagedrotten", "aged", "mossy"] },
+		"materials": { "loadFromProperties": "block/wood", "states": ["veryaged", "veryrotten", "aged", "mossy"] },
 		"shape": { "base": "railworld:item/sleeper" },
 		"textures": { 
 			"main": { "base": "block/wood/debarked/{material}", "overlays": [] }

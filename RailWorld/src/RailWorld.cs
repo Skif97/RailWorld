@@ -115,7 +115,7 @@ namespace RailWorld
 
             api.Input.RegisterHotKey(
                 "openrailmenu",
-                Lang.Get("Train World: Open rail menu"),
+                Lang.Get("railworld:hotkey-railmenu"),
                 GlKeys.F,
                 HotkeyType.GUIOrOtherControls);
 
