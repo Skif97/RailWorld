@@ -8,5 +8,20 @@
 	"item-rail": "Rail ({0})",
 	"item-sleeper": "Sleeper ({0})",
 	"trolley-gear": "Gear {0} of {1}: {2} blocks per second",
-	"trolley-brake": "Brake"
+	"trolley-brake": "Brake",
+	"menu-title": "Train World: Selecting the type of rails to be placed",
+	"menu-mode-points": "By points",
+	"menu-mode-singleblock": "Single block",
+	"menu-mode-turn90": "Turn 90°",
+	"menu-mode-turn45": "Turn 45°",
+	"menu-mode-straight": "Straight",
+	"menu-radius-length": "Radius/Length",
+	"menu-climb-descent": "Climb/Descent",
+	"menu-left": "Left",
+	"menu-right": "Right",
+	"menu-sleepers": "Sleepers",
+	"menu-rails": "Rails",
+	"menu-ballast": "Ballast",
+	"menu-replace": "Replace blocks in the way",
+	"menu-dontbuild": "Don't build"
 }

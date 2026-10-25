@@ -57,6 +57,10 @@
 		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\Newtonsoft.Json.dll">
 			<Private>false</Private>
 		</Reference>
+		<!-- Шрифти інтерфейсу гри (CairoFont.GetFontExtents у меню колії) -->
+		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\Lib\cairo-sharp.dll">
+			<Private>false</Private>
+		</Reference>
 		<Reference Include="$(VINTAGE_STORY)\$(GameVersion)\VintagestoryAPI.dll">
 			<Private>false</Private>
 		</Reference>

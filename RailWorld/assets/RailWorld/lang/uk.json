@@ -8,5 +8,20 @@
 	"item-rail": "Рейка ({0})",
 	"item-sleeper": "Шпала ({0})",
 	"trolley-gear": "Передача {0} з {1}: {2} блоків за секунду",
-	"trolley-brake": "Гальмо"
+	"trolley-brake": "Гальмо",
+	"menu-title": "Train World: вибір колії для прокладання",
+	"menu-mode-points": "По точках",
+	"menu-mode-singleblock": "Один блок",
+	"menu-mode-turn90": "Поворот 90°",
+	"menu-mode-turn45": "Поворот 45°",
+	"menu-mode-straight": "Пряма",
+	"menu-radius-length": "Радіус/довжина",
+	"menu-climb-descent": "Підйом/спуск",
+	"menu-left": "Ліворуч",
+	"menu-right": "Праворуч",
+	"menu-sleepers": "Шпали",
+	"menu-rails": "Рейки",
+	"menu-ballast": "Підсипка",
+	"menu-replace": "Замінювати блоки на шляху",
+	"menu-dontbuild": "Не будувати"
 }

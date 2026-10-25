@@ -22,15 +22,12 @@ namespace RailWorld
 
         // Слоти лише для показу вибраної шпали і рейки поруч зі списками
         DummyInventory previewInventory;
-        static IClientNetworkAPI _cnapi;
-        static ICoreClientAPI _capi;
         public override string ToggleKeyCombinationCode => "openrailmenu";
 
         public GuiDialogRailMenu(ICoreClientAPI capi) : base(capi) 
         {
-            _capi = capi;
             previewInventory = new DummyInventory(capi, 3);
-           ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
+            ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot?.Itemstack;
             if (RailWorld.HasRailMenu(mystack))
             {
                 railMode = mystack.Attributes.GetString("railMode", "SingleBlock");
@@ -45,44 +42,48 @@ namespace RailWorld
             }
         }
 
-       // private string TitleRailMenu => Lang.Get("Train World: Selecting the type of rails to be placed");
 
 
         private void ComposeDialog()
         {
             
             ElementBounds dialogBounds = ElementStdBounds.AutosizedMainDialog.WithAlignment(EnumDialogArea.CenterMiddle);
-            ElementBounds leftColumn = ElementBounds.Fixed(0, 200, 680, 480);
             ElementBounds bgBounds = ElementBounds.Fill.WithFixedPadding(GuiStyle.ElementToDialogPadding);
-            ElementBounds pointsButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 20, 640, 40);
-            ElementBounds singleBlockButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 70, 160, 40);
-            ElementBounds turnButton90 = ElementBounds.Fixed(EnumDialogArea.CenterFixed, -86, 70, 160, 40);
-            ElementBounds turnButton45 = ElementBounds.Fixed(EnumDialogArea.CenterFixed, 86, 70, 160, 40);
-            ElementBounds straightButton = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 70, 160, 40);
+            // Рядки меню йдуть один за одним з однаковим кроком
+            double Row(int n) => MenuTop + n * MenuRowStep;
+            // Підпис стоїть посередині рядка по висоті, як повзунок чи список поруч: гра малює текст від верху його
+            // рамки, тож зсуваємо на половину різниці між висотою рядка і висотою тексту (висоту шрифту гра ділить на
+            // масштаб інтерфейсу так само, GuiDialogBlockEntityFirepit)
+            double labelDrop = (RowHeight - CairoFont.WhiteSmallishText().GetFontExtents().Height / RuntimeEnv.GUIScale) / 2;
+            // Тло підганяється під цей прямокутник і додає до нього свій відступ з кожного боку. Елементи меню
+            // розташовані від вікна: ліві від його лівого краю, праві від правого. Щоб і ті, і ті закінчувалися на
+            // одній лінії, вікно має бути рівно на ширину рядків і по 20 з боків, тож відступ тла віднімаємо
+            double padding = GuiStyle.ElementToDialogPadding;
+            ElementBounds menuArea = ElementBounds.Fixed(0, 0, MenuWidth + 40 - 2 * padding, Row(MenuRows) - 2 * padding);
 
-            ElementBounds radiusLengthText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 140, 160, 40);
-            ElementBounds climbDescentText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 210, 160, 40);
+            ElementBounds radiusLengthText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(2) + labelDrop, 200, RowHeight);
+            ElementBounds climbDescentText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(3) + labelDrop, 200, RowHeight);
 
-            ElementBounds radiusLengthSlider = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 140, 460, 40);
-            ElementBounds climbDescentSlider = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 210, 460, 40);
+            ElementBounds radiusLengthSlider = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(2), 420, 40);
+            ElementBounds climbDescentSlider = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(3), 420, 40);
 
-            ElementBounds leftButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 280, 330, 40);
-            ElementBounds rightButton = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 280, 330, 40);
+            ElementBounds leftButton = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(4), 315, 40);
+            ElementBounds rightButton = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(4), 315, 40);
 
-            ElementBounds sleeperText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 350, 160, 40);
-            ElementBounds sleeperDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, 350, 400, 40);
-            ElementBounds sleeperIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 346, 48, 48);
+            ElementBounds sleeperText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(5) + labelDrop, 160, RowHeight);
+            ElementBounds sleeperDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, Row(5), 400, 40);
+            ElementBounds sleeperIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(5) - 4, 48, 48);
 
-            ElementBounds railText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 420, 160, 40);
-            ElementBounds railDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, 420, 400, 40);
-            ElementBounds railIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 416, 48, 48);
+            ElementBounds railText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(6) + labelDrop, 160, RowHeight);
+            ElementBounds railDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, Row(6), 400, 40);
+            ElementBounds railIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(6) - 4, 48, 48);
 
-            ElementBounds ballastText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 490, 160, 40);
-            ElementBounds ballastDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, 490, 400, 40);
-            ElementBounds ballastIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 486, 48, 48);
+            ElementBounds ballastText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(7) + labelDrop, 160, RowHeight);
+            ElementBounds ballastDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, Row(7), 400, 40);
+            ElementBounds ballastIcon = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(7) - 4, 48, 48);
 
-            ElementBounds replaceText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, 560, 400, 40);
-            ElementBounds replaceSwitch = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, 560, 40, 40);
+            ElementBounds replaceText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(8) + labelDrop, 400, RowHeight);
+            ElementBounds replaceSwitch = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(8), 40, 40);
 
             string[] ballastValues = BuildBallastOptions(out string[] ballastNames);
             previewInventory[2].Itemstack = BallastPreviewStack(ballastMaterial);
@@ -97,57 +98,52 @@ namespace RailWorld
 
 
             bgBounds.BothSizing = ElementSizing.FitToChildren;
-            bgBounds.WithChildren(leftColumn);
-            SingleComposer = capi.Gui.CreateCompo("Train World: Selecting the type of rails to be placed", dialogBounds)
-            .AddShadedDialogBG(bgBounds)
-            .AddButton("By points", OnClickPointsButton, pointsButton, EnumButtonStyle.Normal, "PointsButton")
-            .AddButton("Single block", OnClickSingleBlockButton, singleBlockButton, EnumButtonStyle.Normal, "SingleBlockButton")
-            .AddButton("Turn 90 deg", OnClickTurnButton90, turnButton90, EnumButtonStyle.Normal,  "Turn90Button")
-            .AddButton("Turn 45 deg", OnClickTurnButton45, turnButton45, EnumButtonStyle.Normal, "Turn45Button")
-            .AddButton("Straight", OnClickStraightButton, straightButton, EnumButtonStyle.Normal, "StraightButton")
+            bgBounds.WithChildren(menuArea);
+            GuiComposer composer = capi.Gui.CreateCompo(Lang.Get("railworld:menu-title"), dialogBounds)
+                .AddShadedDialogBG(bgBounds);
+            // Кнопки режимів двома рядками: перші ModesInFirstRow у першому, решта в другому. У рядку вони
+            // однакові, з рівними проміжками, і разом займають ту саму ширину, що й рядки під ними (від 20 до 660)
+            for (int i = 0; i < Modes.Length; i++)
+            {
+                string mode = Modes[i].Mode;
+                bool first = i < ModesInFirstRow;
+                int inRow = first ? ModesInFirstRow : Modes.Length - ModesInFirstRow;
+                int place = first ? i : i - ModesInFirstRow;
+                double modeWidth = (MenuWidth - (inRow - 1) * ModeGap) / inRow;
+                ElementBounds bounds = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20 + place * (modeWidth + ModeGap), Row(first ? 0 : 1), modeWidth, 40);
+                composer.AddButton(Lang.Get(Modes[i].Label), () => SelectMode(mode), bounds, ButtonFont(), EnumButtonStyle.Normal, mode + "Button");
+            }
 
-            .AddStaticText("Radius/Length", CairoFont.ButtonText(), radiusLengthText, "RadiusLengthText")
+            SingleComposer = composer
+            .AddStaticText(Lang.Get("railworld:menu-radius-length"), CairoFont.WhiteSmallishText(), radiusLengthText, "RadiusLengthText")
             .AddSlider(OnNewRadiusLengthSliderValue, radiusLengthSlider, "RadiusLengthSlider")
 
-            .AddStaticText("Climb/Descent", CairoFont.ButtonText(), climbDescentText, "ClimbDescentText")
+            .AddStaticText(Lang.Get("railworld:menu-climb-descent"), CairoFont.WhiteSmallishText(), climbDescentText, "ClimbDescentText")
             .AddSlider(OnNewClimbDescentSliderValue, climbDescentSlider, "ClimbDescentSlider")
     
-            .AddButton("Left", OnClickButtonLeft, leftButton, EnumButtonStyle.Normal, "LeftButton")
-            .AddButton("Right", OnClickButtonRight, rightButton, EnumButtonStyle.Normal, "RightButton")
+            .AddButton(Lang.Get("railworld:menu-left"), () => SelectDirection("Left"), leftButton, ButtonFont(), EnumButtonStyle.Normal, "LeftButton")
+            .AddButton(Lang.Get("railworld:menu-right"), () => SelectDirection("Right"), rightButton, ButtonFont(), EnumButtonStyle.Normal, "RightButton")
 
-            .AddStaticText("Sleepers", CairoFont.ButtonText(), sleeperText, "SleeperText")
+            .AddStaticText(Lang.Get("railworld:menu-sleepers"), CairoFont.WhiteSmallishText(), sleeperText, "SleeperText")
             .AddDropDown(sleeperValues, sleeperNames, Math.Max(0, Array.IndexOf(sleeperValues, sleeperMaterial)), OnSleeperSelected, sleeperDropDown, "SleeperDropDown")
             .AddPassiveItemSlot(sleeperIcon, previewInventory, previewInventory[0])
 
-            .AddStaticText("Rails", CairoFont.ButtonText(), railText, "RailText")
+            .AddStaticText(Lang.Get("railworld:menu-rails"), CairoFont.WhiteSmallishText(), railText, "RailText")
             .AddDropDown(railValues, railNames, Math.Max(0, Array.IndexOf(railValues, railMaterial)), OnRailSelected, railDropDown, "RailDropDown")
             .AddPassiveItemSlot(railIcon, previewInventory, previewInventory[1])
 
-            .AddStaticText("Ballast", CairoFont.ButtonText(), ballastText, "BallastText")
+            .AddStaticText(Lang.Get("railworld:menu-ballast"), CairoFont.WhiteSmallishText(), ballastText, "BallastText")
             .AddDropDown(ballastValues, ballastNames, Math.Max(0, Array.IndexOf(ballastValues, ballastMaterial)), OnBallastSelected, ballastDropDown, "BallastDropDown")
             .AddPassiveItemSlot(ballastIcon, previewInventory, previewInventory[2])
 
-            .AddStaticText("Replace blocks in the way", CairoFont.ButtonText(), replaceText, "ReplaceText")
+            .AddStaticText(Lang.Get("railworld:menu-replace"), CairoFont.WhiteSmallishText(), replaceText, "ReplaceText")
             .AddSwitch(OnReplaceToggled, replaceSwitch, "ReplaceSwitch");
             SingleComposer.GetSwitch("ReplaceSwitch").SetValue(replaceBlocks);
             SingleComposer.GetSlider("RadiusLengthSlider").SetValues(railLengRad, 4, 150, 1);
             SingleComposer.GetSlider("ClimbDescentSlider").SetValues(railClimDes, -20, 20, 1);
             // У властивостях інструмента може лежати назва, якої меню не знає: тоді жодна кнопка не натиснута
             SingleComposer.GetButton(railDirection + "Button")?.SetActive(true);
-            SingleComposer.GetButton(railMode + "Button")?.SetActive(true);
-
-            if(railMode== "SingleBlock" || railMode == RoutePlanner.ModeCode) 
-            {
-                SingleComposer.GetButton("RightButton").Enabled = false;
-                SingleComposer.GetButton("LeftButton").Enabled = false;
-                SingleComposer.GetSlider("RadiusLengthSlider").Enabled = false;
-                SingleComposer.GetSlider("ClimbDescentSlider").Enabled = false;
-            }
-            if (railMode == "Straight")
-            {
-                SingleComposer.GetButton("RightButton").Enabled = false;
-                SingleComposer.GetButton("LeftButton").Enabled = false;
-            }
+            ShowMode(railMode);
             SingleComposer.Compose();
 
         }
@@ -157,7 +153,7 @@ namespace RailWorld
         private static string[] BuildOptions(string[] materials, out string[] names)
         {
             var values = new List<string> { RailWorld.DontBuild };
-            var nameList = new List<string> { "Не будувати" };
+            var nameList = new List<string> { Lang.Get("railworld:menu-dontbuild") };
 
             if (materials != null)
             {
@@ -199,7 +195,7 @@ namespace RailWorld
         private string[][] FindBallastOptions()
         {
             var values = new List<string> { RailWorld.DontBuild };
-            var nameList = new List<string> { "Не будувати" };
+            var nameList = new List<string> { Lang.Get("railworld:menu-dontbuild") };
 
             foreach (Block block in capi.World.Blocks)
             {
@@ -263,115 +259,98 @@ namespace RailWorld
             return true;
         }
 
-        // Маршрут по точках: радіус, підйом і сторона тут не потрібні, форму задають самі точки
-        private bool OnClickPointsButton()
+        // Шрифт кнопок: ігровий шрифт малих кнопок (колір і жирність кнопок гри) розміром із підписи меню
+        private static CairoFont ButtonFont()
         {
-            SingleComposer.GetButton("SingleBlockButton").SetActive(false);
-            SingleComposer.GetButton("Turn90Button").SetActive(false);
-            SingleComposer.GetButton("Turn45Button").SetActive(false);
-            SingleComposer.GetButton("StraightButton").SetActive(false);
-            SingleComposer.GetButton("PointsButton").SetActive(true);
+            return CairoFont.SmallButtonText().WithFontSize((float)GuiStyle.SmallishFontSize);
+        }
 
-            SingleComposer.GetButton("RightButton").Enabled = false;
-            SingleComposer.GetButton("LeftButton").Enabled = false;
-            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = false;
-            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = false;
-            railMode = RoutePlanner.ModeCode;
+        // Режими меню: ключ підпису кнопки в lang, чи потрібен у режимі бік повороту (ліво чи право) і чи потрібні
+        // повзунки довжини й підйому.
+        // Кнопка режиму називається його кодом із «Button» в кінці
+        private static readonly (string Mode, string Label, bool Side, bool Sliders)[] Modes =
+        {
+            (RoutePlanner.ModeCode, "railworld:menu-mode-points", false, false),
+            ("SingleBlock", "railworld:menu-mode-singleblock", false, false),
+            ("Straight", "railworld:menu-mode-straight", false, true),
+            ("Turn90", "railworld:menu-mode-turn90", true, true),
+            ("Turn45", "railworld:menu-mode-turn45", true, true)
+        };
+
+        // Скільки кнопок режимів у першому рядку: решта, повороти, у другому
+        private const int ModesInFirstRow = 3;
+
+        // Розмітка меню: верх першого рядка, крок між рядками, ширина рядка і проміжок між кнопками режимів
+        private const double MenuTop = 70, MenuRowStep = 70, MenuWidth = 640, ModeGap = 10;
+        // Висота кнопки, повзунка чи списку в рядку
+        private const double RowHeight = 40;
+        // Скільки рядків у меню: два рядки режимів, повзунки, бік, три списки і перемикач
+        private const int MenuRows = 9;
+
+        // Найбільша висота розгорнутого списку, як у гри (GuiElementListMenu.MaxHeight)
+        private const int DropDownMaxHeight = 350;
+        private static readonly string[] DropDowns = { "SleeperDropDown", "RailDropDown", "BallastDropDown" };
+
+        // Список розгортається вниз від клацання. Гра обмежує його висоту місцем під ним, але рахує це місце
+        // разом зі зсувом вікна (GuiElementListMenu.ComposeDynamicElements), тож у вікні не вгорі екрана він
+        // вилазить за низ. Перед кожним клацанням кажемо кожному списку, скільки місця під ним насправді; коли
+        // список вищий, гра сама додає йому прокрутку
+        public override void OnMouseDown(MouseEvent args)
+        {
+            if (SingleComposer != null)
+            {
+                foreach (string key in DropDowns)
+                {
+                    GuiElementDropDown dropDown = SingleComposer.GetDropDown(key);
+                    if (dropDown?.listMenu == null) continue;
+                    double below = (capi.Render.FrameHeight - dropDown.Bounds.renderY - dropDown.Bounds.OuterHeight) / RuntimeEnv.GUIScale - 10;
+                    dropDown.listMenu.MaxHeight = (int)Math.Max(60, Math.Min(below, DropDownMaxHeight));
+                }
+            }
+            base.OnMouseDown(args);
+        }
+
+        // Показує в меню режим mode: його кнопка натиснута, решта ні, а бік і повзунки доступні, лише якщо вони
+        // в цьому режимі потрібні. Режиму, якого меню не знає (у властивостях інструмента може лежати будь-що),
+        // не натиснуто, і доступне все
+        private void ShowMode(string mode)
+        {
+            bool side = true, sliders = true;
+            foreach (var known in Modes)
+            {
+                bool chosen = known.Mode == mode;
+                SingleComposer.GetButton(known.Mode + "Button").SetActive(chosen);
+                if (!chosen) continue;
+                side = known.Side;
+                sliders = known.Sliders;
+            }
+            SingleComposer.GetButton("RightButton").Enabled = side;
+            SingleComposer.GetButton("LeftButton").Enabled = side;
+            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = sliders;
+            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = sliders;
+        }
+
+        private bool SelectMode(string mode)
+        {
+            railMode = mode;
+            ShowMode(mode);
             UpdateRailMode();
             return true;
         }
 
-        private bool OnClickSingleBlockButton()
+        private bool SelectDirection(string direction)
         {
-            SingleComposer.GetButton("PointsButton").SetActive(false);
-            SingleComposer.GetButton("Turn90Button").SetActive(false);
-            SingleComposer.GetButton("Turn45Button").SetActive(false);
-            SingleComposer.GetButton("StraightButton").SetActive(false);
-            SingleComposer.GetButton("SingleBlockButton").SetActive(true);
-
-            SingleComposer.GetButton("RightButton").Enabled = false;
-            SingleComposer.GetButton("LeftButton").Enabled = false;
-            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = false;
-            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = false;
-            railMode = "SingleBlock";
+            SingleComposer.GetButton("LeftButton").SetActive(direction == "Left");
+            SingleComposer.GetButton("RightButton").SetActive(direction == "Right");
+            railDirection = direction;
             UpdateRailMode();
             return true;
-        }
-
-        private bool OnClickTurnButton90()
-        {
-            SingleComposer.GetButton("PointsButton").SetActive(false);
-            SingleComposer.GetButton("SingleBlockButton").SetActive(false);
-            SingleComposer.GetButton("StraightButton").SetActive(false);
-            SingleComposer.GetButton("Turn90Button").SetActive(true);
-            SingleComposer.GetButton("Turn45Button").SetActive(false);
-
-            SingleComposer.GetButton("RightButton").Enabled = true;
-            SingleComposer.GetButton("LeftButton").Enabled = true;
-            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = true;
-            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = true;
-            railMode = "Turn90";
-            UpdateRailMode();
-            return true;
-        }
-
-        private bool OnClickTurnButton45()
-        {
-            SingleComposer.GetButton("PointsButton").SetActive(false);
-            SingleComposer.GetButton("SingleBlockButton").SetActive(false);
-            SingleComposer.GetButton("StraightButton").SetActive(false);
-            SingleComposer.GetButton("Turn90Button").SetActive(false);
-            SingleComposer.GetButton("Turn45Button").SetActive(true);
-
-            SingleComposer.GetButton("RightButton").Enabled = true;
-            SingleComposer.GetButton("LeftButton").Enabled = true;
-            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = true;
-            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = true;
-            railMode = "Turn45";
-            UpdateRailMode();
-            return true;
-        }
-
-        private bool OnClickStraightButton()
-        {
-            SingleComposer.GetButton("PointsButton").SetActive(false);
-            SingleComposer.GetButton("SingleBlockButton").SetActive(false);
-            SingleComposer.GetButton("Turn90Button").SetActive(false);
-            SingleComposer.GetButton("Turn45Button").SetActive(false);
-            SingleComposer.GetButton("StraightButton").SetActive(true);
-
-            SingleComposer.GetButton("RightButton").Enabled = false;
-            SingleComposer.GetButton("LeftButton").Enabled = false;
-            SingleComposer.GetSlider("RadiusLengthSlider").Enabled = true;
-            SingleComposer.GetSlider("ClimbDescentSlider").Enabled = true;
-            railMode = "Straight";
-            UpdateRailMode();
-            return true;
-        }
-
-        private bool OnClickButtonLeft()
-        {
-            SingleComposer.GetButton("RightButton").SetActive(false);
-            SingleComposer.GetButton("LeftButton").SetActive(true);
-            railDirection = "Left";
-            UpdateRailMode();
-            return true;
-        }
-
-        private bool OnClickButtonRight()
-        {
-            SingleComposer.GetButton("LeftButton").SetActive(false);
-            SingleComposer.GetButton("RightButton").SetActive(true);
-            railDirection = "Right";
-            UpdateRailMode();
-            return true;
-            
         }
 
         private void UpdateRailMode() 
         {
             
-            ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
+            ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot?.Itemstack;
             if (RailWorld.HasRailMenu(mystack))
             {
                 RailMenuPacket packet = new RailMenuPacket();
@@ -389,7 +368,6 @@ namespace RailWorld
 
         static void SendRailMenuPacket(IClientNetworkAPI cnapi, RailMenuPacket packet2) 
         {
-            _cnapi = cnapi;
             cnapi.GetChannel("TWchannel").SendPacket<RailMenuPacket>(packet2);
         }
 
@@ -397,16 +375,8 @@ namespace RailWorld
         {
             if (!base.TryOpen()) return false;
             ComposeDialog();
-            //_timerId = capi.World.RegisterGameTickListener(_ => UpdateSomeValues(), 50);
             return true;
         }
 
-        public override bool TryClose()
-        {
-           // capi.World.UnregisterGameTickListener(_timerId);
-          //  InputText = "";
-         //   NuggetsOutputText = "";
-            return base.TryClose();
-        }
     }
 }
