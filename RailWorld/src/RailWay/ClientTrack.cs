@@ -111,7 +111,8 @@ namespace RailWorld
         /// <summary>
         /// Запис про стрілку, на гілці якої секція лежить з боку кінця atStart, і місце секції в ній.
         /// Запис рахує і зберігає сервер; клієнт його лише читає. false, якщо секція з цього боку не на
-        /// гілці стрілки або чанк зі стрілкою до клієнта ще не дійшов.
+        /// гілці стрілки, чанк зі стрілкою до клієнта ще не дійшов або запис і секція ще не узгоджені (дані одного з
+        /// чанків новіші): тоді секція малюється звичайною, доки не прийде другий.
         /// </summary>
         public bool FindSwitch(Section section, bool atStart, out RailSwitch record, out SwitchRef place)
         {
@@ -119,12 +120,12 @@ namespace RailWorld
             place = section.GetSwitchRef(atStart);
             if (place == null) return false;
             DataInChunk data = DataInChunk.GetClient(place.Chunk);
-            return data != null && data.Switches.TryGetValue(place.Key, out record) && record.BranchOf(place) != null;
+            return data != null && data.Switches.TryGetValue(place.Key, out record) && record.Holds(place, section);
         }
 
         /// <summary>
-        /// Запис про перетин, у вузлі якого лежить секція. false, якщо секція не у вузлі або чанк із записом
-        /// до клієнта ще не дійшов.
+        /// Запис про перетин, у вузлі якого лежить секція. false, якщо секція не у вузлі, чанк із записом
+        /// до клієнта ще не дійшов або запис і секція ще не узгоджені, як у FindSwitch.
         /// </summary>
         public bool FindCrossing(Section section, out RailCrossing record, out CrossingRef place)
         {
@@ -132,7 +133,7 @@ namespace RailWorld
             place = section.GetCrossingRef();
             if (place == null) return false;
             DataInChunk data = DataInChunk.GetClient(place.Chunk);
-            return data != null && data.Crossings.TryGetValue(place.Key, out record) && record.TrackOf(place) != null;
+            return data != null && data.Crossings.TryGetValue(place.Key, out record) && record.Holds(place, section);
         }
     }
 }

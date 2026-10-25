@@ -205,7 +205,10 @@ namespace RailWorld.src.RailWay
             data.Crossings.TryGetValue(key, out RailCrossing old);
             data.RailWaySections.TryGetValue(key, out Section main);
 
-            if (crossing == null && old != null && old.Tracks.Count == 2 && old.Tracks[1].Center >= 1 && old.Tracks[1].Center <= old.Tracks[1].Members.Count)
+            // Чекати на чанк другої колії є сенс, лише поки основна секція на місці: без неї перетину вже немає, хоч
+            // би що лежало там. Тоді запис прибирається одразу, а посилання на нього в секціях незавантажених чанків
+            // прибере PruneLost, коли вони завантажаться
+            if (crossing == null && main != null && old != null && old.Tracks.Count == 2 && old.Tracks[1].Center >= 1 && old.Tracks[1].Center <= old.Tracks[1].Members.Count)
             {
                 SectionLink link = old.Tracks[1].Members[old.Tracks[1].Center - 1];
                 if (!session.IsChunkLoaded(link.Chunk))

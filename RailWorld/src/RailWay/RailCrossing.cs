@@ -164,6 +164,16 @@ namespace RailWorld.src.RailWay
             return Tracks.Count == 2 && place.Track >= 0 && place.Track < 2 ? Tracks[place.Track] : null;
         }
 
+        /// <summary>
+        /// Чи запис справді має секцію section там, куди вказує її посилання place. На клієнті дані чанків
+        /// приходять окремо: посилання в секції може бути вже новим, а запис ще старим, і навпаки.
+        /// </summary>
+        public bool Holds(CrossingRef place, Section section)
+        {
+            CrossingTrack track = TrackOf(place);
+            return track != null && place.Number >= 1 && place.Number <= track.Members.Count && track.Members[place.Number - 1].PointsTo(section);
+        }
+
         [ProtoAfterDeserialization]
         private void OnDeserialized()
         {

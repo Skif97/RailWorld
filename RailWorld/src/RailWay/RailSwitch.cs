@@ -284,6 +284,15 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Чи запис справді має секцію section там, куди вказує її посилання place. На клієнті дані чанків
+        /// приходять окремо: посилання в секції може бути вже новим, а запис ще старим, і навпаки.
+        /// </summary>
+        public bool Holds(SwitchRef place, Section section)
+        {
+            return BranchOf(place)?.Member(place.Number)?.PointsTo(section) == true;
+        }
+
+        /// <summary>
         /// Секція другої гілки під тим самим номером, що й секція з посиланням place: її сусідка по стрілці.
         /// null, якщо друга гілка коротша.
         /// </summary>
