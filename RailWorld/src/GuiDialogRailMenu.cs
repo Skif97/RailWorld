@@ -34,7 +34,7 @@ namespace RailWorld
             _capi = capi;
             previewInventory = new DummyInventory(capi, 3);
            ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
-            if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (RailWorld.HasRailMenu(mystack))
             {
                 railMode = mystack.Attributes.GetString("railMode", "SingleBlock");
                 railLengRad = mystack.Attributes.GetInt("railLengRad", 30);
@@ -375,7 +375,7 @@ namespace RailWorld
         {
             
             ItemStack mystack = capi.World.Player.InventoryManager.ActiveHotbarSlot.Itemstack;
-            if (mystack != null && mystack.Attributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (RailWorld.HasRailMenu(mystack))
             {
                 RailMenuPacket packet = new RailMenuPacket();
                 packet.railMode = railMode;

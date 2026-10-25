@@ -331,15 +331,8 @@ namespace RailWorld
         // колії йде вісь Z; у котрий її бік, моделі байдуже, тож беремо той, за якого верх моделі дивиться вгору
         private static float[] Placement(Vec3d toTrack, Vec3d along)
         {
-            Vec3d x = toTrack.Clone().Normalize();
-            double lean = along.X * x.X + along.Y * x.Y + along.Z * x.Z;
-            Vec3d z = new Vec3d(along.X - x.X * lean, along.Y - x.Y * lean, along.Z - x.Z * lean).Normalize();
-            Vec3d y = z.Cross(x);
-            if (y.Y < 0)
-            {
-                z = new Vec3d(-z.X, -z.Y, -z.Z);
-                y = new Vec3d(-y.X, -y.Y, -y.Z);
-            }
+            // Ті самі осі, з яких кути беруть деталі колії
+            RailWayRendererSystem.PlaneBasis(toTrack, along, out Vec3d x, out Vec3d y, out Vec3d z);
 
             float[] transform =
             {

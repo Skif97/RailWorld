@@ -142,29 +142,48 @@ void main()
         }
 
         /// <summary>
+        /// Три осі деталі, що лежить у площині колії: x уздовж sideways, z уздовж колії along упоперек x, в один чи
+        /// другий її бік, y вгору від площини. Обидва напрямки беруться з ухилом. На полотні, нахиленому одразу і
+        /// вздовж, і впоперек, ухил і поперечний нахил не можна брати окремо з двох напрямків: осі рахуються разом.
+        /// Якщо площини з цих напрямків не скласти (sideways нульовий або лежить уздовж along), деталь лише
+        /// повертається в плані за sideways і стоїть рівно. З цих осей кути бере InPlane, а матрицю важіль стрілки
+        /// (SwitchLeverRenderer).
+        /// </summary>
+        public static void PlaneBasis(Vec3d sideways, Vec3d along, out Vec3d x, out Vec3d y, out Vec3d z)
+        {
+            if (sideways.Length() >= 1e-9)
+            {
+                x = sideways.Clone().Normalize();
+                double lean = along.X * x.X + along.Y * x.Y + along.Z * x.Z;
+                z = new Vec3d(along.X - x.X * lean, along.Y - x.Y * lean, along.Z - x.Z * lean);
+                if (z.Length() >= 1e-9)
+                {
+                    z.Normalize();
+                    y = z.Cross(x);
+                    if (y.Y < 0)
+                    {
+                        z = new Vec3d(-z.X, -z.Y, -z.Z);
+                        y = new Vec3d(-y.X, -y.Y, -y.Z);
+                    }
+                    return;
+                }
+            }
+
+            // Рівно, повернута в плані за sideways: як модель, повернута лише довкола вертикалі
+            double flat = Math.Atan2(-sideways.Z, sideways.X);
+            x = new Vec3d(Math.Cos(flat), 0, -Math.Sin(flat));
+            y = new Vec3d(0, 1, 0);
+            z = new Vec3d(Math.Sin(flat), 0, Math.Cos(flat));
+        }
+
+        /// <summary>
         /// Поворот деталі, що лежить у площині колії: вісь X моделі дивиться вздовж sideways, вісь Z уздовж
         /// колії along, в один чи другий її бік, як вийде. Обидва напрямки беруться з ухилом. Знаки нахилів
         /// виходять із самих напрямків, тож байдуже, в який бік покладена секція і куди дивиться sideways.
         /// </summary>
         public static Vec3f InPlane(Vec3d sideways, Vec3d along)
         {
-            float flat = (float)Math.Atan2(-sideways.Z, sideways.X);
-            if (sideways.Length() < 1e-9) return new Vec3f(0, flat, 0);
-
-            // Три осі моделі у світі: X уздовж sideways, Z уздовж колії впоперек X, Y вгору від площини.
-            // На полотні, нахиленому одразу і вздовж, і впоперек, ухил і поперечний нахил не можна брати
-            // окремо з двох напрямків: кути рахуються з цієї трійки разом
-            Vec3d x = sideways.Clone().Normalize();
-            double lean = along.X * x.X + along.Y * x.Y + along.Z * x.Z;
-            var z = new Vec3d(along.X - x.X * lean, along.Y - x.Y * lean, along.Z - x.Z * lean);
-            if (z.Length() < 1e-9) return new Vec3f(0, flat, 0);
-            z.Normalize();
-            Vec3d y = z.Cross(x);
-            if (y.Y < 0)
-            {
-                z = new Vec3d(-z.X, -z.Y, -z.Z);
-                y = new Vec3d(-y.X, -y.Y, -y.Z);
-            }
+            PlaneBasis(sideways, along, out Vec3d x, out Vec3d y, out Vec3d z);
 
             // TrackPartRenderer повертає деталь довкола Y на yaw, потім довкола X на -pitch, потім довкола Z на -roll.
             // Після цього вісь Z моделі це (sin yaw cos pitch, sin pitch, cos yaw cos pitch), а висоти осей X і Y

@@ -82,6 +82,15 @@ namespace RailWorld
     {
         /// <summary>Значення матеріалу, яке означає «цю деталь не ставити».</summary>
         public const string DontBuild = "none";
+
+        /// <summary>
+        /// Чи це предмет, яким прокладають колію: у нього є меню колії і налаштування маршруту в атрибутах стека.
+        /// Предмет позначає це атрибутом AllowGuiDialogRailMenu у своєму json; у предмета без атрибутів їх немає зовсім.
+        /// </summary>
+        public static bool HasRailMenu(ItemStack stack)
+        {
+            return stack?.Attributes != null && stack.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") == true;
+        }
         static internal ICoreClientAPI _capi;
         static internal ICoreServerAPI _sapi;
         static IServerNetworkChannel _serverChannel;
@@ -148,7 +157,7 @@ namespace RailWorld
             ItemSlot slot = fromPlayer.InventoryManager?.ActiveHotbarSlot;
             ItemStack mystack = slot?.Itemstack;
 
-            if (mystack?.Attributes != null && mystack.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") == true)
+            if (HasRailMenu(mystack))
             {
                 mystack.Attributes.SetString("railMode", packet.railMode);
                 mystack.Attributes.SetInt("railLengRad", packet.railLengRad);
@@ -215,7 +224,7 @@ namespace RailWorld
         private string BuildRoute(IServerPlayer fromPlayer, RoutePacket packet)
         {
             ItemStack tool = fromPlayer.InventoryManager.ActiveHotbarSlot?.Itemstack;
-            if (tool?.Attributes == null || tool.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") != true) return "предмет для прокладання колії не в руці";
+            if (!HasRailMenu(tool)) return "предмет для прокладання колії не в руці";
 
             int count = packet.BlockX?.Length ?? 0;
             // Розмір пакета до того, як щось із нього читати; ті самі межі, що в розмітки (RouteRules)
@@ -330,7 +339,7 @@ namespace RailWorld
         {
             ItemStack mystack = _capi.World.Player.InventoryManager.ActiveHotbarSlot?.Itemstack;
 
-            if (mystack?.ItemAttributes != null && mystack.ItemAttributes.IsTrue("AllowGuiDialogRailMenu"))
+            if (HasRailMenu(mystack))
             {
                 if (_dialog != null && _dialog.IsOpened())
                 {
