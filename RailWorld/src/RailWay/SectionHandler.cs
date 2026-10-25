@@ -307,13 +307,22 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Списує гравій за досипаний об'єм. Об'єм рахується у вокселях, а блок гравію це ціла їх пачка,
         /// тому залишок від розпочатого блока зберігається за гравцем і витрачається наступними секціями.
+        /// Зберігається в Entity.Attributes: його знає лише сервер, і клієнтам, на відміну від WatchedAttributes,
+        /// він не розсилається.
         /// </summary>
         protected virtual void ChargeGravel(IPlayer byPlayer, ItemSlot slot, int voxels)
         {
             if (voxels <= 0) return;
 
             const string key = "railworldGravelVoxels";
-            int bank = byPlayer.Entity.WatchedAttributes.GetInt(key) - voxels;
+            EntityPlayer entity = byPlayer.Entity;
+            // Раніше залишок лежав у WatchedAttributes: переносимо його, щоб гравець не загубив розпочатий блок
+            if (entity.WatchedAttributes.HasAttribute(key))
+            {
+                entity.Attributes.SetInt(key, entity.Attributes.GetInt(key) + entity.WatchedAttributes.GetInt(key));
+                entity.WatchedAttributes.RemoveAttribute(key);
+            }
+            int bank = entity.Attributes.GetInt(key) - voxels;
 
             while (bank < 0 && slot.StackSize > 0)
             {
@@ -322,7 +331,7 @@ namespace RailWorld.src.RailWay
             }
             if (bank < 0) bank = 0;
 
-            byPlayer.Entity.WatchedAttributes.SetInt(key, bank);
+            entity.Attributes.SetInt(key, bank);
             slot.MarkDirty();
         }
 

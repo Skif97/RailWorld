@@ -51,7 +51,6 @@
 		<None Update="worldconfig.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
-		<OutFiles Include="$(OutDir)/**" Exclude="$(ExcludeFiles)" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -116,7 +115,11 @@
 	<!-- SkipCopyToGame: для запуску тестів, коли гра відкрита і тримає файли мода -->
 	<Target Name="CopyToBin1" AfterTargets="Build" Condition="'$(SkipCopyToGame)' != 'true'">
 
-		<!-- copy compiled output files -->
+		<!-- copy compiled output files. Список складається тут, а не на початку проєкту: там його рахують ще до
+		     збірки, і після очищення тека виводу порожня, тож нічого не копіювалося б -->
+		<ItemGroup>
+			<OutFiles Include="$(OutDir)/**" Exclude="$(ExcludeFiles)" />
+		</ItemGroup>
 		<Copy SourceFiles="@(OutFiles)" DestinationFiles="@(OutFiles->'$(BinaryDir)/%(RecursiveDir)%(Filename)%(Extension)')" />
 
 		<!-- Ресурси мода йдуть у збірку для випуску. У збірці для відладки їх немає навмисно: гра бере їх просто

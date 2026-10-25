@@ -14,8 +14,8 @@
     "faceCullMode": "NeverCull",
     "resistance": 3.5,
     "sounds": {
-        "place": "block/ingot",
-        "walk": "walk/stone"
+        "place": "game:block/ingot",
+        "walk": "game:walk/stone"
     },
     "lightAbsorption": 0,
     "sidesolid": {
