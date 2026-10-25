@@ -872,24 +872,27 @@ namespace RailWorld.src.RailWay
         /// і посилання на записи стрілок і перетинів, яких немає в завантаженому чанку запису. Таке лишається,
         /// коли колію міняли, поки чанк цієї секції не був завантажений: прибрана гілка лишила б у спільній
         /// секції зв'язок і з ним стрілку-привид, а посилання на зниклий перетин не дало б з'явитися новому.
-        /// Про незавантажений чанк нічого сказати не можна, і те, що веде туди, лишається.
+        /// Про незавантажений чанк нічого сказати не можна, і те, що веде туди, лишається. about, якщо заданий,
+        /// каже, посилання в які чанки перевіряти; решта лишається як є.
         /// </summary>
-        public static void PruneLost(RailDataSession session, Vec3i chunk)
+        public static void PruneLost(RailDataSession session, Vec3i chunk, System.Func<Vec3i, bool> about = null)
         {
             DataInChunk data = session.Get(chunk);
             if (data == null) return;
-            if (PruneLost(data, session.IsChunkLoaded, coord => session.Get(coord))) session.MarkDirty(chunk);
+            if (PruneLost(data, session.IsChunkLoaded, coord => session.Get(coord), about)) session.MarkDirty(chunk);
         }
 
         /// <summary>
         /// Те саме для даних чанка data. loaded каже, чи чанк завантажений, dataIn дає дані колії завантаженого
-        /// чанка (null, якщо колії там немає). Повертає true, якщо щось прибрано.
+        /// чанка (null, якщо колії там немає), about (якщо заданий) посилання в які чанки перевіряти. Повертає
+        /// true, якщо щось прибрано.
         /// </summary>
-        public static bool PruneLost(DataInChunk data, System.Func<Vec3i, bool> loaded, System.Func<Vec3i, DataInChunk> dataIn)
+        public static bool PruneLost(DataInChunk data, System.Func<Vec3i, bool> loaded, System.Func<Vec3i, DataInChunk> dataIn, System.Func<Vec3i, bool> about = null)
         {
             // Чи в завантаженому чанку немає того, що має там бути
             bool Gone(Vec3i chunk, System.Func<DataInChunk, bool> present)
             {
+                if (about != null && !about(chunk)) return false;
                 if (!loaded(chunk)) return false;
                 DataInChunk there = dataIn(chunk);
                 return there == null || !present(there);
@@ -901,10 +904,13 @@ namespace RailWorld.src.RailWay
                 for (int end = 0; end < 2; end++)
                 {
                     bool atStart = end == 0;
-                    foreach (SectionLink link in new List<SectionLink>(section.GetLinks(atStart)))
+                    // Копія списку лише тоді, коли з нього справді є що прибрати
+                    List<SectionLink> lost = null;
+                    foreach (SectionLink link in section.GetLinks(atStart))
                     {
-                        if (Gone(link.Chunk, there => there.RailWaySections.ContainsKey(link.Index))) changed |= section.RemoveLink(atStart, link);
+                        if (Gone(link.Chunk, there => there.RailWaySections.ContainsKey(link.Index))) (lost ?? (lost = new List<SectionLink>())).Add(link);
                     }
+                    if (lost != null) foreach (SectionLink link in lost) changed |= section.RemoveLink(atStart, link);
 
                     SwitchRef place = section.GetSwitchRef(atStart);
                     if (place != null && Gone(place.Chunk, there => there.Switches.ContainsKey(place.Key))) changed |= section.SetSwitchRef(atStart, null);

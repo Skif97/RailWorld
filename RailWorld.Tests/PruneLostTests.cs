@@ -51,6 +51,23 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void OnlyReferencesIntoTheAskedChunksAreChecked()
+        {
+            List<Section> track = LayAcrossChunks();
+            int across = Boundary(track);
+            Section last = track[across - 1];
+            Vec3i far = track[across].ChunkAddres;
+            Forget(track[across]);
+
+            // Сусід завантажився, але питають про інший чанк: зв'язок на нього лишається до свого часу
+            Assert.False(SectionLinker.PruneLost(DataIn(last.ChunkAddres), chunk => true, DataIn, chunk => !chunk.Equals(far)));
+            Assert.Single(last.GetLinks(false));
+
+            Assert.True(SectionLinker.PruneLost(DataIn(last.ChunkAddres), chunk => true, DataIn, chunk => chunk.Equals(far)));
+            Assert.Empty(last.GetLinks(false));
+        }
+
+        [Fact]
         public void ReferencesToRecordsThatAreGoneAreRemoved()
         {
             List<Section> track = Lay(Point(4, 4, 1, 0), Point(12, 4, 1, 0));

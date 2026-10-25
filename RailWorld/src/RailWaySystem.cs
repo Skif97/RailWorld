@@ -553,11 +553,16 @@ namespace RailWorld
         private void CompleteSwitches(int chunkX, int chunkZ, int height)
         {
             var session = new RailDataSession(sapi.World);
-            // Спершу прибираємо те, що веде в нікуди: і в цій колонці, і в сусідніх, бо зв'язки ведуть лише в сусідні
-            // чанки, а сусід міг завантажитися раніше за той, на який посилається
+            // Спершу прибираємо те, що веде в нікуди. У цій колонці все: її посилання на завантажених сусідів тепер
+            // можна перевірити. У сусідніх лише посилання сюди: решту вони перевірили, коли завантажувалися самі, а
+            // посилання сюди тоді лишили, бо цієї колонки ще не було. Зв'язки ведуть лише в сусідні чанки
+            System.Func<Vec3i, bool> intoColumn = chunk => chunk.X == chunkX && chunk.Z == chunkZ;
             for (int dx = -1; dx <= 1; dx++)
                 for (int dz = -1; dz <= 1; dz++)
-                    for (int y = 0; y < height; y++) SectionLinker.PruneLost(session, new Vec3i(chunkX + dx, y, chunkZ + dz));
+                {
+                    bool own = dx == 0 && dz == 0;
+                    for (int y = 0; y < height; y++) SectionLinker.PruneLost(session, new Vec3i(chunkX + dx, y, chunkZ + dz), own ? null : intoColumn);
+                }
             // Кінці колії, які чекали на цей чанк. Досить кінців цієї колонки: зустрічний кінець у сусідній
             // колонці теж вільний, і зв'язок ставиться в обидва боки
             for (int y = 0; y < height; y++) SectionLinker.LinkOpenEnds(session, new Vec3i(chunkX, y, chunkZ));
