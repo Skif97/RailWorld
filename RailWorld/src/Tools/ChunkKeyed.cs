@@ -24,9 +24,6 @@ namespace RailWorld
         /// <summary>Речі всіх чанків: чанк за чанком. Для обходу всього, наприклад малювання.</summary>
         public Dictionary<(int, int, int), Dictionary<TKey, TValue>>.ValueCollection All => chunks.Values;
 
-        /// <summary>Те саме разом із чанком: (x, y, z) чанка і його речі. Лише для обходу: міняти через Set і Remove.</summary>
-        public Dictionary<(int, int, int), Dictionary<TKey, TValue>> ByChunk => chunks;
-
         private (int, int, int) ChunkOf(TKey key)
         {
             SectionKey section = sectionOf(key);

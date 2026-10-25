@@ -74,6 +74,8 @@ namespace RailWorld
             public MeshRef Mesh;
             // У пачці щось змінилося, і вона чекає в dirty на перебудову
             public bool Dirty;
+            // Де лежать її деталі: за цим пачку відсікають. Рахується при перебудові
+            public CullBounds Bounds = CullBounds.Empty;
         }
 
         private Dictionary<Vec3i, Batch> batches = new Dictionary<Vec3i, Batch>();
@@ -92,6 +94,8 @@ namespace RailWorld
 
         private float[] tmpMat = Mat4f.Create();
         private Vec3f origin = new Vec3f();
+        // Коробка моделі деталі в її власних координатах: перенесена матрицею кожної деталі, вона дає межі пачки
+        private Vec3f meshMin = new Vec3f(), meshMax = new Vec3f();
 
         public InstancedPartRenderer(ICoreClientAPI capi, MeshData mesh)
         {
@@ -100,6 +104,7 @@ namespace RailWorld
 
             // Копія, щоб дані інстансів не потрапили в кешований меш предмета
             Mesh = mesh.Clone();
+            if (!CullBounds.OfMesh(Mesh, out meshMin, out meshMax)) meshMin = meshMax = new Vec3f();
             TextureId = Mesh.TextureIds != null && Mesh.TextureIds.Length > 0
                 ? Mesh.TextureIds[0]
                 : capi.BlockTextureAtlas.Positions[0].atlasTextureId;
@@ -225,7 +230,7 @@ namespace RailWorld
                 Batch batch = order[lightCursor++];
                 // Пачку однаково буде зібрано заново
                 if (batch.Dirty || batch.Mesh == null) continue;
-                if (!ChunkCulling.Visible(capi, batch.Chunk.X, batch.Chunk.Y, batch.Chunk.Z, false)) continue;
+                if (!ChunkCulling.Visible(capi, batch.Bounds, false)) continue;
                 checkedCount += batch.Drawn.Count;
 
                 bool changed = false;
@@ -283,6 +288,7 @@ namespace RailWorld
 
             float[] values = batch.Floats.Values;
             double originX = batch.Chunk.X * GlobalConstants.ChunkSize, originY = batch.Chunk.Y * GlobalConstants.ChunkSize, originZ = batch.Chunk.Z * GlobalConstants.ChunkSize;
+            batch.Bounds = CullBounds.Empty;
 
             foreach (TPart part in batch.Parts.Values)
             {
@@ -291,6 +297,7 @@ namespace RailWorld
                 tmpMat[12] += (float)(part.Position.X - originX);
                 tmpMat[13] += (float)(part.Position.Y - originY);
                 tmpMat[14] += (float)(part.Position.Z - originZ);
+                batch.Bounds.Add(tmpMat, 0, meshMin, meshMax, originX, originY, originZ);
 
                 int j = batch.Drawn.Count * floats;
                 WriteLight(part, values, j);
@@ -362,7 +369,7 @@ namespace RailWorld
             foreach (Batch batch in order)
             {
                 if (batch.Mesh == null || batch.Drawn.Count == 0) continue;
-                if (!ChunkCulling.Visible(capi, batch.Chunk.X, batch.Chunk.Y, batch.Chunk.Z, shadow)) continue;
+                if (!ChunkCulling.Visible(capi, batch.Bounds, shadow)) continue;
 
                 origin.Set((float)(batch.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(batch.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(batch.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
                 prog.Uniform("origin", origin);

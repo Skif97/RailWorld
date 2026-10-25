@@ -52,6 +52,8 @@ namespace RailWorld
         private class ChunkFill
         {
             public Vec3i Coord;
+            // Де лежать бокси чанка: за цим заливку відсікають
+            public CullBounds Bounds;
             public MeshRef Sleepers, Rails, Ballast;
             // Місця в секціях, під якими стоїть чужий блок
             public MeshRef Blocked;
@@ -199,14 +201,14 @@ namespace RailWorld
                 {
                     foreach (Vec3i coord in dirtyChunks)
                     {
-                        if (ChunkCulling.Visible(capi, coord.X, coord.Y, coord.Z, false)) visibleDirty.Add(coord);
+                        if (system.GetClientBoxBounds(coord, out CullBounds bounds) && ChunkCulling.Visible(capi, bounds, false)) visibleDirty.Add(coord);
                     }
                     foreach (Vec3i coord in visibleDirty) BuildFill(coord);
                     visibleDirty.Clear();
                 }
                 foreach (ChunkFill fill in fills.Values)
                 {
-                    if (ChunkCulling.Visible(capi, fill.Coord.X, fill.Coord.Y, fill.Coord.Z, false)) RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
+                    if (ChunkCulling.Visible(capi, fill.Bounds, false)) RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
                 }
             }
             else
@@ -389,6 +391,7 @@ namespace RailWorld
             return new ChunkFill
             {
                 Coord = coord,
+                Bounds = system.GetClientBoxBounds(coord, out CullBounds bounds) ? bounds : CullBounds.Empty,
                 Sleepers = BuildFillMesh(coord, boxes, FillGroup.Sleeper, counts[0]),
                 Rails = BuildFillMesh(coord, boxes, FillGroup.Rail, counts[1]),
                 Ballast = BuildFillMesh(coord, boxes, FillGroup.Ballast, counts[3]),

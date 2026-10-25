@@ -371,6 +371,8 @@ namespace RailWorld
             public float[] From, To;
             public MeshData Moved;
             public double Open = double.NaN;
+            // Де лежить деталь (у рухомої в обох крайніх положеннях): за цим її відсікають
+            public CullBounds Bounds = CullBounds.Empty;
         }
 
         private ICoreClientAPI capi;
@@ -427,6 +429,8 @@ namespace RailWorld
             values[19] = 1;
             WriteLight(blade, TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin), TrackLight.Of(capi.World.BlockAccessor, blade.Origin));
 
+            if (CullBounds.OfMesh(mesh, out Vec3f min, out Vec3f max)) AddBounds(blade, min, max);
+
             mesh.CustomFloats = floats;
             blade.MeshRef = capi.Render.UploadMesh(mesh);
             blades.Set(key, blade);
@@ -454,6 +458,8 @@ namespace RailWorld
 
             blade.From = from;
             blade.To = to;
+            // Коробка з положення closed уже є, додаємо thrown: між ними деталь лише рухається
+            if (CullBounds.OfVertices(to, thrown.VerticesCount, out Vec3f min, out Vec3f max)) AddBounds(blade, min, max);
             blade.Moved = new MeshData(false) { xyz = new float[count], VerticesCount = closed.VerticesCount };
             Move(key, open);
             return true;
@@ -474,6 +480,13 @@ namespace RailWorld
             for (int i = 0; i < xyz.Length; i++) xyz[i] = from[i] + (to[i] - from[i]) * t;
             capi.Render.UpdateMesh(blade.MeshRef, blade.Moved);
             return true;
+        }
+
+        // Додає до меж деталі коробку її вершин, перенесену матрицею інстанса (числа 4..19 даних інстанса)
+        private static void AddBounds(Blade blade, Vec3f min, Vec3f max)
+        {
+            int size = GlobalConstants.ChunkSize;
+            blade.Bounds.Add(blade.Floats.Values, 4, min, max, blade.Chunk.X * size, blade.Chunk.Y * size, blade.Chunk.Z * size);
         }
 
         // Кладе світло блока, де стоїть деталь, у дані інстанса: rgb це світло від джерел, a сонячне
@@ -541,17 +554,16 @@ namespace RailWorld
 
         /// <summary>
         /// Перевіряє, чи змінилося світло деталей: гра не повідомляє моди про зміну освітлення. Деталі,
-        /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса. Деталі чанків, яких не видно
+        /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса. Деталі, яких не видно
         /// (ChunkCulling), пропускаються: їхнє світло перевіриться наступного разу, коли їх буде видно.
         /// </summary>
         public void UpdateLights(LightProbe probe)
         {
-            foreach (KeyValuePair<(int X, int Y, int Z), Dictionary<BladeKey, Blade>> chunk in blades.ByChunk)
+            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
             {
-                if (!ChunkCulling.Visible(capi, chunk.Key.X, chunk.Key.Y, chunk.Key.Z, false)) continue;
-
-                foreach (Blade blade in chunk.Value.Values)
+                foreach (Blade blade in inChunk.Values)
                 {
+                    if (!ChunkCulling.Visible(capi, blade.Bounds, false)) continue;
                     int key = probe.KeyOf(blade.Origin);
                     if (key == blade.LightKey || blade.MeshRef == null) continue;
 
@@ -563,18 +575,16 @@ namespace RailWorld
 
         /// <summary>
         /// Малює деталі поточним шейдером. Перед кожною передає шейдерові origin: кут її чанка відносно камери.
-        /// bindTexture ставить текстуру деталі; у проході тіней вона не потрібна. Деталі чанка, якого в цьому
-        /// проході не видно, не малюються (ChunkCulling).
+        /// bindTexture ставить текстуру деталі; у проході тіней вона не потрібна. Деталі, яких у цьому проході
+        /// не видно, не малюються (ChunkCulling).
         /// </summary>
         public void Draw(IShaderProgram prog, Vec3d cameraPos, Action<int> bindTexture, bool shadow)
         {
-            foreach (KeyValuePair<(int X, int Y, int Z), Dictionary<BladeKey, Blade>> chunk in blades.ByChunk)
+            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
             {
-                if (!ChunkCulling.Visible(capi, chunk.Key.X, chunk.Key.Y, chunk.Key.Z, shadow)) continue;
-
-                foreach (Blade blade in chunk.Value.Values)
+                foreach (Blade blade in inChunk.Values)
                 {
-                    if (blade.MeshRef == null) continue;
+                    if (blade.MeshRef == null || !ChunkCulling.Visible(capi, blade.Bounds, shadow)) continue;
 
                     origin.Set((float)(blade.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(blade.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(blade.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
                     prog.Uniform("origin", origin);

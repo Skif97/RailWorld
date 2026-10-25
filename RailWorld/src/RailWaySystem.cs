@@ -294,6 +294,12 @@ namespace RailWorld
             return clientTrack.GetBoxes(chunkCoord);
         }
 
+        /// <summary>Де лежать бокси чанка, які знає клієнт. false, якщо колії в ньому клієнт не знає.</summary>
+        internal bool GetClientBoxBounds(Vec3i chunkCoord, out CullBounds bounds)
+        {
+            return clientTrack.GetBoxBounds(chunkCoord, out bounds);
+        }
+
         /// <summary>Деталь секції під прицілом з того, що знає клієнт. dir має бути нормалізований.</summary>
         public SectionSelection PickClient(Vec3d origin, Vec3d dir, double range, System.Func<SectionBox, bool> filter)
         {

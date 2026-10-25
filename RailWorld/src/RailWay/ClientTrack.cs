@@ -19,6 +19,8 @@ namespace RailWorld
         {
             public readonly List<SectionBox> All = new List<SectionBox>();
             public readonly Dictionary<int, (int First, int Count)> OfSection = new Dictionary<int, (int First, int Count)>();
+            // Де лежать усі бокси чанка
+            public CullBounds Bounds = CullBounds.Empty;
         }
 
         private Dictionary<Vec3i, ChunkBoxes> boxes = new Dictionary<Vec3i, ChunkBoxes>();
@@ -55,6 +57,15 @@ namespace RailWorld
             return found?.All;
         }
 
+        /// <summary>Де лежать бокси чанка. false, якщо клієнт колії в ньому не знає.</summary>
+        internal bool GetBoxBounds(Vec3i chunkCoord, out CullBounds bounds)
+        {
+            bounds = CullBounds.Empty;
+            if (!boxes.TryGetValue(chunkCoord, out ChunkBoxes found)) return false;
+            bounds = found.Bounds;
+            return true;
+        }
+
         /// <summary>Деталь під прицілом: найближча на промені не далі за range. dir має бути нормалізований.</summary>
         public SectionSelection Pick(Vec3d origin, Vec3d dir, double range, System.Func<SectionBox, bool> filter)
         {
@@ -80,7 +91,14 @@ namespace RailWorld
                 int first = found.All.Count;
                 handler.GetSelectionBoxes(found.All, chunkCoord, kvp.Key, kvp.Value);
                 found.OfSection[kvp.Key] = (first, found.All.Count - first);
-                for (int i = first; i < found.All.Count; i++) boxReach = Math.Max(boxReach, Reach(found.All[i], kvp.Value));
+                for (int i = first; i < found.All.Count; i++)
+                {
+                    SectionBox box = found.All[i];
+                    boxReach = Math.Max(boxReach, Reach(box, kvp.Value));
+                    // Кожен бокс кулею, у яку він вкладається
+                    double up = Math.Max(Math.Abs(box.MinUp), Math.Abs(box.MaxUp));
+                    found.Bounds.Add(box.Center.X, box.Center.Y, box.Center.Z, Math.Sqrt(box.HalfSide * box.HalfSide + box.HalfAlong * box.HalfAlong + up * up));
+                }
             }
             boxes[chunkCoord] = found;
             DataInChunk.SetClient(chunkCoord, data);
