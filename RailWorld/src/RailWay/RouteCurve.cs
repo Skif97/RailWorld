@@ -15,6 +15,13 @@ namespace RailWorld.src.RailWay
         public Vec3d Tangent;
 
         /// <summary>
+        /// Точка лише ділить ділянку маршруту на дві дуги (RouteBuilder, біарк): місце і напрямок у плані в неї свої,
+        /// а висота взята з кривої висоти тієї ділянки. Своєї висоти вона не задає, тож переходи по висоті біля стрілок
+        /// і перетинів ідуть крізь неї, а не до неї.
+        /// </summary>
+        public bool ArcJoint;
+
+        /// <summary>
         /// Нахил полотна в цій точці, радіани, якщо точка стоїть на вже покладеній колії: маршрут має
         /// почати або закінчити з нього, а не з нуля. Знак як у ModMath.RampEndCant. NaN, якщо точка вільна.
         /// Має зміст лише для першої і останньої точки маршруту.
@@ -124,7 +131,7 @@ namespace RailWorld.src.RailWay
             if (route == null) return all;
             cache?.Begin();
 
-            // На яких місцях у нарізці стоять точки маршруту
+            // На яких місцях у нарізці стоять точки маршруту, що задають свою висоту
             var joints = new List<int>();
 
             for (int i = 0; i + 1 < route.Count; i++)
@@ -145,9 +152,9 @@ namespace RailWorld.src.RailWay
                 // то вже ні, і початок цієї лишається
                 bool joined = all.Count > 0 && all[all.Count - 1].position.DistanceTo(points[0].position) < 1e-6;
                 if (joined) points.RemoveAt(0);
-                else joints.Add(all.Count);
+                else if (!a.ArcJoint) joints.Add(all.Count);
                 all.AddRange(points);
-                joints.Add(all.Count - 1);
+                if (!b.ArcJoint) joints.Add(all.Count - 1);
             }
 
             if (all.Count < 3 || route.Count < 2) return all;
@@ -682,6 +689,26 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Скільки блоків потрібно переходу по висоті від стрілки на lift блоків: RampPerBlock на блок висоти, у межах
+        /// від RampMin до RampMax, і не менше, ніж вимагає найменший радіус (RampRoom).
+        /// </summary>
+        private static double TransitionLength(double lift)
+        {
+            return Math.Max(GameMath.Clamp(lift * RampPerBlock, RampMin, RampMax), RampRoom(lift));
+        }
+
+        /// <summary>
+        /// Скільки блоків іти площиною основної колії після сходу з неї, коли до кінця переходу room блоків, а висоту
+        /// треба змінити на lift; holds це скільки таких ділянок ділять місце (дві, коли стрілки на обох кінцях).
+        /// Утримання поступається переходу: бере лише те, що лишилося після нього, і не більше HoldSections секцій.
+        /// Інакше в тісному місці перехід стискався до кількох блоків і виходив сходинкою.
+        /// </summary>
+        private static double HoldWithin(double room, double lift, int holds)
+        {
+            return GameMath.Clamp((room - TransitionLength(lift)) / holds, 0, HoldSections * SectionLength);
+        }
+
+        /// <summary>
         /// Перехід по висоті від краю перетину edge; direction це куди від перетину, 1 або -1.
         /// Веде він до найближчої в цей бік точки маршруту (routePoints це їхні місця в нарізці), одним плавним
         /// відрізком: так, ніби край перетину сам був точкою, через яку маршрут проходить. Якби натомість
@@ -915,12 +942,12 @@ namespace RailWorld.src.RailWay
 
                 if (start != null)
                 {
-                    double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[start.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
+                    double ramp = TransitionLength(Math.Abs(points[joint].position.Y - points[start.Virtual].position.Y));
                     if (run[joint] - run[freeFrom] >= holdLength + ramp && (nearStart < 0 || joint < nearStart)) nearStart = joint;
                 }
                 if (end != null)
                 {
-                    double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[end.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
+                    double ramp = TransitionLength(Math.Abs(points[joint].position.Y - points[end.Virtual].position.Y));
                     if (run[freeTo] - run[joint] >= holdLength + ramp && joint > nearEnd) nearEnd = joint;
                 }
             }
@@ -938,7 +965,7 @@ namespace RailWorld.src.RailWay
             {
                 // Між двома стрілками жодної справжньої точки: один перехід від опорної точки до опорної
                 double room = run[freeTo] - run[freeFrom];
-                double hold = Math.Min(holdLength, room / 3);
+                double hold = HoldWithin(room, Math.Abs(points[end.Virtual].position.Y - points[start.Virtual].position.Y), 2);
                 HoldPlane(points, start, 1, hold, freeTo, run, shape, ref conflict);
                 HoldPlane(points, end, -1, hold, start.Virtual, run, shape, ref conflict);
 
@@ -957,7 +984,8 @@ namespace RailWorld.src.RailWay
             if (start != null)
             {
                 int target = nearStart >= 0 ? nearStart : count - 1;
-                HoldPlane(points, start, 1, Math.Min(holdLength, (run[target] - run[freeFrom]) / 2), target, run, shape, ref conflict);
+                HoldPlane(points, start, 1, HoldWithin(run[target] - run[freeFrom], Math.Abs(points[target].position.Y - points[start.Virtual].position.Y), 1),
+                    target, run, shape, ref conflict);
 
                 if (target - start.Virtual >= 2)
                 {
@@ -973,7 +1001,8 @@ namespace RailWorld.src.RailWay
             if (end != null)
             {
                 int target = nearEnd >= 0 ? nearEnd : 0;
-                HoldPlane(points, end, -1, Math.Min(holdLength, (run[freeTo] - run[target]) / 2), target, run, shape, ref conflict);
+                HoldPlane(points, end, -1, HoldWithin(run[freeTo] - run[target], Math.Abs(points[target].position.Y - points[end.Virtual].position.Y), 1),
+                    target, run, shape, ref conflict);
 
                 if (end.Virtual - target >= 2)
                 {
@@ -1100,8 +1129,71 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Крок 3: висота точок між from і to. Це кубічна крива з заданими висотою й ухилом на обох кінцях,
-        /// така сама за змістом, як крива між двома точками маршруту. Самі from і to не міняються.
+        /// Висота переходу між двома кінцями з заданими висотами й ухилами: на кінцях ухили ті самі, тож стики без
+        /// зламу, а між кінцями висота не виходить за їхні висоти. Ухил кінця задає колія або маршрут далі, і він
+        /// буває «не туди»: гілка сходить зі стрілки на спуску, а йти їй угору. Проста кубічна крива тоді розвертає
+        /// ухил на всій довжині переходу і пролітає нижче за обидва кінці (у тестовому світі на 50 см). Тут ухил
+        /// розвертається біля кінця коротко, рівномірно, з радіусом переламу по висоті EaseRadius, до ухилу, з яким
+        /// крива вже не виходить за висоти (ModMath.MonotoneSlope); між розворотами кубічна крива з цими ухилами.
+        /// </summary>
+        private readonly struct MonotoneRamp
+        {
+            // Радіус, з яким ухил розвертається біля кінця переходу: удвічі більший за найменший дозволений
+            private static double EaseRadius => 2 * TrackRules.MinRadius;
+
+            private readonly double span, fromY, fromSlope, toY, toSlope;
+            // Довжини розворотів біля кінців, і висоти й ухили, з якими між ними йде кубічна крива
+            private readonly double ease0, ease1, innerFromY, innerToY, inner0, inner1;
+
+            public MonotoneRamp(double span, double fromY, double fromSlope, double toY, double toSlope)
+            {
+                this.span = span;
+                this.fromY = fromY;
+                this.fromSlope = fromSlope;
+                this.toY = toY;
+                this.toSlope = toSlope;
+
+                // Розвороти трохи зсувають висоти, між якими йде крива, а з ними її підйом; кілька проходів
+                double e0 = 0, e1 = 0, y0 = fromY, y1 = toY, m0 = fromSlope, m1 = toSlope;
+                for (int pass = 0; pass < 3; pass++)
+                {
+                    double length = span - e0 - e1;
+                    double rise = length > 1e-6 ? (y1 - y0) / length : 0;
+                    m0 = ModMath.MonotoneSlope(fromSlope, rise, rise);
+                    m1 = ModMath.MonotoneSlope(toSlope, rise, rise);
+                    // Кожен розворот не довший за третину переходу: на короткому переході він крутіший
+                    e0 = Math.Min(Math.Abs(fromSlope - m0) * EaseRadius, span / 3);
+                    e1 = Math.Min(Math.Abs(toSlope - m1) * EaseRadius, span / 3);
+                    y0 = fromY + (fromSlope + m0) * e0 / 2;
+                    y1 = toY - (toSlope + m1) * e1 / 2;
+                }
+                ease0 = e0;
+                ease1 = e1;
+                innerFromY = y0;
+                innerToY = y1;
+                inner0 = m0;
+                inner1 = m1;
+            }
+
+            /// <summary>Висота за s від початку переходу (у плані).</summary>
+            public double At(double s)
+            {
+                if (s < ease0) return fromY + fromSlope * s + (inner0 - fromSlope) * s * s / (2 * ease0);
+                double back = span - s;
+                if (back < ease1) return toY - toSlope * back + (toSlope - inner1) * back * back / (2 * ease1);
+
+                double length = span - ease0 - ease1;
+                if (length < 1e-6) return innerFromY;
+                double u = GameMath.Clamp((s - ease0) / length, 0, 1);
+                double u2 = u * u, u3 = u2 * u;
+                return (2 * u3 - 3 * u2 + 1) * innerFromY + (u3 - 2 * u2 + u) * length * inner0
+                    + (-2 * u3 + 3 * u2) * innerToY + (u3 - u2) * length * inner1;
+            }
+        }
+
+        /// <summary>
+        /// Крок 3: висота точок між from і to: перехід із заданими висотою й ухилом на обох кінцях, що не виходить за
+        /// висоти кінців (MonotoneRamp). Самі from і to не міняються.
         /// kind каже, де площина колії: 0 на початку (нахил полотна згасає від неї до власного),
         /// 1 в кінці (наростає до неї), 2 на обох кінцях (переходить від однієї колії до іншої).
         /// </summary>
@@ -1111,15 +1203,14 @@ namespace RailWorld.src.RailWay
             double span = run[to] - run[from];
             if (span < 1e-6) return;
 
-            double fromY = points[from].position.Y, toY = points[to].position.Y;
+            var ramp = new MonotoneRamp(span, points[from].position.Y, fromSlope, points[to].position.Y, toSlope);
             double fromCant = shape.TrackCant[from], toCant = shape.TrackCant[to];
 
             for (int i = from + 1; i < to; i++)
             {
                 double u = GameMath.Clamp((run[i] - run[from]) / span, 0, 1);
-                double u2 = u * u, u3 = u2 * u;
-                double y = (2 * u3 - 3 * u2 + 1) * fromY + (u3 - 2 * u2 + u) * span * fromSlope
-                    + (-2 * u3 + 3 * u2) * toY + (u3 - u2) * span * toSlope;
+                double u2 = u * u;
+                double y = ramp.At(run[i] - run[from]);
 
                 PointOnBezierCurve point = points[i];
                 Vec3d p = point.position;

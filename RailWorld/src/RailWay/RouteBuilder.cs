@@ -267,7 +267,7 @@ namespace RailWorld.src.RailWay
             double slope = ((6 * u2 - 6 * u) * fromY + (3 * u2 - 4 * u + 1) * span * fromSlope
                 + (-6 * u2 + 6 * u) * toY + (3 * u2 - 2 * u) * span * toSlope) / span;
 
-            return new RoutePoint { Position = new Vec3d(jx, y, jz), Tangent = WithSlope(q1x - q0x, q1z - q0z, slope) };
+            return new RoutePoint { Position = new Vec3d(jx, y, jz), Tangent = WithSlope(q1x - q0x, q1z - q0z, slope), ArcJoint = true };
         }
 
         // Одиничний напрямок у плані; false, якщо напрямок вертикальний
