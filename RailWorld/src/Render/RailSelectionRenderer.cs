@@ -75,7 +75,10 @@ namespace RailWorld
         private IShaderProgram fillProg;
 
         private Dictionary<Vec3i, ChunkFill> fills = new Dictionary<Vec3i, ChunkFill>();
+        // Чанки, заливку яких треба зібрати заново. Збирається вона, лише коли чанк треба намалювати
         private HashSet<Vec3i> dirtyChunks = new HashSet<Vec3i>();
+        // Змінені чанки, які вже видно: їх збирають перед малюванням. Між кадрами список лише очищається
+        private readonly List<Vec3i> visibleDirty = new List<Vec3i>();
 
         private Matrixf mat = new Matrixf();
         private float[] basis = Mat4f.Create();
@@ -121,10 +124,16 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Бокси чанка змінилися або зникли: його заливку треба зібрати заново.
+        /// Бокси чанка змінилися або зникли: його заливку треба зібрати заново. Стара звільняється одразу: чанк,
+        /// який вивантажився, не тримає її на відеокарті, а новий збереться, коли чанк знову треба буде намалювати.
         /// </summary>
         public void MarkChunkDirty(Vec3i coord)
         {
+            if (fills.TryGetValue(coord, out ChunkFill old))
+            {
+                old.Dispose();
+                fills.Remove(coord);
+            }
             dirtyChunks.Add(coord.Clone());
         }
 
@@ -147,7 +156,7 @@ namespace RailWorld
             Vec4f color = system.Handler.GetSelectionColor(capi, sel)
                 ?? (box.Part == SectionPart.Whole ? WholeSectionColor : box.Installed ? SelectionColor : InstallableOutlineColor);
             // Поки деталь ламають, лінія товщає разом із прогресом
-            SetBoxMatrix(box);
+            SetBoxMatrix(box, true);
             cube.Render(capi, mat, 2f + 4f * system.CurrentBreakProgress, color);
         }
 
@@ -164,20 +173,35 @@ namespace RailWorld
             bool showAll = handler.ShowsAllEmptyParts(held);
             if (!sleeperFits && !railFits && !ballastFits && !showAll) return;
 
-            // Заливки збираються лише тоді, коли їх показують: чанк, у якому гравець так і не візьме деталь у руки,
-            // меша заливки не отримує зовсім
-            RebuildDirtyChunks();
-
             IShaderProgram prog = fillProg;
             prog.Use();
             prog.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
+            prog.UniformMatrix("viewMatrix", capi.Render.CameraMatrixOriginf);
+            // Туман кадру, як у колії (RailWayRendererSystem.SetFrameUniforms): заливки ховаються в нього разом із нею
+            prog.Uniform("rgbaFogIn", capi.Render.FogColor);
+            prog.Uniform("fogMinIn", capi.Render.FogMin);
+            prog.Uniform("fogDensityIn", capi.Render.FogDensity);
             capi.Render.GlDisableCullFace();
 
+            // Заливки збираються лише тоді, коли їх треба намалювати: чанк, якого гравець з деталлю в руках так і не
+            // побачить, меша заливки не отримує зовсім
             if (showAll)
             {
-                // З предметом для прокладання колії видно порожні місця в усіх завантажених чанках
+                // З предметом для прокладання колії видно порожні місця в усіх завантажених чанках, які видно, як і
+                // саму колію (ChunkCulling)
+                if (dirtyChunks.Count > 0)
+                {
+                    foreach (Vec3i coord in dirtyChunks)
+                    {
+                        if (ChunkCulling.Visible(capi, coord.X, coord.Y, coord.Z, false)) visibleDirty.Add(coord);
+                    }
+                    foreach (Vec3i coord in visibleDirty) BuildFill(coord);
+                    visibleDirty.Clear();
+                }
                 foreach (ChunkFill fill in fills.Values)
-                    RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
+                {
+                    if (ChunkCulling.Visible(capi, fill.Coord.X, fill.Coord.Y, fill.Coord.Z, false)) RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
+                }
             }
             else
             {
@@ -194,6 +218,7 @@ namespace RailWorld
                         for (int z = cz - 1; z <= cz + 1; z++)
                         {
                             chunkCoord.Set(x, y, z);
+                            if (dirtyChunks.Contains(chunkCoord)) BuildFill(chunkCoord);
                             if (fills.TryGetValue(chunkCoord, out ChunkFill fill))
                                 RenderChunkFill(prog, fill, sleeperFits, railFits, ballastFits);
                         }
@@ -204,8 +229,8 @@ namespace RailWorld
             // Місце під прицілом яскравіше
             if (sel?.Box != null && !sel.Box.Installed)
             {
-                SetBoxMatrix(sel.Box);
-                prog.UniformMatrix("modelViewMatrix", mat.Values);
+                SetBoxMatrix(sel.Box, false);
+                prog.UniformMatrix("modelMatrix", mat.Values);
                 // Колір цього меша в його вершинах
                 prog.Uniform("tint", NoTint);
                 capi.Render.RenderMesh(selectedFill);
@@ -218,9 +243,10 @@ namespace RailWorld
         private void RenderChunkFill(IShaderProgram prog, ChunkFill fill, bool sleeperFits, bool railFits, bool ballastFits)
         {
             Vec3d cam = capi.World.Player.Entity.CameraPos;
-            mat.Set(capi.Render.CameraMatrixOriginf)
+            // Лише розміщення відносно камери: саму камеру шейдер бере з viewMatrix
+            mat.Identity()
                .Translate((float)(fill.Coord.X * (double)GlobalConstants.ChunkSize - cam.X), (float)(fill.Coord.Y * (double)GlobalConstants.ChunkSize - cam.Y), (float)(fill.Coord.Z * (double)GlobalConstants.ChunkSize - cam.Z));
-            prog.UniformMatrix("modelViewMatrix", mat.Values);
+            prog.UniformMatrix("modelMatrix", mat.Values);
 
             DrawFill(prog, fill.Sleepers, sleeperFits ? InstallableTint : GhostTint);
             DrawFill(prog, fill.Rails, railFits ? InstallableTint : GhostTint);
@@ -235,25 +261,16 @@ namespace RailWorld
             capi.Render.RenderMesh(mesh);
         }
 
-        private void RebuildDirtyChunks()
+        // Збирає заливку зміненого чанка. Стару вже звільнив MarkChunkDirty
+        private void BuildFill(Vec3i coord)
         {
-            if (dirtyChunks.Count == 0) return;
+            dirtyChunks.Remove(coord);
+            List<SectionBox> boxes = system.GetClientBoxes(coord);
+            if (boxes == null) return;
 
-            foreach (Vec3i coord in dirtyChunks)
-            {
-                if (fills.TryGetValue(coord, out ChunkFill old))
-                {
-                    old.Dispose();
-                    fills.Remove(coord);
-                }
-
-                List<SectionBox> boxes = system.GetClientBoxes(coord);
-                if (boxes == null) continue;
-
-                ChunkFill fill = BuildChunkFill(coord, boxes);
-                if (fill != null) fills[coord] = fill;
-            }
-            dirtyChunks.Clear();
+            Vec3i at = coord.Clone();
+            ChunkFill fill = BuildChunkFill(at, boxes);
+            if (fill != null) fills[at] = fill;
         }
 
         // У якій групі малювати порожнє місце
@@ -336,7 +353,9 @@ namespace RailWorld
         }
 
         // Матриця, що ставить куб від -1 до 1 на місце боксу
-        private void SetBoxMatrix(SectionBox box)
+        // Матриця бокса: розміщення відносно камери, а з withCamera ще й сама камера (для каркаса, який бере
+        // матрицю цілком)
+        private void SetBoxMatrix(SectionBox box, bool withCamera)
         {
             Vec3d cam = capi.World.Player.Entity.CameraPos;
 
@@ -346,8 +365,9 @@ namespace RailWorld
             basis[8] = (float)box.AxisAlong.X; basis[9] = (float)box.AxisAlong.Y; basis[10] = (float)box.AxisAlong.Z; basis[11] = 0;
             basis[12] = 0; basis[13] = 0; basis[14] = 0; basis[15] = 1;
 
-            mat.Set(capi.Render.CameraMatrixOriginf)
-               .Translate((float)(box.Center.X - cam.X), (float)(box.Center.Y - cam.Y), (float)(box.Center.Z - cam.Z))
+            if (withCamera) mat.Set(capi.Render.CameraMatrixOriginf);
+            else mat.Identity();
+            mat.Translate((float)(box.Center.X - cam.X), (float)(box.Center.Y - cam.Y), (float)(box.Center.Z - cam.Z))
                .Mul(basis)
                .Translate(0f, (float)((box.MinUp + box.MaxUp) / 2), 0f)
                .Scale((float)box.HalfSide, (float)((box.MaxUp - box.MinUp) / 2), (float)box.HalfAlong);

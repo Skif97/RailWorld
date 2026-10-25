@@ -1,11 +1,13 @@
 #version 330 core
 #extension GL_ARB_explicit_attrib_location: enable
 
-// Copy of the game's blockhighlights.fsh (1.22.3), unchanged: see railfill.vsh.
+// Based on the game's blockhighlights.fsh (1.22.3): the colour gets the fog the vertex shader computed
+// (see railfill.vsh) before it goes to OIT, as the game's applyFog does for other geometry.
 
 in vec4 color;
 in float glowLevel;
 in vec4 rgbaFog;
+in float fogAmount;
 
 uniform sampler2D particleTex;
 
@@ -14,5 +16,5 @@ uniform sampler2D particleTex;
 
 void main()
 {
-    OIT(color, glowLevel);
+    OIT(applyFog(color, fogAmount), glowLevel);
 }
