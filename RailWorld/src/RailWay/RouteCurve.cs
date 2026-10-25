@@ -99,12 +99,17 @@ namespace RailWorld.src.RailWay
 
         // Наскільки можуть розходитися дві висоти, які мають збігатися, блоків
         private const double HeightTolerance = 0.02;
+        // Різниця висот сусідніх місць маршруту, з якої це вже сходинка, а не похибка: так перевіряються всі
+        // переходи по висоті біля стрілок, і там, де ділянки двох стрілок зустрілися, теж
+        private const double StepTolerance = HeightTolerance * 5;
 
         /// <summary>
-        /// Те саме, але ще каже, чи вдалося виконати жорсткі умови маршруту. Жорстка умова це вимога лежати
-        /// в площині вже покладеної колії біля стрілки. Якщо таких умов дві (маршрут і починається, і закінчується
-        /// стрілкою) і вони вимагають різної висоти в одному місці або не лишають місця на перехід між собою,
-        /// conflict каже, що саме не так, і такий маршрут будувати не можна: рейки на межі розірвало б сходинкою.
+        /// Те саме, але ще каже, чи можна цей маршрут будувати. conflict це перша причина, чому не можна, або null:
+        /// точки маршруту стоять надто близько; біля стрілок маршрут не може лягти на полотно покладеної колії
+        /// (дві стрілки вимагають різної висоти в одному місці або не лишають місця на перехід по висоті між собою,
+        /// і рейки на межі розірвало б сходинкою); перетин з іншою колією надто гострий чи надто близько по висоті;
+        /// маршрут надто довго йде поверх покладеної колії, проходить по важелю стрілки або дає стрілку в зоні
+        /// іншої.
         /// </summary>
         /// track це вже покладена колія; потрібна, щоб знайти колії, які маршрут перетинає чи зачіпає.
         /// Без неї правила щодо покладеної колії не перевіряються.
@@ -166,7 +171,7 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Що відомо про висоту кожної точки нарізки, поки її підганяють під покладену колію.
         /// Fixed: висота жорстка, точка лежить на полотні покладеної колії (біля стрілки маршруту чи в перетині)
-        /// і зрушити її не можна. Weight: наскільки нахил полотна точки береться з TrackCant, а не власний;
+        /// і зрушити її не можна. TrackCantShare: наскільки нахил полотна точки береться з TrackCant, а не власний;
         /// у переході від колії до власної висоти він плавно згасає, хоча сама висота там уже не жорстка.
         /// Колись обидва змісти тримав один масив, і перехід від стрілки, записаний туди частками, виглядав
         /// для перетинів жорсткою умовою на всю свою довжину.
@@ -174,13 +179,13 @@ namespace RailWorld.src.RailWay
         private class RouteHeights
         {
             public readonly bool[] Fixed;
-            public readonly double[] Weight;
+            public readonly double[] TrackCantShare;
             public readonly double[] TrackCant;
 
             public RouteHeights(int count)
             {
                 Fixed = new bool[count];
-                Weight = new double[count];
+                TrackCantShare = new double[count];
                 TrackCant = new double[count];
             }
         }
@@ -272,9 +277,7 @@ namespace RailWorld.src.RailWay
             public SegmentHit Hit;
             public double At;
             public Section Section;
-            public double Angle;
-            // Місце перетину осей і номер точки нарізки перед ним
-            public Vec3d Where;
+            // Номер точки нарізки перед місцем, де перетнулися осі
             public int Index;
             // Вузол перетину: ділянка, на якій габарити маршруту і перетнутої колії перекриваються.
             // На скільки блоків уздовж маршруту він тягнеться назад і вперед від місця, де перетнулися осі
@@ -554,7 +557,7 @@ namespace RailWorld.src.RailWay
 
                     // Вузол перетину тягнеться вздовж обох колій від місця, де перетнулися осі: на косому перетині
                     // на кілька блоків. Що він зачіпає на перетнутій колії, пам'ятається, доки маршрут у ньому той самий
-                    var crossing = new Crossing { Hit = hit, At = at, Section = section, Angle = angle, Where = where, Index = k };
+                    var crossing = new Crossing { Hit = hit, At = at, Section = section, Index = k };
                     MeasureNode(crossing, points, run, resolve);
                     double[] signature = NodeSignature(crossing, points);
                     if (!SameNumbers(hit.NodeSignature, signature))
@@ -643,7 +646,7 @@ namespace RailWorld.src.RailWay
                         point.position = new Vec3d(p.X, planeY, p.Z);
                         points[i] = point;
                         shape.Fixed[i] = true;
-                        shape.Weight[i] = 1;
+                        shape.TrackCantShare[i] = 1;
                         shape.TrackCant[i] = cant;
                     }
 
@@ -713,7 +716,7 @@ namespace RailWorld.src.RailWay
                 // Жорстка ділянка впритул: переходу між ними немає, тож висоти мусять збігатися
                 if (Math.Abs(hit - edge) < 2)
                 {
-                    if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance * 5)
+                    if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > StepTolerance)
                         conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
                     return;
                 }
@@ -890,7 +893,7 @@ namespace RailWorld.src.RailWay
             {
                 // Стрілки на обох кінцях, і ділянки поверх двох колій зустрілися або перекрилися.
                 // Де вони вимагали різної висоти, це вже записано; якщо ж висоти зійшлися, маршрут годиться
-                if (Math.Abs(points[start.Virtual].position.Y - points[Math.Min(start.Virtual + 1, count - 1)].position.Y) > 0.5)
+                if (Math.Abs(points[start.Virtual].position.Y - points[Math.Min(start.Virtual + 1, count - 1)].position.Y) > StepTolerance)
                     conflict = conflict ?? "між двома стрілками не лишається місця на перехід по висоті";
                 return true;
             }
@@ -899,7 +902,7 @@ namespace RailWorld.src.RailWay
             // Беремо не просто найближчу: точки можуть стояти густо (початок і кінець кожної дуги теж точки),
             // і перехід до точки за два блоки від стрілки вийшов би горбом. Потрібна перша точка, до якої
             // вистачає місця: ділянка площиною основної колії плюс довжина переходу, що залежить від різниці висот
-            double holdNeeded = HoldSections * SectionLength;
+            double holdLength = HoldSections * SectionLength;
             int nearStart = -1, nearEnd = -1;
             int firstFree = -1, lastFree = -1;
             foreach (int joint in joints)
@@ -913,12 +916,12 @@ namespace RailWorld.src.RailWay
                 if (start != null)
                 {
                     double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[start.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
-                    if (run[joint] - run[freeFrom] >= holdNeeded + ramp && (nearStart < 0 || joint < nearStart)) nearStart = joint;
+                    if (run[joint] - run[freeFrom] >= holdLength + ramp && (nearStart < 0 || joint < nearStart)) nearStart = joint;
                 }
                 if (end != null)
                 {
                     double ramp = GameMath.Clamp(Math.Abs(points[joint].position.Y - points[end.Virtual].position.Y) * RampPerBlock, RampMin, RampMax);
-                    if (run[freeTo] - run[joint] >= holdNeeded + ramp && joint > nearEnd) nearEnd = joint;
+                    if (run[freeTo] - run[joint] >= holdLength + ramp && joint > nearEnd) nearEnd = joint;
                 }
             }
             // Жодна точка не лежить достатньо далеко: беремо найдальшу, яка є
@@ -931,8 +934,6 @@ namespace RailWorld.src.RailWay
                 nearEnd = -1;
             }
 
-            double holdLength = HoldSections * SectionLength;
-
             if (start != null && end != null && nearStart < 0)
             {
                 // Між двома стрілками жодної справжньої точки: один перехід від опорної точки до опорної
@@ -943,7 +944,7 @@ namespace RailWorld.src.RailWay
 
                 if (end.Virtual - start.Virtual < 2)
                 {
-                    if (Math.Abs(points[start.Virtual].position.Y - points[end.Virtual].position.Y) > HeightTolerance * 5)
+                    if (Math.Abs(points[start.Virtual].position.Y - points[end.Virtual].position.Y) > StepTolerance)
                         conflict = conflict ?? "між двома стрілками не лишається місця на перехід по висоті";
                     return true;
                 }
@@ -963,7 +964,7 @@ namespace RailWorld.src.RailWay
                     Transition(points, start.Virtual, target, VirtualSlope(points, run, start.Virtual, 1),
                         SlopeAlong(points[target].tangent, 1), run, shape, 0);
                 }
-                else if (Math.Abs(points[start.Virtual].position.Y - points[target].position.Y) > HeightTolerance * 5)
+                else if (Math.Abs(points[start.Virtual].position.Y - points[target].position.Y) > StepTolerance)
                 {
                     conflict = conflict ?? "стрілка і наступна точка маршруту на різній висоті, а місця на перехід немає";
                 }
@@ -979,7 +980,7 @@ namespace RailWorld.src.RailWay
                     Transition(points, target, end.Virtual, SlopeAlong(points[target].tangent, 1),
                         VirtualSlope(points, run, end.Virtual, -1), run, shape, 1);
                 }
-                else if (Math.Abs(points[end.Virtual].position.Y - points[target].position.Y) > HeightTolerance * 5)
+                else if (Math.Abs(points[end.Virtual].position.Y - points[target].position.Y) > StepTolerance)
                 {
                     conflict = conflict ?? "стрілка і попередня точка маршруту на різній висоті, а місця на перехід немає";
                 }
@@ -1130,17 +1131,17 @@ namespace RailWorld.src.RailWay
                 shape.Fixed[i] = false;
                 if (kind == 0)
                 {
-                    shape.Weight[i] = 1 - smooth;
+                    shape.TrackCantShare[i] = 1 - smooth;
                     shape.TrackCant[i] = fromCant;
                 }
                 else if (kind == 1)
                 {
-                    shape.Weight[i] = smooth;
+                    shape.TrackCantShare[i] = smooth;
                     shape.TrackCant[i] = toCant;
                 }
                 else
                 {
-                    shape.Weight[i] = 1;
+                    shape.TrackCantShare[i] = 1;
                     shape.TrackCant[i] = fromCant + (toCant - fromCant) * smooth;
                 }
             }
@@ -1170,7 +1171,7 @@ namespace RailWorld.src.RailWay
             points[i] = point;
 
             shape.Fixed[i] = true;
-            shape.Weight[i] = 1;
+            shape.TrackCantShare[i] = 1;
             shape.TrackCant[i] = cant;
             return true;
         }
@@ -1234,14 +1235,14 @@ namespace RailWorld.src.RailWay
         {
             for (int i = 0; i < points.Count; i++)
             {
-                if (shape.Weight[i] <= 0) continue;
+                if (shape.TrackCantShare[i] <= 0) continue;
 
                 PointOnBezierCurve point = points[i];
                 Vec3f t = point.tangent;
                 if (Math.Sqrt(t.X * t.X + t.Z * t.Z) < 1e-6) continue;
 
                 double own = Math.Asin(GameMath.Clamp(point.normal.Y, -1, 1));
-                double cant = own + (CantAbout(t, shape.TrackCant[i]) - own) * shape.Weight[i];
+                double cant = own + (CantAbout(t, shape.TrackCant[i]) - own) * shape.TrackCantShare[i];
 
                 point.normal = NormalWithCant(t, cant);
                 points[i] = point;
