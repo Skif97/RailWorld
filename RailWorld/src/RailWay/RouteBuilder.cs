@@ -200,7 +200,83 @@ namespace RailWorld.src.RailWay
                 });
             }
 
-            return RoundCorners(points, route, sources);
+            return SplitIntoArcs(RoundCorners(points, route, sources), sources);
+        }
+
+        // Напрямки на кінцях ділянки лягають на одну дугу, якщо вони дзеркальні відносно хорди, з таким допуском, рад
+        private const double OneArcTolerance = 1e-3;
+
+        /// <summary>
+        /// Кожна ділянка маршруту між двома сусідніми точками стає однією дугою кола (або прямою): крива ділянки
+        /// (RouteCurve.Leg) повторює дугу, а коли напрямки на кінцях на одну дугу не лягають, вона збирає вигин біля
+        /// одного кінця, і там радіус менший за дозволений. Так було з перемичкою між двома кінцями колії на змійці
+        /// (у змійки найменшого радіуса 2.7 при межі 3.5). Такі ділянки діляться точкою на дві дуги, що в ній
+        /// стикуються з однаковим напрямком (біарк). Обидві дуги мають однакові дотичні відрізки: для змійки з двох
+        /// однакових дуг точка стає на її перегин, і перемичка повторює змійку. Висота й ухил у новій точці з тієї
+        /// самої кубічної кривої висоти, якою йшла б ділянка. sources, якщо є, отримує номер точки гравця і для неї.
+        /// </summary>
+        private static List<RoutePoint> SplitIntoArcs(List<RoutePoint> route, List<int> sources)
+        {
+            if (route == null) return null;
+            for (int k = 0; k + 1 < route.Count; k++)
+            {
+                RoutePoint joint = ArcJoint(route[k], route[k + 1]);
+                if (joint == null) continue;
+                route.Insert(k + 1, joint);
+                sources?.Insert(k + 1, sources[k]);
+                k++;
+            }
+            return route;
+        }
+
+        // Точка, у якій дві дуги біарка між a і b стикуються; null, якщо ділянка вже одна дуга чи пряма, або дуги
+        // виходять коротшими за найменшу ділянку
+        private static RoutePoint ArcJoint(RoutePoint a, RoutePoint b)
+        {
+            double vx = b.Position.X - a.Position.X, vz = b.Position.Z - a.Position.Z;
+            double chord = Math.Sqrt(vx * vx + vz * vz);
+            if (chord < 2 * RouteCurve.MinSpan) return null;
+            if (!Flat(a.Tangent, out double ax, out double az) || !Flat(b.Tangent, out double bx, out double bz)) return null;
+
+            // Кути напрямків від хорди: на одній дузі вони рівні й протилежні
+            double fromChord = Math.Atan2(vx * az - vz * ax, vx * ax + vz * az);
+            double toChord = Math.Atan2(vx * bz - vz * bx, vx * bx + vz * bz);
+            if (Math.Abs(fromChord + toChord) < OneArcTolerance) return null;
+
+            // Дотичні відрізки однакової довжини d: від a вздовж її напрямку і до b вздовж її напрямку. Відрізок між
+            // їхніми кінцями має довжину 2d, і його середина це точка стику, а сам він дотична в ній
+            double tx = ax + bx, tz = az + bz;
+            double vt = vx * tx + vz * tz, vv = vx * vx + vz * vz;
+            double twoMinusCos = 2 * (1 - (ax * bx + az * bz));
+            double d = twoMinusCos < 1e-9 ? vv / (2 * vt) : (-vt + Math.Sqrt(vt * vt + twoMinusCos * vv)) / twoMinusCos;
+            if (double.IsNaN(d) || d <= 0) return null;
+
+            double q0x = a.Position.X + ax * d, q0z = a.Position.Z + az * d;
+            double q1x = b.Position.X - bx * d, q1z = b.Position.Z - bz * d;
+            double jx = (q0x + q1x) / 2, jz = (q0z + q1z) / 2;
+            double first = Math.Sqrt((jx - a.Position.X) * (jx - a.Position.X) + (jz - a.Position.Z) * (jz - a.Position.Z));
+            double second = Math.Sqrt((b.Position.X - jx) * (b.Position.X - jx) + (b.Position.Z - jz) * (b.Position.Z - jz));
+            if (first < RouteCurve.MinSpan || second < RouteCurve.MinSpan) return null;
+
+            // Висота: кубічна крива між висотами й ухилами кінців, як у висоти між вузлами маршруту
+            double span = first + second, u = first / span;
+            double fromSlope = Slope(a.Tangent), toSlope = Slope(b.Tangent), fromY = a.Position.Y, toY = b.Position.Y;
+            double u2 = u * u, u3 = u2 * u;
+            double y = (2 * u3 - 3 * u2 + 1) * fromY + (u3 - 2 * u2 + u) * span * fromSlope
+                + (-2 * u3 + 3 * u2) * toY + (u3 - u2) * span * toSlope;
+            double slope = ((6 * u2 - 6 * u) * fromY + (3 * u2 - 4 * u + 1) * span * fromSlope
+                + (-6 * u2 + 6 * u) * toY + (3 * u2 - 2 * u) * span * toSlope) / span;
+
+            return new RoutePoint { Position = new Vec3d(jx, y, jz), Tangent = WithSlope(q1x - q0x, q1z - q0z, slope) };
+        }
+
+        // Одиничний напрямок у плані; false, якщо напрямок вертикальний
+        private static bool Flat(Vec3d tangent, out double x, out double z)
+        {
+            double length = Math.Sqrt(tangent.X * tangent.X + tangent.Z * tangent.Z);
+            x = length < 1e-9 ? 0 : tangent.X / length;
+            z = length < 1e-9 ? 0 : tangent.Z / length;
+            return length >= 1e-9;
         }
 
         /// <summary>
