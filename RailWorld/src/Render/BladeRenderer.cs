@@ -541,13 +541,16 @@ namespace RailWorld
 
         /// <summary>
         /// Перевіряє, чи змінилося світло деталей: гра не повідомляє моди про зміну освітлення. Деталі,
-        /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса.
+        /// чиє світло змінилося, у відеокарті оновлюються лише дані її інстанса. Деталі чанків, яких не видно
+        /// (ChunkCulling), пропускаються: їхнє світло перевіриться наступного разу, коли їх буде видно.
         /// </summary>
         public void UpdateLights(LightProbe probe)
         {
-            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
+            foreach (KeyValuePair<(int X, int Y, int Z), Dictionary<BladeKey, Blade>> chunk in blades.ByChunk)
             {
-                foreach (Blade blade in inChunk.Values)
+                if (!ChunkCulling.Visible(capi, chunk.Key.X, chunk.Key.Y, chunk.Key.Z, false)) continue;
+
+                foreach (Blade blade in chunk.Value.Values)
                 {
                     int key = probe.KeyOf(blade.Origin);
                     if (key == blade.LightKey || blade.MeshRef == null) continue;

@@ -205,7 +205,9 @@ namespace RailWorld
         /// <summary>
         /// Перевіряє, чи змінилося світло деталей, не більш як у budget деталей за раз, по колу: гра не повідомляє
         /// моди про зміну освітлення, тому його доводиться опитувати. Деталі, чиє світло змінилося, у буфері
-        /// переписуються лише чотири числа світла. Повертає, скільки деталей перевірено.
+        /// переписуються лише чотири числа світла. Пачки чанків, яких не видно (ChunkCulling), пропускаються і бюджету
+        /// не витрачають: їхнє світло перевіриться на першому колі після того, як їх стане видно. Повертає, скільки
+        /// деталей перевірено.
         /// </summary>
         public int UpdateLights(int budget, LightProbe probe)
         {
@@ -215,9 +217,10 @@ namespace RailWorld
             {
                 if (lightCursor >= order.Count) lightCursor = 0;
                 Batch batch = order[lightCursor++];
-                checkedCount += batch.Drawn.Count;
                 // Пачку однаково буде зібрано заново
                 if (batch.Dirty || batch.Mesh == null) continue;
+                if (!ChunkCulling.Visible(capi, batch.Chunk.X, batch.Chunk.Y, batch.Chunk.Z, false)) continue;
+                checkedCount += batch.Drawn.Count;
 
                 bool changed = false;
                 float[] values = batch.Floats.Values;
