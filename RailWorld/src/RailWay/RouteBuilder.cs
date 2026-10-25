@@ -419,7 +419,10 @@ namespace RailWorld.src.RailWay
             }
 
             // Висота вздовж маршруту. Вузли це всі точки, крім доданих кінців дуг сходу: ті самі лежать на кривій.
-            // Ухил у вузлі: на кінцях і в точних точках свій, з дотичної; у куті такий, як між його сусідами
+            // Ухил у вузлі: на кінцях і в точках на колії свій, з дотичної; у куті такий, як між його сусідами, у
+            // точній точці з дотичної. Ухил у куті й точній точці ще обмежується так, щоб висота між вузлами не
+            // виходила за висоти самих вузлів (ModMath.MonotoneSlope): інакше перед підйомом колія спершу пірнала
+            // нижче за початок. На кінцях і на колії ухил не змінюється, бо там колія має зійтися з наявною
             double[] at = new double[n];
             for (int i = 1; i < n; i++) at[i] = at[i - 1] + leg[i - 1];
 
@@ -428,18 +431,32 @@ namespace RailWorld.src.RailWay
             {
                 if (!nodes[i].Lead) knots.Add(i);
             }
+            // Підйом на блок шляху між двома вузлами
+            double Secant(int a, int b)
+            {
+                double span = at[b] - at[a];
+                return span > 1e-6 ? (nodes[b].Position.Y - nodes[a].Position.Y) / span : 0;
+            }
+
             double[] knotSlope = new double[knots.Count];
             for (int k = 0; k < knots.Count; k++)
             {
                 Node node = nodes[knots[k]];
-                if (!node.Corner)
+                bool own = k == 0 || k == knots.Count - 1 || markers[node.Marker].Snapped;
+                if (own)
                 {
                     knotSlope[k] = Slope(node.Tangent);
                     continue;
                 }
-                int a = knots[k - 1], b = knots[k + 1];
-                double span = at[b] - at[a];
-                knotSlope[k] = span > 1e-6 ? (nodes[b].Position.Y - nodes[a].Position.Y) / span : 0;
+                int a = knots[k - 1], i = knots[k], b = knots[k + 1];
+                double wanted = node.Corner ? Secant(a, b) : Slope(node.Tangent);
+                knotSlope[k] = ModMath.MonotoneSlope(wanted, Secant(a, i), Secant(i, b));
+                if (!node.Corner)
+                {
+                    // Точна точка входить у маршрут як є, тож обмежений ухил іде і в її напрямок
+                    node.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, knotSlope[k]);
+                    if (node.Point != null) node.Point.Tangent = node.Tangent;
+                }
             }
 
             // Висота й ухил кривої за run блоків від початку маршруту: кубічна крива між двома сусідніми вузлами
