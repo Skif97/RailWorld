@@ -560,13 +560,16 @@ namespace RailWorld
 
         /// <summary>
         /// Малює деталі поточним шейдером. Перед кожною передає шейдерові origin: кут її чанка відносно камери.
-        /// bindTexture ставить текстуру деталі; у проході тіней вона не потрібна.
+        /// bindTexture ставить текстуру деталі; у проході тіней вона не потрібна. Деталі чанка, якого в цьому
+        /// проході не видно, не малюються (ChunkCulling).
         /// </summary>
-        public void Draw(IShaderProgram prog, Vec3d cameraPos, Action<int> bindTexture)
+        public void Draw(IShaderProgram prog, Vec3d cameraPos, Action<int> bindTexture, bool shadow)
         {
-            foreach (Dictionary<BladeKey, Blade> inChunk in blades.All)
+            foreach (KeyValuePair<(int X, int Y, int Z), Dictionary<BladeKey, Blade>> chunk in blades.ByChunk)
             {
-                foreach (Blade blade in inChunk.Values)
+                if (!ChunkCulling.Visible(capi, chunk.Key.X, chunk.Key.Y, chunk.Key.Z, shadow)) continue;
+
+                foreach (Blade blade in chunk.Value.Values)
                 {
                     if (blade.MeshRef == null) continue;
 

@@ -34,7 +34,7 @@ namespace RailWorld
         void RemoveChunk(Vec3i chunkCoord);
         int UpdateLights(int budget, LightProbe probe);
         void PrepareFrame();
-        void Draw(IShaderProgram prog, Vec3d cameraPos);
+        void Draw(IShaderProgram prog, Vec3d cameraPos, bool shadow);
     }
 
     /// <summary>
@@ -339,13 +339,15 @@ namespace RailWorld
 
         /// <summary>
         /// Малює деталі поточним шейдером, пачку за пачкою. Перед кожною передає шейдерові origin: кут чанка
-        /// пачки відносно камери. Викликається і для основного проходу, і для тіней.
+        /// пачки відносно камери. Викликається і для основного проходу, і для тіней (shadow); пачки, чанка яких
+        /// у цьому проході не видно, не малюються (ChunkCulling).
         /// </summary>
-        public void Draw(IShaderProgram prog, Vec3d cameraPos)
+        public void Draw(IShaderProgram prog, Vec3d cameraPos, bool shadow)
         {
             foreach (Batch batch in order)
             {
                 if (batch.Mesh == null || batch.Drawn.Count == 0) continue;
+                if (!ChunkCulling.Visible(capi, batch.Chunk.X, batch.Chunk.Y, batch.Chunk.Z, shadow)) continue;
 
                 origin.Set((float)(batch.Chunk.X * GlobalConstants.ChunkSize - cameraPos.X), (float)(batch.Chunk.Y * GlobalConstants.ChunkSize - cameraPos.Y), (float)(batch.Chunk.Z * GlobalConstants.ChunkSize - cameraPos.Z));
                 prog.Uniform("origin", origin);

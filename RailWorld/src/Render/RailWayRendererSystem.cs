@@ -509,9 +509,9 @@ void main()
             foreach (IInstancedParts renderer in instanced)
             {
                 chunkProg.BindTexture2D("tex", renderer.TextureId, 0);
-                renderer.Draw(chunkProg, cameraPos);
+                renderer.Draw(chunkProg, cameraPos, false);
             }
-            bladeRenderer?.Draw(chunkProg, cameraPos, bindBladeTexture);
+            bladeRenderer?.Draw(chunkProg, cameraPos, bindBladeTexture, false);
             chunkProg.Stop();
 
             capi.Render.GlEnableCullFace();
@@ -543,8 +543,8 @@ void main()
             shadowProg.UniformMatrix("mvpMatrix", capi.Render.CurrentShadowProjectionMatrix);
 
             capi.Render.GlDisableCullFace();
-            foreach (IInstancedParts renderer in instanced) renderer.Draw(shadowProg, cameraPos);
-            bladeRenderer?.Draw(shadowProg, cameraPos, null);
+            foreach (IInstancedParts renderer in instanced) renderer.Draw(shadowProg, cameraPos, true);
+            bladeRenderer?.Draw(shadowProg, cameraPos, null, true);
             capi.Render.GlEnableCullFace();
 
             shadowProg.Stop();
