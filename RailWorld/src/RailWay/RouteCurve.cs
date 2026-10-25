@@ -1013,6 +1013,7 @@ namespace RailWorld.src.RailWay
                 if (guard >= MaxFollowPoints)
                 {
                     conflict = conflict ?? "маршрут надто довго йде поверх уже покладеної колії";
+                    follow.Exit = i;
                     break;
                 }
 
@@ -1051,7 +1052,14 @@ namespace RailWorld.src.RailWay
                 follow.Plane = current;
                 follow.PlaneBefore = enteredAtStart ? behind : ahead;
                 follow.PlaneAfter = enteredAtStart ? ahead : behind;
-                if (!PutOnPlane(points, i, current, follow.PlaneBefore, follow.PlaneAfter, shape, ref conflict)) break;
+                // Точка ще в габариті колії (його беруть разом із сусідніми секціями), а полотна поточної секції тут
+                // уже немає, наприклад біля кінця колії: з колії маршрут зійшов тут. Exit тоді не лишається -1, бо
+                // -1 означає «не зійшов зовсім», і переходу по висоті від цього місця не було б
+                if (!PutOnPlane(points, i, current, follow.PlaneBefore, follow.PlaneAfter, shape, ref conflict))
+                {
+                    follow.Exit = i;
+                    break;
+                }
                 follow.Virtual = i;
             }
 
