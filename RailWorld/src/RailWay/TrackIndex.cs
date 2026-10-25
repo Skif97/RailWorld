@@ -35,12 +35,29 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public List<Section> Around(Vec3d p, double reach, double vertical)
         {
+            Within(p.X - reach, p.Y - vertical, p.Z - reach, p.X + reach, p.Y + vertical, p.Z + reach);
+
+            var found = new List<Section>();
+            foreach (Section section in candidates)
+            {
+                FastVec3d middle = section.Center;
+                if (Math.Abs(middle.X - p.X) <= reach && Math.Abs(middle.Z - p.Z) <= reach) found.Add(section);
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// Секції з клітинок, яких торкається коробка в глобальних координатах: клітинки цілком, точно відбирає той,
+        /// хто питає. Список спільний для всіх запитів цього TrackIndex і дійсний до наступного.
+        /// </summary>
+        public List<Section> Within(double minX, double minY, double minZ, double maxX, double maxY, double maxZ)
+        {
             candidates.Clear();
             int size = GlobalConstants.ChunkSize;
             // Чанки так само, як ModMath.FindChunk
-            int firstX = (int)Math.Truncate((p.X - reach) / size), lastX = (int)Math.Truncate((p.X + reach) / size);
-            int firstY = (int)Math.Truncate((p.Y - vertical) / size), lastY = (int)Math.Truncate((p.Y + vertical) / size);
-            int firstZ = (int)Math.Truncate((p.Z - reach) / size), lastZ = (int)Math.Truncate((p.Z + reach) / size);
+            int firstX = (int)Math.Truncate(minX / size), lastX = (int)Math.Truncate(maxX / size);
+            int firstY = (int)Math.Truncate(minY / size), lastY = (int)Math.Truncate(maxY / size);
+            int firstZ = (int)Math.Truncate(minZ / size), lastZ = (int)Math.Truncate(maxZ / size);
 
             for (int cy = firstY; cy <= lastY; cy++)
             {
@@ -54,19 +71,11 @@ namespace RailWorld.src.RailWay
 
                         // Запит у координатах цього чанка
                         double ox = cx * size, oy = cy * size, oz = cz * size;
-                        grid.Collect(p.X - reach - ox, p.Y - vertical - oy, p.Z - reach - oz,
-                            p.X + reach - ox, p.Y + vertical - oy, p.Z + reach - oz, candidates);
+                        grid.Collect(minX - ox, minY - oy, minZ - oz, maxX - ox, maxY - oy, maxZ - oz, candidates);
                     }
                 }
             }
-
-            var found = new List<Section>();
-            foreach (Section section in candidates)
-            {
-                FastVec3d middle = section.Center;
-                if (Math.Abs(middle.X - p.X) <= reach && Math.Abs(middle.Z - p.Z) <= reach) found.Add(section);
-            }
-            return found;
+            return candidates;
         }
     }
 }

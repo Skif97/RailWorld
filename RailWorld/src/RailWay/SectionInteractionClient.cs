@@ -39,6 +39,12 @@ namespace RailWorld
 
         private long lastActionMs;
 
+        // Що в руці, поки шукаємо деталь під прицілом: фільтр боксів читає це, тож він один на всю гру, а чи це
+        // предмет для прокладання, питається раз на кадр, а не для кожного бокса
+        private ItemStack pickHeld;
+        private bool pickSectionTool;
+        private System.Func<SectionBox, bool> pickFilter;
+
         // Взаємодія правою кнопкою
         private SectionSelection usingSel;
         private long usingBeginMs;
@@ -162,9 +168,10 @@ namespace RailWorld
             if (ray == null) return null;
 
             // Порожнє місце під деталь виділяється, лише коли предмет у руці можна туди поставити
-            ItemStack held = player.InventoryManager.ActiveHotbarSlot?.Itemstack;
-            SectionSelection sel = SectionPicker.Pick(origin, ray.dir.Clone().Normalize(), player.WorldData.PickingRange, system.GetClientBoxes,
-                box => PickFilter(box, held, system.Handler.IsSectionTool(held)));
+            pickHeld = player.InventoryManager.ActiveHotbarSlot?.Itemstack;
+            pickSectionTool = system.Handler.IsSectionTool(pickHeld);
+            SectionSelection sel = system.PickClient(origin, ray.dir.Clone().Normalize(), player.WorldData.PickingRange,
+                pickFilter ?? (pickFilter = box => PickFilter(box, pickHeld, pickSectionTool)));
             if (sel == null) return null;
 
             // Блок колії лежить під своїми ж деталями і місцями під них, тому він їх не затуляє

@@ -288,6 +288,12 @@ namespace RailWorld
             return clientTrack.GetBoxes(chunkCoord);
         }
 
+        /// <summary>Деталь секції під прицілом з того, що знає клієнт. dir має бути нормалізований.</summary>
+        public SectionSelection PickClient(Vec3d origin, Vec3d dir, double range, System.Func<SectionBox, bool> filter)
+        {
+            return clientTrack.Pick(origin, dir, range, filter);
+        }
+
         /// <summary>
         /// Замінює все, що клієнт знає про колію в чанку: бокси виділення, шпали і рейки.
         /// Повертає false, якщо дані відкинуто, бо клієнт уже має новіші.

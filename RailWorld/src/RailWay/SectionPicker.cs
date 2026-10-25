@@ -294,41 +294,62 @@ namespace RailWorld.src.RailWay
             return new Vec3d(end.X + outward.X * along + normal.X * offset, end.Y + outward.Y * along + normal.Y * offset,
                 end.Z + outward.Z * along + normal.Z * offset);
         }
+    }
+
+    /// <summary>
+    /// Бокси виділення секції: усі бокси її чанка одним списком і місце в ньому, де лежать її. false, якщо
+    /// боксів секції немає.
+    /// </summary>
+    public delegate bool SectionBoxes(Section section, out List<SectionBox> boxes, out int first, out int count);
+
+    /// <summary>
+    /// Шукає деталь секції під прицілом, як GameMain.RayTraceForSelection шукає блок: лише вздовж променя.
+    /// Промінь іде відрізками по клітинці сітки колії (ChunkTrackGrid), і бокси перевіряються лише в секцій,
+    /// середина яких лежить у клітинках поруч із відрізком. Буфери пошуку живуть між кадрами.
+    /// </summary>
+    public class SectionRayPicker
+    {
+        private const double Step = ChunkTrackGrid.CellSize;
+
+        private readonly TrackIndex track;
+        // Секції, бокси яких уже перевірено: сусідні відрізки променя беруть ті самі клітинки
+        private readonly HashSet<Section> seen = new HashSet<Section>();
+
+        public SectionRayPicker(Func<Vec3i, ChunkTrackGrid> gridIn)
+        {
+            track = new TrackIndex(gridIn);
+        }
 
         /// <summary>
-        /// Шукає найближчу деталь на промені в чанку ока та сусідніх. dir має бути нормалізований.
-        /// filter вирішує, які бокси взагалі можна виділити.
+        /// Найближча деталь на промені не далі за range. dir має бути нормалізований. reach це найдальше, куди
+        /// бокси секції сягають від її середини. filter вирішує, які бокси взагалі можна виділити.
         /// </summary>
-        public static SectionSelection Pick(Vec3d origin, Vec3d dir, double range, System.Func<Vec3i, List<SectionBox>> boxesInChunk, System.Func<SectionBox, bool> filter)
+        public SectionSelection Pick(Vec3d origin, Vec3d dir, double range, double reach, SectionBoxes boxesOf, Func<SectionBox, bool> filter)
         {
-            int cx = (int)Math.Floor(origin.X / GlobalConstants.ChunkSize);
-            int cy = (int)Math.Floor(origin.Y / GlobalConstants.ChunkSize);
-            int cz = (int)Math.Floor(origin.Z / GlobalConstants.ChunkSize);
-
-            double reach = (range + 1) * (range + 1);
+            seen.Clear();
             SectionBox best = null;
             double bestDist = range;
-            Vec3i coord = new Vec3i();
 
-            for (int x = cx - 1; x <= cx + 1; x++)
+            for (double from = 0; from < range; from += Step)
             {
-                for (int y = cy - 1; y <= cy + 1; y++)
-                {
-                    for (int z = cz - 1; z <= cz + 1; z++)
-                    {
-                        coord.Set(x, y, z);
-                        List<SectionBox> boxes = boxesInChunk(coord);
-                        if (boxes == null) continue;
+                double to = Math.Min(from + Step, range);
+                double ax = origin.X + dir.X * from, ay = origin.Y + dir.Y * from, az = origin.Z + dir.Z * from;
+                double bx = origin.X + dir.X * to, by = origin.Y + dir.Y * to, bz = origin.Z + dir.Z * to;
 
-                        foreach (SectionBox box in boxes)
+                List<Section> near = track.Within(Math.Min(ax, bx) - reach, Math.Min(ay, by) - reach, Math.Min(az, bz) - reach,
+                    Math.Max(ax, bx) + reach, Math.Max(ay, by) + reach, Math.Max(az, bz) + reach);
+                foreach (Section section in near)
+                {
+                    if (!seen.Add(section) || !boxesOf(section, out List<SectionBox> boxes, out int first, out int count)) continue;
+
+                    for (int i = first; i < first + count; i++)
+                    {
+                        SectionBox box = boxes[i];
+                        if (!filter(box)) continue;
+                        if (box.Intersect(origin, dir, bestDist, out double dist))
                         {
-                            if (box.Center.SquareDistanceTo(origin) > reach) continue;
-                            if (!filter(box)) continue;
-                            if (box.Intersect(origin, dir, bestDist, out double dist))
-                            {
-                                best = box;
-                                bestDist = dist;
-                            }
+                            best = box;
+                            bestDist = dist;
                         }
                     }
                 }
