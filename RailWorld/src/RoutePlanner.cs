@@ -107,7 +107,7 @@ namespace RailWorld
         private ItemStack Tool()
         {
             ItemStack stack = capi.World.Player?.InventoryManager?.ActiveHotbarSlot?.Itemstack;
-            return stack?.Block is BlockRail ? stack : null;
+            return RailWorld.IsTrackTool(stack) ? stack : null;
         }
 
         private bool HoldingTool()

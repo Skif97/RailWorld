@@ -1,0 +1,69 @@
+[
+	{
+		"ingredientPattern": "MNH,PPC,NNS",
+		"ingredients": {
+			"P": {
+				"type": "item",
+				"code": "game:plank-{wood}",
+				"quantity": 2
+			},
+			"M": {
+				"type": "item",
+				"code": "game:metalplate-*",
+				"quantity": 2
+			},
+			"N": {
+				"type": "item",
+				"code": "game:metalnailsandstrips-{nails}",
+				"quantity": 2
+			},
+			"S": {
+				"type": "item",
+				"tags": [
+					"tool-saw"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"C": {
+				"type": "item",
+				"tags": [
+					"tool-chisel"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"H": {
+				"type": "item",
+				"tags": [
+					"tool-hammer"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			}
+		},
+		"allowedVariants": {
+			"wood": [
+				"birch",
+				"oak",
+				"maple",
+				"pine",
+				"acacia",
+				"kapok",
+				"baldcypress",
+				"larch",
+				"redwood",
+				"ebony",
+				"walnut",
+				"purpleheart",
+				"aged"
+			]
+		},
+		"width": 3,
+		"height": 3,
+		"output": {
+			"type": "block",
+			"code": "railworld:tripod"
+		}
+	}
+]

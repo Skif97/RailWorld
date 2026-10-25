@@ -1,0 +1,314 @@
+{
+	"code": "theodolite",
+	"class": "BlockLevelerTripod",
+	"entityClass": "BlockEntityLevelerTripod",
+	"behaviors": [
+		{
+			"name": "TypedTexture"
+		},
+		{
+			"name": "RotateablePlaceable",
+			"properties": {
+				"intervalDeg": 45,
+				"offsetDeg": 90
+			}
+		},
+		{
+			"name": "Multiblock",
+			"properties": {
+				"sizex": 1,
+				"sizey": 2,
+				"sizez": 1,
+				"cposition": {
+					"x": 0,
+					"y": 0,
+					"z": 0
+				}
+			}
+		}
+	],
+	"entityBehaviors": [
+		{
+			"name": "LevelerRotation",
+			"properties": {
+				"height": 2
+			}
+		}
+	],
+	"attributes": {
+		"materialTypes": [
+			"wood",
+			"nails",
+			"plate"
+		],
+		"translationEntries": [
+			"material-{wood}",
+			"material-{nails}",
+			"material-{plate}"
+		],
+		"defaults": [
+			"oak",
+			"iron",
+			"iron"
+		],
+		"textureMapping": {
+			"wood": "game:block/wood/planks/{wood}1",
+			"nails": "game:block/metal/sheet/{nails}1",
+			"plate": "game:block/metal/sheet/{plate}1",
+			"strap": "game:block/leather/plain",
+			"fresh": "game:block/metal/plate/brass",
+			"silver": "game:block/metal/plate/silver",
+			"black": "game:block/metal/plate/blackbronze",
+			"dark": "game:block/metal/plate/steel",
+			"glass": "game:block/glass/smoky"
+		},
+		"shape": {
+			"base": "railworld:block/theodolite-folded"
+		},
+		"instrument": "railworld:theodoliteinstrument",
+		"trackTool": true
+	},
+	"shape": {
+		"base": "railworld:block/theodolite"
+	},
+	"shapeInventory": {
+		"base": "railworld:block/theodolite-folded"
+	},
+	"textures": {
+		"wood": {
+			"base": "game:block/wood/planks/oak1"
+		},
+		"nails": {
+			"base": "game:block/metal/sheet/iron1"
+		},
+		"plate": {
+			"base": "game:block/metal/sheet/iron1"
+		},
+		"strap": {
+			"base": "game:block/leather/plain"
+		},
+		"fresh": {
+			"base": "game:block/metal/plate/brass"
+		},
+		"silver": {
+			"base": "game:block/metal/plate/silver"
+		},
+		"black": {
+			"base": "game:block/metal/plate/blackbronze"
+		},
+		"dark": {
+			"base": "game:block/metal/plate/steel"
+		},
+		"glass": {
+			"base": "game:block/glass/smoky"
+		}
+	},
+	"drawtype": "JSON",
+	"blockmaterial": "Wood",
+	"resistance": 1.5,
+	"lightAbsorption": 0,
+	"faceCullMode": "NeverCull",
+	"sidesolid": {
+		"all": false
+	},
+	"sideopaque": {
+		"all": false
+	},
+	"replaceable": 90,
+	"maxstacksize": 1,
+	"creativeinventoryStacks": [
+		{
+			"tabs": [
+				"general",
+				"decorative"
+			],
+			"stacks": [
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "birch"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "oak"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "maple"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "pine"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "acacia"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "kapok"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "baldcypress"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "larch"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "redwood"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "ebony"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "walnut"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "purpleheart"
+					}
+				},
+				{
+					"type": "block",
+					"code": "railworld:theodolite",
+					"attributes": {
+						"wood": "aged"
+					}
+				}
+			]
+		}
+	],
+	"collisionbox": {
+		"x1": 0.3,
+		"y1": 0,
+		"z1": 0.3,
+		"x2": 0.7,
+		"y2": 1.65,
+		"z2": 0.7
+	},
+	"selectionbox": {
+		"x1": 0.15,
+		"y1": 0,
+		"z1": 0.15,
+		"x2": 0.85,
+		"y2": 1.65,
+		"z2": 0.85
+	},
+	"sounds": {
+		"place": "game:block/planks",
+		"break": "game:block/planks",
+		"hit": "game:block/planks",
+		"walk": "game:walk/wood"
+	},
+	"guiTransform": {
+		"translation": {
+			"x": 0,
+			"y": -7.66,
+			"z": 0
+		},
+		"rotation": {
+			"x": -13,
+			"y": -34,
+			"z": -2
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 1.41,
+			"z": 0.5
+		},
+		"scale": 2.4
+	},
+	"fpHandTransform": {
+		"translation": {
+			"x": 0,
+			"y": -0.3,
+			"z": 0
+		},
+		"rotation": {
+			"x": 0,
+			"y": -45,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 1,
+			"z": 0.5
+		},
+		"scale": 0.8
+	},
+	"tpHandTransform": {
+		"translation": {
+			"x": 0.03,
+			"y": -0.15,
+			"z": -0.8
+		},
+		"rotation": {
+			"x": -35,
+			"y": 0,
+			"z": -84
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0,
+			"z": 0.5
+		},
+		"scale": 0.65
+	},
+	"groundTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0.15,
+			"z": 0
+		},
+		"rotation": {
+			"x": 89,
+			"y": -28,
+			"z": -24
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.83,
+			"z": 0.5
+		},
+		"scale": 4.58
+	}
+}

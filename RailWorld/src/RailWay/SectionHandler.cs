@@ -59,20 +59,20 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Чи предмет у руці показує всі порожні місця під деталі в завантажених чанках, а не лише поблизу.
-        /// Стандартно це блок, яким прокладають колію.
+        /// Стандартно це інструмент, яким прокладають колію.
         /// </summary>
         public virtual bool ShowsAllEmptyParts(ItemStack stack)
         {
-            return stack?.Block is BlockRail;
+            return RailWorld.IsTrackTool(stack);
         }
 
         /// <summary>
         /// Чи предмет у руці працює із секцією цілком: виділяє її одним великим боксом,
-        /// а лівий клік видаляє секцію повністю. Стандартно це блок, яким прокладають колію.
+        /// а лівий клік видаляє секцію повністю. Стандартно це інструмент, яким прокладають колію.
         /// </summary>
         public virtual bool IsSectionTool(ItemStack stack)
         {
-            return stack?.Block is BlockRail;
+            return RailWorld.IsTrackTool(stack);
         }
 
         /// <summary>

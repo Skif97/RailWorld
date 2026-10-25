@@ -80,12 +80,12 @@ namespace RailWorld
         public const string DontBuild = "none";
 
         /// <summary>
-        /// Чи це предмет, яким прокладають колію: у нього є меню колії і налаштування маршруту в атрибутах стека.
-        /// Предмет позначає це атрибутом AllowGuiDialogRailMenu у своєму json; у предмета без атрибутів їх немає зовсім.
+        /// Чи це інструмент, яким прокладають колію (теодоліт на тринозі): у нього є меню колії і налаштування маршруту
+        /// в атрибутах стека.
         /// </summary>
-        public static bool HasRailMenu(ItemStack stack)
+        public static bool IsTrackTool(ItemStack stack)
         {
-            return stack?.Attributes != null && stack.ItemAttributes?.IsTrue("AllowGuiDialogRailMenu") == true;
+            return stack?.Block is BlockLevelerTripod tripod && tripod.IsTrackTool;
         }
         static internal ICoreClientAPI _capi;
         static internal ICoreServerAPI _sapi;
@@ -98,7 +98,9 @@ namespace RailWorld
         public override void Start(ICoreAPI api)
         {
             base.Start(api);
-            api.RegisterBlockClass("BlockRail", typeof(BlockRail));
+            api.RegisterBlockClass("BlockLevelerTripod", typeof(BlockLevelerTripod));
+            api.RegisterBlockEntityClass("BlockEntityLevelerTripod", typeof(BlockEntityLevelerTripod));
+            api.RegisterBlockEntityBehaviorClass("LevelerRotation", typeof(BEBehaviorLevelerRotation));
             api.RegisterBlockClass("BlockTrackBed", typeof(BlockTrackBed));
             api.RegisterBlockEntityClass("BlockEntityTrackBed", typeof(BlockEntityTrackBed));
             api.RegisterBlockEntityBehaviorClass("TrackBedSnowCover", typeof(BEBehaviorTrackBedSnowCover));
@@ -127,8 +129,10 @@ namespace RailWorld
                 .RegisterMessageType<RailDataPacket>()
                 .RegisterMessageType<RoutePacket>()
                 .RegisterMessageType<RouteResultPacket>()
+                .RegisterMessageType<LevelerActionPacket>()
                 .SetMessageHandler<RailDataPacket>(OnRailDataReceived)
                 .SetMessageHandler<RouteResultPacket>(packet => RoutePlanner.Instance?.OnServerAnswer(packet.Id, packet.Built, packet.Reason));
+            new LevelerControls(api, _clientChannel);
         }
 
         public override void StartServerSide(ICoreServerAPI api)
@@ -142,8 +146,23 @@ namespace RailWorld
                 .RegisterMessageType<RailDataPacket>()
                 .RegisterMessageType<RoutePacket>()
                 .RegisterMessageType<RouteResultPacket>()
+                .RegisterMessageType<LevelerActionPacket>()
                 .SetMessageHandler<RailMenuPacket>(OnRailMenuPacketReceived)
-                .SetMessageHandler<RoutePacket>(OnRoutePacketReceived);
+                .SetMessageHandler<RoutePacket>(OnRoutePacketReceived)
+                .SetMessageHandler<LevelerActionPacket>(OnLevelerActionReceived);
+        }
+
+        // ── Сервер: клік по поставленій тринозі ──────────────────────────────
+
+        // Клієнт сам вирішив, що це клік по тринозі; сервер перевіряє, що там справді тринога і гравець до неї
+        // дотягується, так само як до блока, з яким взаємодіє
+        private void OnLevelerActionReceived(IServerPlayer fromPlayer, LevelerActionPacket packet)
+        {
+            var pos = new BlockPos(packet.X, packet.Y, packet.Z);
+            if (_sapi.World.BlockAccessor.GetBlock(pos) is not BlockLevelerTripod tripod) return;
+            Vec3d eye = fromPlayer.Entity.Pos.XYZ.Add(fromPlayer.Entity.LocalEyePos);
+            if (eye.DistanceTo(pos.ToVec3d().Add(0.5, 1, 0.5)) > fromPlayer.WorldData.PickingRange + 1.5) return;
+            tripod.DoAction(_sapi.World, fromPlayer, pos, packet.Action);
         }
 
         // ── Сервер: отримали налаштування рейки від клієнта ──────────────────
@@ -153,7 +172,7 @@ namespace RailWorld
             ItemSlot slot = fromPlayer.InventoryManager?.ActiveHotbarSlot;
             ItemStack mystack = slot?.Itemstack;
 
-            if (HasRailMenu(mystack))
+            if (IsTrackTool(mystack))
             {
                 mystack.Attributes.SetString("railMode", packet.railMode);
                 mystack.Attributes.SetInt("railLengRad", packet.railLengRad);
@@ -220,7 +239,7 @@ namespace RailWorld
         private string BuildRoute(IServerPlayer fromPlayer, RoutePacket packet)
         {
             ItemStack tool = fromPlayer.InventoryManager.ActiveHotbarSlot?.Itemstack;
-            if (!HasRailMenu(tool)) return "предмет для прокладання колії не в руці";
+            if (!IsTrackTool(tool)) return "предмет для прокладання колії не в руці";
 
             int count = packet.BlockX?.Length ?? 0;
             // Розмір пакета до того, як щось із нього читати; ті самі межі, що в розмітки (RouteRules)
@@ -335,7 +354,7 @@ namespace RailWorld
         {
             ItemStack mystack = _capi.World.Player.InventoryManager.ActiveHotbarSlot?.Itemstack;
 
-            if (HasRailMenu(mystack))
+            if (IsTrackTool(mystack))
             {
                 if (_dialog != null && _dialog.IsOpened())
                 {

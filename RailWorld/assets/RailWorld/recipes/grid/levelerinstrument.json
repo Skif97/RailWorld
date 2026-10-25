@@ -1,0 +1,90 @@
+[
+	{
+		"ingredientPattern": "QBQ,SNB,HC_",
+		"ingredients": {
+			"B": {
+				"type": "item",
+				"code": "game:metalplate-brass"
+			},
+			"S": {
+				"type": "item",
+				"code": "game:metalbit-silver",
+				"quantity": 2
+			},
+			"N": {
+				"type": "item",
+				"code": "game:metalnailsandstrips-blackbronze"
+			},
+			"Q": {
+				"type": "item",
+				"code": "game:clearquartz"
+			},
+			"C": {
+				"type": "item",
+				"tags": [
+					"tool-chisel"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"H": {
+				"type": "item",
+				"tags": [
+					"tool-hammer"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			}
+		},
+		"width": 3,
+		"height": 3,
+		"output": {
+			"type": "item",
+			"code": "railworld:levelerinstrument"
+		}
+	},
+	{
+		"ingredientPattern": "QBQ,SNB,HC_",
+		"ingredients": {
+			"B": {
+				"type": "item",
+				"code": "game:metalplate-brass"
+			},
+			"S": {
+				"type": "item",
+				"code": "game:metalbit-silver",
+				"quantity": 2
+			},
+			"N": {
+				"type": "item",
+				"code": "game:metalnailsandstrips-blackbronze"
+			},
+			"Q": {
+				"type": "block",
+				"code": "game:glassslab-plain-down-free"
+			},
+			"C": {
+				"type": "item",
+				"tags": [
+					"tool-chisel"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"H": {
+				"type": "item",
+				"tags": [
+					"tool-hammer"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			}
+		},
+		"width": 3,
+		"height": 3,
+		"output": {
+			"type": "item",
+			"code": "railworld:levelerinstrument"
+		}
+	}
+]

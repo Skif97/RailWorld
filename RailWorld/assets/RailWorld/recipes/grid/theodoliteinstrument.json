@@ -1,0 +1,114 @@
+[
+	{
+		"ingredientPattern": "QKQ,SBN,HIL",
+		"ingredients": {
+			"K": {
+				"type": "item",
+				"code": "game:metalplate-blackbronze"
+			},
+			"B": {
+				"type": "item",
+				"code": "game:metalplate-brass",
+				"quantity": 2
+			},
+			"S": {
+				"type": "item",
+				"code": "game:metalplate-silver"
+			},
+			"N": {
+				"type": "item",
+				"code": "game:metalnailsandstrips-blackbronze"
+			},
+			"Q": {
+				"type": "item",
+				"code": "game:clearquartz"
+			},
+			"H": {
+				"type": "item",
+				"tags": [
+					"tool-hammer"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"I": {
+				"type": "item",
+				"tags": [
+					"tool-solderingiron"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 2
+			},
+			"L": {
+				"type": "item",
+				"code": "game:solderbar-*",
+				"allowedVariants": [
+					"tin",
+					"silver"
+				]
+			}
+		},
+		"width": 3,
+		"height": 3,
+		"output": {
+			"type": "item",
+			"code": "railworld:theodoliteinstrument"
+		}
+	},
+	{
+		"ingredientPattern": "QKQ,SBN,HIL",
+		"ingredients": {
+			"K": {
+				"type": "item",
+				"code": "game:metalplate-blackbronze"
+			},
+			"B": {
+				"type": "item",
+				"code": "game:metalplate-brass",
+				"quantity": 2
+			},
+			"S": {
+				"type": "item",
+				"code": "game:metalplate-silver"
+			},
+			"N": {
+				"type": "item",
+				"code": "game:metalnailsandstrips-blackbronze"
+			},
+			"Q": {
+				"type": "block",
+				"code": "game:glassslab-plain-down-free"
+			},
+			"H": {
+				"type": "item",
+				"tags": [
+					"tool-hammer"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 10
+			},
+			"I": {
+				"type": "item",
+				"tags": [
+					"tool-solderingiron"
+				],
+				"isTool": true,
+				"toolDurabilityCost": 2
+			},
+			"L": {
+				"type": "item",
+				"code": "game:solderbar-*",
+				"allowedVariants": [
+					"tin",
+					"silver"
+				]
+			}
+		},
+		"width": 3,
+		"height": 3,
+		"output": {
+			"type": "item",
+			"code": "railworld:theodoliteinstrument"
+		}
+	}
+]

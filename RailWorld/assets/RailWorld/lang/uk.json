@@ -1,5 +1,11 @@
 {
-	"block-rail": "Інструмент для укладання колії",
+	"block-tripod": "Тринога",
+	"block-leveler": "Нівелір",
+	"item-levelerinstrument": "Прилад нівеліра",
+	"block-theodolite": "Теодоліт",
+	"item-theodoliteinstrument": "Прилад теодоліта",
+	"game:materialtype-nails": "Цвяхи: {0}",
+	"game:materialtype-plate": "Пластина: {0}",
 	"block-trackbed-*": "Полотно колії",
 	"item-trolley-iron": "Вагонетка",
 	"item-trolley-gold": "Моторизована вагонетка",

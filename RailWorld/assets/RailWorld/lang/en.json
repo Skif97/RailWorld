@@ -1,5 +1,11 @@
 {
-	"block-rail": "Track laying tool",
+	"block-tripod": "Tripod",
+	"block-leveler": "Leveler",
+	"item-levelerinstrument": "Leveler instrument",
+	"block-theodolite": "Theodolite",
+	"item-theodoliteinstrument": "Theodolite instrument",
+	"game:materialtype-nails": "Nails: {0}",
+	"game:materialtype-plate": "Plate: {0}",
 	"block-trackbed-*": "Track bed",
 	"item-trolley-iron": "Trolley",
 	"item-trolley-gold": "Motor trolley",

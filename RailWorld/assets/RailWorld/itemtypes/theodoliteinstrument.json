@@ -1,0 +1,121 @@
+{
+	"code": "theodoliteinstrument",
+	"shape": {
+		"base": "railworld:item/theodolite-instrument"
+	},
+	"textures": {
+		"fresh": {
+			"base": "game:block/metal/plate/brass"
+		},
+		"silver": {
+			"base": "game:block/metal/plate/silver"
+		},
+		"black": {
+			"base": "game:block/metal/plate/blackbronze"
+		},
+		"dark": {
+			"base": "game:block/metal/plate/steel"
+		},
+		"glass": {
+			"base": "game:block/glass/smoky"
+		}
+	},
+	"maxstacksize": 1,
+	"creativeinventory": {
+		"general": [
+			"*"
+		],
+		"items": [
+			"*"
+		]
+	},
+	"behaviors": [
+		{
+			"name": "GroundStorable",
+			"properties": {
+				"layout": "SingleCenter",
+				"placeRemoveSound": "game:sounds/block/ingot",
+				"collisionBox": {
+					"x1": 0.25,
+					"y1": 0,
+					"z1": 0.25,
+					"x2": 0.75,
+					"y2": 0.3,
+					"z2": 0.75
+				}
+			}
+		}
+	],
+	"guiTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"rotation": {
+			"x": -30,
+			"y": -44,
+			"z": -180
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.15,
+			"z": 0.5
+		},
+		"scale": 3.0
+	},
+	"fpHandTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0.1,
+			"z": 0
+		},
+		"rotation": {
+			"x": 0,
+			"y": -45,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.2,
+			"z": 0.5
+		},
+		"scale": 1.6
+	},
+	"tpHandTransform": {
+		"translation": {
+			"x": -0.8,
+			"y": -0.3,
+			"z": -0.6
+		},
+		"rotation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0,
+			"z": 0.5
+		},
+		"scale": 0.9
+	},
+	"groundTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"rotation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0,
+			"z": 0.5
+		},
+		"scale": 2.5
+	}
+}
