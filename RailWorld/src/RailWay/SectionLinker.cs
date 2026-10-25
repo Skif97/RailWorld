@@ -246,19 +246,31 @@ namespace RailWorld.src.RailWay
 
             // Кінці, що лишилися без сусіда: краї ділянки і місця, де нова секція не будувалася,
             // бо там уже лежала така сама
-            foreach (Section section in stretch)
+            LinkOpen(session, stretch);
+        }
+
+        // Кінцям секцій без жодного зв'язку шукає сусіда. Колію поруч усі вони шукають через один TrackIndex
+        private static void LinkOpen(RailDataSession session, IEnumerable<Section> sections)
+        {
+            TrackIndex track = null;
+            foreach (Section section in sections)
             {
-                if (section.GetLinks(true).Count == 0) LinkToNeighbours(session, section, true);
-                if (section.GetLinks(false).Count == 0) LinkToNeighbours(session, section, false);
+                for (int end = 0; end < 2; end++)
+                {
+                    bool atStart = end == 0;
+                    if (section.GetLinks(atStart).Count > 0) continue;
+                    LinkToNeighbours(session, section, atStart, track ?? (track = new TrackIndex(chunk => session.Get(chunk)?.Grid)));
+                }
             }
         }
 
         /// <summary>
-        /// Шукає секції, кінець яких збігається з цим кінцем і дивиться назустріч, і з'єднує з ними.
+        /// Шукає секції, кінець яких збігається з цим кінцем і дивиться назустріч, і з'єднує з ними. track це
+        /// колія поруч.
         /// </summary>
-        public static void LinkToNeighbours(RailDataSession session, Section section, bool atStart)
+        public static void LinkToNeighbours(RailDataSession session, Section section, bool atStart, TrackIndex track)
         {
-            foreach (SectionLink meeting in Meeting(section, atStart, new TrackIndex(chunk => session.Get(chunk)?.Grid)))
+            foreach (SectionLink meeting in Meeting(section, atStart, track))
             {
                 Section other = session.GetSection(meeting);
                 if (other == null) continue;
@@ -958,11 +970,7 @@ namespace RailWorld.src.RailWay
             DataInChunk data = session.Get(chunk);
             if (data == null) return;
 
-            foreach (Section section in data.RailWaySections.Values)
-            {
-                if (section.GetLinks(true).Count == 0) LinkToNeighbours(session, section, true);
-                if (section.GetLinks(false).Count == 0) LinkToNeighbours(session, section, false);
-            }
+            LinkOpen(session, data.RailWaySections.Values);
         }
     }
 }

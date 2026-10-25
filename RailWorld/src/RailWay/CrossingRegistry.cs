@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.MathTools;
 
 namespace RailWorld.src.RailWay
@@ -264,7 +263,12 @@ namespace RailWorld.src.RailWay
         // Пам'ятає чанк, поки в ньому є недорахований перетин
         private static void Track(Vec3i chunk, DataInChunk data)
         {
-            pending.Track(chunk, data.Crossings.Values.Any(record => !record.Resolved));
+            bool unresolved = false;
+            foreach (RailCrossing record in data.Crossings.Values)
+            {
+                if (!record.Resolved) { unresolved = true; break; }
+            }
+            pending.Track(chunk, unresolved);
         }
 
         // Прибирає посилання на перетин у секціях, яких у вузлі нового запису вже немає

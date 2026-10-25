@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 
@@ -182,7 +181,12 @@ namespace RailWorld.src.RailWay
         // Пам'ятає чанк, поки в ньому є недорахована стрілка
         private static void Track(Vec3i chunk, DataInChunk data)
         {
-            pending.Track(chunk, data.Switches.Values.Any(record => !record.Resolved));
+            bool unresolved = false;
+            foreach (RailSwitch record in data.Switches.Values)
+            {
+                if (!record.Resolved) { unresolved = true; break; }
+            }
+            pending.Track(chunk, unresolved);
         }
 
         // Прибирає посилання на стрілку в секціях, яких у новому записі вже немає

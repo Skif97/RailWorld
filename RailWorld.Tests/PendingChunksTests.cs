@@ -24,5 +24,19 @@ namespace RailWorld.Tests
             pending.Track(chunk, false);
             Assert.Empty(pending.Near(10, 20));
         }
+
+        [Fact]
+        public void ChunksOfOneColumnWaitSeparately()
+        {
+            var pending = new PendingChunks();
+            var low = new Vec3i(10, 2, 20);
+            var high = new Vec3i(10, 5, 20);
+            pending.Track(low, true);
+            pending.Track(high, true);
+
+            // Дорахований чанк колонки не забирає з собою інший
+            pending.Track(low, false);
+            Assert.Equal(new[] { high }, pending.Near(10, 20));
+        }
     }
 }
