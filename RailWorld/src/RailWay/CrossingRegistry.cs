@@ -68,8 +68,9 @@ namespace RailWorld.src.RailWay
             foreach (CrossingRef target in targets) Update(session, target.Chunk, target.Key, null);
 
             // Нові перетини шукаються після перерахунку наявних: секція, що випала з вузла старого перетину,
-            // може вже лежати в новому
-            foreach (Vec3i chunk in chunks) Discover(session, chunk);
+            // може вже лежати в новому. Колію поруч усі чанки шукають через один TrackIndex
+            var track = new TrackIndex(coord => session.Get(coord)?.Grid);
+            foreach (Vec3i chunk in chunks) Discover(session, chunk, track);
         }
 
         /// <summary>
@@ -92,7 +93,7 @@ namespace RailWorld.src.RailWay
             // Чанк, у якому нічого перераховувати, міг лишитися у списку від перетину, якого вже немає
             if (unresolved.Count == 0) pending.Track(chunk, false);
 
-            Discover(session, chunk);
+            Discover(session, chunk, new TrackIndex(coord => session.Get(coord)?.Grid));
         }
 
         // Перетин впізнається перетнутою секцією основної колії: його ключ це її номер у чанку
@@ -156,14 +157,14 @@ namespace RailWorld.src.RailWay
             if (seen.Add(new SectionKey(chunk, key))) targets.Add(new CrossingRef { ChunkX = chunk.X, ChunkY = chunk.Y, ChunkZ = chunk.Z, Key = key });
         }
 
-        // Шукає перетини секцій чанка, про які ще немає запису, і записує їх
-        private static void Discover(RailDataSession session, Vec3i chunk)
+        // Шукає перетини секцій чанка, про які ще немає запису, і записує їх. track це колія поруч. Секції чанка
+        // обходяться без копії: запис перетину міняє посилання в секціях, а не самі секції чанка
+        private static void Discover(RailDataSession session, Vec3i chunk, TrackIndex track)
         {
             DataInChunk data = session.Get(chunk);
             if (data == null) return;
 
-            var track = new TrackIndex(coord => session.Get(coord)?.Grid);
-            foreach (Section section in new List<Section>(data.RailWaySections.Values))
+            foreach (Section section in data.RailWaySections.Values)
             {
                 if (section.GetCrossingRef() != null) continue;
 
