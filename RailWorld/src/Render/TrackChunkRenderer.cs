@@ -67,6 +67,7 @@ namespace RailWorld
             renderer.ClearRails(chunkCoord);
             // Деталі стрілок не викидаються наперед: незмінні лишаються з готовим мешем
             renderer.BeginParts(chunkCoord);
+            animator.BeginChunk(chunkCoord);
 
             // Секції, на яких лежить хоч одна рейка
             var railSections = new List<Section>();
@@ -178,6 +179,7 @@ namespace RailWorld
                 foreach (RailCrossing record in data.Crossings.Values) crossingBuilder.Build(chunkCoord, record, RailsOf(chunkCoord, record));
             }
             renderer.EndParts(chunkCoord);
+            animator.EndChunk(chunkCoord);
             switchBranches.Clear();
             crossingTracks.Clear();
         }

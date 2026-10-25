@@ -196,10 +196,16 @@ namespace RailWorld
         {
             if (!batches.TryGetValue(chunkCoord, out Batch batch)) return;
 
-            batch.Mesh?.Dispose();
-            batches.Remove(chunkCoord);
-            order.Remove(batch);
             if (batch.Dirty) dirty.Remove(batch);
+            Drop(batch);
+        }
+
+        // Прибирає пачку разом з її буфером у відеокарті. Зі списку змінених її прибирає той, хто кличе
+        private void Drop(Batch batch)
+        {
+            batch.Mesh?.Dispose();
+            batches.Remove(batch.Chunk);
+            order.Remove(batch);
         }
 
         /// <summary>
@@ -261,7 +267,13 @@ namespace RailWorld
             batch.Dirty = false;
             batch.Drawn.Clear();
             int count = batch.Parts.Count;
-            if (count == 0) return;
+            // Деталей цього виду в чанку не лишилося: пачка не тримає буфер до вивантаження чанка. Якщо вони
+            // з'являться знову, пачка створиться заново. Зі списку змінених її прибере PrepareFrame
+            if (count == 0)
+            {
+                Drop(batch);
+                return;
+            }
 
             // Буфер у відеокарті має розмір, заданий при завантаженні меша, і сам не росте: якщо деталей стало
             // більше, меш завантажується заново з більшим буфером, із запасом удвічі

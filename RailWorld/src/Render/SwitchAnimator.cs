@@ -37,6 +37,8 @@ namespace RailWorld
             public double From;
             public long ChangedAtMs = long.MinValue / 2;
             public bool Moving;
+            // Чи перебудова чанка бачила цю стрілку (BeginChunk, EndChunk)
+            public bool Kept;
         }
 
         // Стрілку визначає кінець секції, з якого колія розходиться
@@ -53,9 +55,10 @@ namespace RailWorld
 
             if (!states.TryGetValue(key, out SwitchState state))
             {
-                states.Set(key, new SwitchState { Chunk = chunkCoord.Clone(), Index = section.IndexInChunk, AtStart = atStart, Position = position, From = position });
+                states.Set(key, new SwitchState { Chunk = chunkCoord.Clone(), Index = section.IndexInChunk, AtStart = atStart, Position = position, From = position, Kept = true });
                 return;
             }
+            state.Kept = true;
             if (state.Position == position) return;
 
             // Рух починається з того місця, де стрілка зараз: якщо її перевели назад, не дочекавшись кінця,
@@ -100,6 +103,37 @@ namespace RailWorld
 
                 redraw(state.Chunk, state.Index, state.AtStart);
                 if (!state.Moving) moving.RemoveAt(i);
+            }
+        }
+
+        /// <summary>
+        /// Початок і кінець перебудови чанка, як у гостряків і важелів: між ними перебудова кличе Track для кожної
+        /// стрілки, яку бачить, а стани тих, яких уже немає, наприкінці забуваються. Інакше стрілка, яку прибрали
+        /// й поставили на тому самому кінці секції знову, пам'ятала б положення старої і з'являлася б рухом.
+        /// </summary>
+        public void BeginChunk(Vec3i chunkCoord)
+        {
+            Dictionary<SectionEndKey, SwitchState> inChunk = states.In(chunkCoord);
+            if (inChunk == null) return;
+            foreach (SwitchState state in inChunk.Values) state.Kept = false;
+        }
+
+        public void EndChunk(Vec3i chunkCoord)
+        {
+            Dictionary<SectionEndKey, SwitchState> inChunk = states.In(chunkCoord);
+            if (inChunk == null) return;
+
+            List<SectionEndKey> gone = null;
+            foreach (KeyValuePair<SectionEndKey, SwitchState> pair in inChunk)
+            {
+                if (!pair.Value.Kept) (gone ?? (gone = new List<SectionEndKey>())).Add(pair.Key);
+            }
+            if (gone == null) return;
+            foreach (SectionEndKey key in gone)
+            {
+                SwitchState state = inChunk[key];
+                if (state.Moving) moving.Remove(state);
+                states.Remove(key);
             }
         }
 
