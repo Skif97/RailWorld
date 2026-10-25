@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using ProtoBuf;
 using Vintagestory.API.Common;
-using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 
 namespace RailWorld.src.RailWay

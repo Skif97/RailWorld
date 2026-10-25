@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Vintagestory.API.MathTools;
-using Vintagestory.API.Config;
 
 namespace RailWorld.src.RailWay
 {

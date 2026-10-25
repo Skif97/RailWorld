@@ -1,16 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
-using System.Diagnostics;
 using Vintagestory.API.MathTools;
-using Vintagestory.API.Client;
-using Vintagestory.API.Common;
-using Vintagestory.API.Datastructures;
-using Vintagestory.API.Util;
-using System.Numerics;
-using System.Drawing.Drawing2D;
 using Vintagestory.API.Config;
 
 using RailWorld.src.RailWay;
