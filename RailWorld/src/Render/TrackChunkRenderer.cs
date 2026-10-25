@@ -191,9 +191,13 @@ namespace RailWorld
         /// <summary>
         /// Вигляд колії в чанку може залежати від сусідніх чанків: стрілка чи перетин на межі малюються з секцій
         /// обох, а дані чанків приходять окремо і в довільному порядку. Тому після зміни колії в чанку
-        /// перемальовуються й ті сусіди, що беруть із нього щось (ChunkDependency), трохи згодом і всі разом.
+        /// перемальовуються й ті сусіди, що беруть із нього щось (ChunkDependency), трохи згодом і всі разом:
+        /// поки вантажиться світ, чанки приходять десятками, і сусід перемальовується раз на всі.
+        /// now: колія в чанку змінилася, і сусідів перемальовуємо одразу. Чанки однієї зміни приходять окремо: якщо
+        /// запис стрілки лежить в іншому чанку, ніж її секція, секція спершу малюється зі старим записом, і
+        /// чекати ще 100 мс означало б кілька кадрів неправильної колії на очах у гравця.
         /// </summary>
-        public void QueueNeighbours(Vec3i chunkCoord)
+        public void QueueNeighbours(Vec3i chunkCoord, bool now)
         {
             for (int dx = -1; dx <= 1; dx++)
             {
@@ -209,20 +213,33 @@ namespace RailWorld
                 }
             }
 
-            if (pendingRender.Count == 0 || pendingRenderScheduled) return;
+            if (pendingRender.Count == 0) return;
+            if (now)
+            {
+                RenderPending();
+                return;
+            }
+            if (pendingRenderScheduled) return;
             pendingRenderScheduled = true;
             capi.Event.RegisterCallback(dt =>
             {
                 pendingRenderScheduled = false;
-                var coords = new List<Vec3i>(pendingRender);
-                pendingRender.Clear();
-
-                foreach (Vec3i coord in coords)
-                {
-                    DataInChunk data = DataInChunk.GetClient(coord);
-                    if (!disposed && data != null) Rebuild(coord, data.RailWaySections);
-                }
+                RenderPending();
             }, 100);
+        }
+
+        // Перемальовує сусідів, що чекають; якщо чекати нікому, нічого не робить
+        private void RenderPending()
+        {
+            if (pendingRender.Count == 0) return;
+            var coords = new List<Vec3i>(pendingRender);
+            pendingRender.Clear();
+
+            foreach (Vec3i coord in coords)
+            {
+                DataInChunk data = DataInChunk.GetClient(coord);
+                if (!disposed && data != null) Rebuild(coord, data.RailWaySections);
+            }
         }
 
         // Важіль стрілки. Ручка кидається впоперек колії, покажчик на щоглі розвертається; котра з двох гілок

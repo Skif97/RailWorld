@@ -327,7 +327,9 @@ namespace RailWorld
             selectionRenderer?.MarkChunkDirty(coord);
 
             chunkRenderer?.Rebuild(coord, data.RailWaySections);
-            chunkRenderer?.QueueNeighbours(coord);
+            // Чанк, який клієнт уже знав, змінився: це зміна колії, і сусідів перемальовуємо одразу. Чанк, якого
+            // він не знав, вантажиться, і сусідів можна зібрати разом із рештою, що вантажиться поруч
+            chunkRenderer?.QueueNeighbours(coord, known != null);
             return true;
         }
 
@@ -375,7 +377,7 @@ namespace RailWorld
             chunkRenderer?.Forget(chunkCoord);
             selectionRenderer?.MarkChunkDirty(chunkCoord);
             // Колія в чанку зникла: сусіди могли малювати з нею спільні шпали
-            if (known) chunkRenderer?.QueueNeighbours(chunkCoord);
+            if (known) chunkRenderer?.QueueNeighbours(chunkCoord, false);
             Renderer?.RemoveChunkParts(chunkCoord);
             Renderer?.RemoveRailChunk(chunkCoord);
         }
