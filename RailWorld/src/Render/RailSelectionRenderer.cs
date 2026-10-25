@@ -82,6 +82,17 @@ namespace RailWorld
 
         private Matrixf mat = new Matrixf();
         private float[] basis = Mat4f.Create();
+
+        // Налагодження (.railchunk): стінки чанка, у якому стоїть гравець, і секції, записані в даних цього чанка.
+        // Секція належить чанку за своєю серединою (Section, ModMath.FindChunk), тож біля межі її шпали можуть
+        // заходити в сусідній чанк: підсвітка показує, чия вона насправді
+        private bool showChunk;
+        private MeshRef chunkWalls, chunkSections;
+        // Для якого чанка зібрано chunkSections; X = int.MinValue, якщо ні для якого
+        private readonly Vec3i shownChunk = new Vec3i(int.MinValue, 0, 0);
+        private bool shownDirty;
+        private static readonly Vec4f ChunkWallTint = Tint(255, 220, 60, 35);
+        private static readonly Vec4f ChunkSectionTint = Tint(170, 60, 255, 130);
         private Vec3i chunkCoord = new Vec3i();
 
         public double RenderOrder => 0.6;
@@ -129,6 +140,7 @@ namespace RailWorld
         /// </summary>
         public void MarkChunkDirty(Vec3i coord)
         {
+            if (coord.Equals(shownChunk)) shownDirty = true;
             if (fills.TryGetValue(coord, out ChunkFill old))
             {
                 old.Dispose();
@@ -146,6 +158,7 @@ namespace RailWorld
 
             if (stage == EnumRenderStage.OIT)
             {
+                RenderChunkView(player);
                 RenderFills(player, sel);
                 return;
             }
@@ -173,14 +186,7 @@ namespace RailWorld
             bool showAll = handler.ShowsAllEmptyParts(held);
             if (!sleeperFits && !railFits && !ballastFits && !showAll) return;
 
-            IShaderProgram prog = fillProg;
-            prog.Use();
-            prog.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
-            prog.UniformMatrix("viewMatrix", capi.Render.CameraMatrixOriginf);
-            // Туман кадру, як у колії (RailWayRendererSystem.SetFrameUniforms): заливки ховаються в нього разом із нею
-            prog.Uniform("rgbaFogIn", capi.Render.FogColor);
-            prog.Uniform("fogMinIn", capi.Render.FogMin);
-            prog.Uniform("fogDensityIn", capi.Render.FogDensity);
+            IShaderProgram prog = UseFillProg();
             capi.Render.GlDisableCullFace();
 
             // Заливки збираються лише тоді, коли їх треба намалювати: чанк, якого гравець з деталлю в руках так і не
@@ -238,6 +244,94 @@ namespace RailWorld
 
             capi.Render.GlEnableCullFace();
             prog.Stop();
+        }
+
+        // Вмикає шейдер заливки з тим, що він має знати про кадр
+        private IShaderProgram UseFillProg()
+        {
+            IShaderProgram prog = fillProg;
+            prog.Use();
+            prog.UniformMatrix("projectionMatrix", capi.Render.CurrentProjectionMatrix);
+            prog.UniformMatrix("viewMatrix", capi.Render.CameraMatrixOriginf);
+            // Туман кадру, як у колії (RailWayRendererSystem.SetFrameUniforms): заливки ховаються в нього разом із нею
+            prog.Uniform("rgbaFogIn", capi.Render.FogColor);
+            prog.Uniform("fogMinIn", capi.Render.FogMin);
+            prog.Uniform("fogDensityIn", capi.Render.FogDensity);
+            return prog;
+        }
+
+        /// <summary>Вмикає й вимикає показ чанка гравця (.railchunk). Повертає, чи він тепер увімкнений.</summary>
+        public bool ToggleChunkView()
+        {
+            showChunk = !showChunk;
+            if (!showChunk)
+            {
+                chunkSections?.Dispose();
+                chunkSections = null;
+                shownChunk.Set(int.MinValue, 0, 0);
+            }
+            return showChunk;
+        }
+
+        // Стінки чанка гравця напівпрозорим кубом і його секції фіолетовим
+        private void RenderChunkView(IClientPlayer player)
+        {
+            if (!showChunk || fillProg == null || fillProg.Disposed) return;
+
+            Vintagestory.API.Common.Entities.EntityPos pos = player.Entity.Pos;
+            int size = GlobalConstants.ChunkSize;
+            // Чанк так само, як ModMath.FindChunk
+            int cx = (int)Math.Truncate(pos.X / size), cy = (int)Math.Truncate(pos.Y / size), cz = (int)Math.Truncate(pos.Z / size);
+
+            if (shownDirty || shownChunk.X != cx || shownChunk.Y != cy || shownChunk.Z != cz)
+            {
+                shownChunk.Set(cx, cy, cz);
+                shownDirty = false;
+                chunkSections?.Dispose();
+                chunkSections = BuildSectionsMesh(shownChunk);
+            }
+            if (chunkWalls == null)
+            {
+                // Куб на весь чанк, від його кута; колір дає tint
+                var walls = new MeshData(24, 36, false, false, true, false);
+                double half = size / 2.0;
+                AddBox(walls, WhiteRgba, half, half, half, new Vec3d(1, 0, 0), new Vec3d(0, 1, 0), new Vec3d(0, 0, 1), half, -half, half, half);
+                chunkWalls = capi.Render.UploadMesh(walls);
+            }
+
+            IShaderProgram prog = UseFillProg();
+            capi.Render.GlDisableCullFace();
+            Vec3d cam = player.Entity.CameraPos;
+            mat.Identity().Translate((float)(cx * (double)size - cam.X), (float)(cy * (double)size - cam.Y), (float)(cz * (double)size - cam.Z));
+            prog.UniformMatrix("modelMatrix", mat.Values);
+            DrawFill(prog, chunkSections, ChunkSectionTint);
+            DrawFill(prog, chunkWalls, ChunkWallTint);
+            capi.Render.GlEnableCullFace();
+            prog.Stop();
+        }
+
+        // Бокси цілих секцій, записаних у даних чанка, одним мешем відносно його кута
+        private MeshRef BuildSectionsMesh(Vec3i coord)
+        {
+            List<SectionBox> boxes = system.GetClientBoxes(coord);
+            if (boxes == null) return null;
+
+            int count = 0;
+            foreach (SectionBox box in boxes)
+            {
+                if (box.Part == SectionPart.Whole) count++;
+            }
+            if (count == 0) return null;
+
+            var mesh = new MeshData(24 * count, 36 * count, false, false, true, false);
+            double ox = coord.X * (double)GlobalConstants.ChunkSize, oy = coord.Y * (double)GlobalConstants.ChunkSize, oz = coord.Z * (double)GlobalConstants.ChunkSize;
+            foreach (SectionBox box in boxes)
+            {
+                if (box.Part != SectionPart.Whole) continue;
+                AddBox(mesh, WhiteRgba, box.Center.X - ox, box.Center.Y - oy, box.Center.Z - oz,
+                    box.AxisSide, box.AxisUp, box.AxisAlong, box.HalfSide, box.MinUp, box.MaxUp, box.HalfAlong);
+            }
+            return capi.Render.UploadMesh(mesh);
         }
 
         private void RenderChunkFill(IShaderProgram prog, ChunkFill fill, bool sleeperFits, bool railFits, bool ballastFits)
@@ -380,6 +474,8 @@ namespace RailWorld
             capi.Event.UnregisterRenderer(this, EnumRenderStage.OIT);
             cube?.Dispose();
             selectedFill?.Dispose();
+            chunkWalls?.Dispose();
+            chunkSections?.Dispose();
             foreach (ChunkFill fill in fills.Values)
                 fill.Dispose();
             fills.Clear();

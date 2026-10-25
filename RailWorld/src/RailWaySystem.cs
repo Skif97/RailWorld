@@ -156,6 +156,12 @@ namespace RailWorld
                 .WithDescription("Shows the rail section you looked at last and what the server knows about it")
                 .HandleWith(OnRailInfoCommand);
 
+            // Налагодження: де межі чанка гравця і які секції записані в його даних
+            api.ChatCommands.Create("railchunk")
+                .WithDescription("Shows the chunk you stand in as a translucent box and the rail sections stored in it in purple")
+                .HandleWith(args => TextCommandResult.Success(selectionRenderer?.ToggleChunkView() == true
+                    ? "Чанк і його секції показано" : "Показ чанка вимкнено"));
+
             // Камера пасажира нахиляється разом із вагонеткою
             TrolleyCameraPatch.Init(harmony, api);
         }
