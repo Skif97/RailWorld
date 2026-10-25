@@ -393,10 +393,15 @@ namespace RailWorld.src.RailWay
                 int zone = branch.ZoneSections;
                 int length = zone + SwitchZone.ClearSections;
 
+                // Пройдені секції гілки і сама спільна секція: дійшовши до котроїсь удруге, обхід зупиняється. Петлі,
+                // коротшої за гілку, правила прокладання не дозволяють (мінімальний радіус), тож це запобіжник:
+                // хоч би як колію поклали, запис не повинен проходити ту саму секцію двічі
+                var passed = new HashSet<Section> { trunk };
                 TrackWalker walk = TrackWalker.Entering(mine, mineAtStart, resolve);
                 for (int number = 1; number <= length; number++)
                 {
                     Section current = walk.Section;
+                    if (!passed.Add(current)) break;
                     branch.Members.Add(new SectionLink(current, walk.Entered));
                     if (number <= zone && (!current.RailsInstalled || !current.SleeperInstalled)) partsInPlace = false;
 

@@ -309,9 +309,11 @@ namespace RailWorld
             }
 
             // Чанк гра розпаковує у фоні, а пакет зі зміною приходить одразу: дані чанка, відправленого
-            // до зміни, можуть дійти після неї
+            // до зміни, можуть дійти після неї. Той самий номер теж не приймаємо: сервер збільшує його з кожним
+            // збереженням (DataInChunk.Save), тож це ті самі дані, що вже є, лише вдруге (нашим пакетом і разом із
+            // чанком, який гра пересилає після MarkModified). Так само OnSwitchToggled відкидає пакет із номером, який уже є
             DataInChunk known = DataInChunk.GetClient(chunkCoord);
-            if (known != null && data.Revision < known.Revision) return false;
+            if (known != null && data.Revision <= known.Revision) return false;
 
             Vec3i coord = chunkCoord.Clone();
             clientTrack.Set(coord, data, Handler);

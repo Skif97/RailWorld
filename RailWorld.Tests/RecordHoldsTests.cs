@@ -39,6 +39,29 @@ namespace RailWorld.Tests
         }
 
         [Fact]
+        public void BranchWalkStopsWhenTheTrackComesBackOnItself()
+        {
+            List<Section> trunk = Lay(Point(4, 4, 1, 0), Point(12, 4, 1, 0));
+            Section last = trunk[trunk.Count - 1];
+            // Коротка гілка з трьох секцій, кінець якої зв'язано з її ж початком: петля, яку правила прокладання
+            // не дозволили б, але запис не повинен обходити її по колу
+            List<Section> loop = Lay(Point(12, 4, 1, 0), Point(13.5, 4, 1, 0));
+            double angle = System.Math.PI / 4;
+            List<Section> arc = Lay(Point(12, 4, 1, 0),
+                Point(12 + ArcRadius * System.Math.Sin(angle), 4 + ArcRadius * (1 - System.Math.Cos(angle)), System.Math.Cos(angle), System.Math.Sin(angle)));
+            Join(last, loop[0]);
+            Join(last, arc[0]);
+            Join(loop[loop.Count - 1], loop[0]);
+
+            RailSwitch record = SwitchBuilder.Build(last, false, Resolve);
+            foreach (SwitchBranch branch in record.Branches)
+            {
+                var seen = new HashSet<Section>();
+                foreach (SectionLink link in branch.Members) Assert.True(seen.Add(Resolve(link)), "секцію пройдено двічі");
+            }
+        }
+
+        [Fact]
         public void CrossingHoldsOnlyTheSectionItsReferenceNames()
         {
             List<Section> main = Lay(Point(4, 4, 1, 0), Point(28, 4, 1, 0));
