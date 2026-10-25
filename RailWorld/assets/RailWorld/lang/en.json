@@ -6,5 +6,7 @@
 	"item-creature-trolley-iron": "Trolley",
 	"item-creature-trolley-gold": "Motor trolley",
 	"item-rail": "Rail ({0})",
-	"item-sleeper": "Sleeper ({0})"
+	"item-sleeper": "Sleeper ({0})",
+	"trolley-gear": "Gear {0} of {1}: {2} blocks per second",
+	"trolley-brake": "Brake"
 }

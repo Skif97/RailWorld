@@ -121,8 +121,6 @@ namespace RailWorld
             // Клієнт: вагонетка сама ставить себе на екрані раз на кадр, як це робить човен гри (EntityBoat)
             if (api is ICoreClientAPI clientApi) clientApi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railworld-trolley");
 
-            touchDistanceSq = (double)Math.Max(0.001f, SelectionBox.XSize);
-
             airDrag = properties.Attributes?["airDragFactor"].AsDouble(DefaultAirDrag) ?? DefaultAirDrag;
             motorGears = properties.Attributes?["motorGears"].AsArray<double>(null) ?? new double[0];
 
@@ -442,7 +440,6 @@ namespace RailWorld
             AnimManager.StartAnimation(BumpAnimation);
         }
 
-        // Скрегіт коліс у дуже крутій кривій
         // Скрегіт коліс на крутій кривій: уривок час від часу, а не весь час, поки вагонетка в кривій. Звук один
         // на вагонетку і їде разом з нею
         private void Squeal(Vec3d at, float dt)
@@ -797,15 +794,16 @@ namespace RailWorld
             return motorMode == MotorDrive ? motorGears[GameMath.Clamp(motorGear, 1, motorGears.Length) - 1] : 0;
         }
 
-        // Коротке повідомлення пасажирові посеред екрана: яка передача і швидкість
+        // Коротке повідомлення пасажирові посеред екрана: яка передача і швидкість. Мовою самого гравця: на сервері
+        // в гравців вона може бути різна
         private void ShowGear(Entity passenger)
         {
             IServerPlayer player = (passenger as EntityPlayer)?.Player as IServerPlayer;
             if (player == null) return;
 
             string text = motorMode == MotorDrive
-                ? "Передача " + motorGear + " з " + motorGears.Length + ": " + motorGears[motorGear - 1] + " блоків за секунду"
-                : "Гальмо";
+                ? Lang.GetL(player.LanguageCode, "railworld:trolley-gear", motorGear, motorGears.Length, motorGears[motorGear - 1])
+                : Lang.GetL(player.LanguageCode, "railworld:trolley-brake");
             player.SendIngameError("trolleygear", text);
         }
 

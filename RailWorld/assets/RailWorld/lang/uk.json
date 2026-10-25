@@ -6,5 +6,7 @@
 	"item-creature-trolley-iron": "Вагонетка",
 	"item-creature-trolley-gold": "Моторизована вагонетка",
 	"item-rail": "Рейка ({0})",
-	"item-sleeper": "Шпала ({0})"
+	"item-sleeper": "Шпала ({0})",
+	"trolley-gear": "Передача {0} з {1}: {2} блоків за секунду",
+	"trolley-brake": "Гальмо"
 }
