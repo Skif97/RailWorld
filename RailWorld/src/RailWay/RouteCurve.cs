@@ -104,11 +104,11 @@ namespace RailWorld.src.RailWay
             return BuildPoints(route, resolve, out _);
         }
 
-        // Наскільки можуть розходитися дві висоти, які мають збігатися, блоків
+        // Наскільки можуть розходитися дві висоти, які мають збігатися, блоків. Так само і дві жорсткі ділянки впритул
+        // (стрілки, перетини), між якими немає місця на перехід: колія малюється шматками по чверть блока, і сходинку
+        // між сусідніми точками видно, а правила форми (RouteRules) міряють злам хордами в секцію і дрібну сходинку
+        // всередині хорди не бачать
         private const double HeightTolerance = 0.02;
-        // Різниця висот сусідніх місць маршруту, з якої це вже сходинка, а не похибка: так перевіряються всі
-        // переходи по висоті біля стрілок, і там, де ділянки двох стрілок зустрілися, теж
-        private const double StepTolerance = HeightTolerance * 5;
 
         /// <summary>
         /// Те саме, але ще каже, чи можна цей маршрут будувати. conflict це перша причина, чому не можна, або null:
@@ -743,7 +743,7 @@ namespace RailWorld.src.RailWay
                 // Жорстка ділянка впритул: переходу між ними немає, тож висоти мусять збігатися
                 if (Math.Abs(hit - edge) < 2)
                 {
-                    if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > StepTolerance)
+                    if (Math.Abs(points[hit].position.Y - points[edge].position.Y) > HeightTolerance)
                         conflict = conflict ?? "між перетином і стрілкою чи іншим перетином не лишається місця на перехід по висоті";
                     return;
                 }
@@ -920,7 +920,7 @@ namespace RailWorld.src.RailWay
             {
                 // Стрілки на обох кінцях, і ділянки поверх двох колій зустрілися або перекрилися.
                 // Де вони вимагали різної висоти, це вже записано; якщо ж висоти зійшлися, маршрут годиться
-                if (Math.Abs(points[start.Virtual].position.Y - points[Math.Min(start.Virtual + 1, count - 1)].position.Y) > StepTolerance)
+                if (Math.Abs(points[start.Virtual].position.Y - points[Math.Min(start.Virtual + 1, count - 1)].position.Y) > HeightTolerance)
                     conflict = conflict ?? "між двома стрілками не лишається місця на перехід по висоті";
                 return true;
             }
@@ -971,7 +971,7 @@ namespace RailWorld.src.RailWay
 
                 if (end.Virtual - start.Virtual < 2)
                 {
-                    if (Math.Abs(points[start.Virtual].position.Y - points[end.Virtual].position.Y) > StepTolerance)
+                    if (Math.Abs(points[start.Virtual].position.Y - points[end.Virtual].position.Y) > HeightTolerance)
                         conflict = conflict ?? "між двома стрілками не лишається місця на перехід по висоті";
                     return true;
                 }
@@ -992,7 +992,7 @@ namespace RailWorld.src.RailWay
                     Transition(points, start.Virtual, target, VirtualSlope(points, run, start.Virtual, 1),
                         SlopeAlong(points[target].tangent, 1), run, shape, 0);
                 }
-                else if (Math.Abs(points[start.Virtual].position.Y - points[target].position.Y) > StepTolerance)
+                else if (Math.Abs(points[start.Virtual].position.Y - points[target].position.Y) > HeightTolerance)
                 {
                     conflict = conflict ?? "стрілка і наступна точка маршруту на різній висоті, а місця на перехід немає";
                 }
@@ -1009,7 +1009,7 @@ namespace RailWorld.src.RailWay
                     Transition(points, target, end.Virtual, SlopeAlong(points[target].tangent, 1),
                         VirtualSlope(points, run, end.Virtual, -1), run, shape, 1);
                 }
-                else if (Math.Abs(points[end.Virtual].position.Y - points[target].position.Y) > StepTolerance)
+                else if (Math.Abs(points[end.Virtual].position.Y - points[target].position.Y) > HeightTolerance)
                 {
                     conflict = conflict ?? "стрілка і попередня точка маршруту на різній висоті, а місця на перехід немає";
                 }
