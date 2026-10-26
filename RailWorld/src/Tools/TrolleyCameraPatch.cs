@@ -8,15 +8,24 @@ using Vintagestory.Client.NoObf;
 namespace RailWorld
 {
     /// <summary>
-    /// Поки гравець сидить у вагонетці, нахиляє його камеру разом із нею: на ухилі й у повороті з нахилом полотна
-    /// горизонт іде так, ніби гравець жорстко сидить у кузові. Крутити головою при цьому можна як завжди.
-    /// Вбудовується в Camera.Update гри, одразу після того як вона порахувала матрицю камери.
+    /// Поки гравець сидить у вагонетці, нахиляє його погляд разом із нею (TrolleySeat.ViewTilt). Підйом полотна
+    /// вздовж погляду додається до тангажу погляду гравця, тим самим кутом, яким гравець крутить мишкою: щокадру
+    /// лише зміна з минулого кадру, тож мишкою він далі крутить відносно кузова, а камера, промінь вибору блока і
+    /// відсікання чанків беруть його з одного місця. Ванільний режим сидіння Push, що мав би робити те саме, на
+    /// крутій спіралі тягнув погляд до межі, тож зміну переносимо самі. Підйом полотна впоперек погляду хилить
+    /// горизонт: камера обертається навколо напрямку погляду, а це центр екрана не зсуває. Повертаються
+    /// обидві матриці камери: CameraMatrixOrigin, якою малюється світ, і CameraMatrix, з якої гра будує піраміду
+    /// видимості для відсікання чанків (ClientMain, CalcFrustumEquations); інакше на краях екрана було б видно діри.
+    /// Вбудовується в Camera.Update гри, одразу після того як вона порахувала обидві матриці.
     /// </summary>
     public static class TrolleyCameraPatch
     {
         private static ICoreClientAPI capi;
-        private static Matrixf tmp = new Matrixf();
-        private static double[] axis = new double[3];
+        private static readonly Matrixf tmp = new Matrixf();
+        private static readonly double[] rotation = Mat4d.Create();
+        private static readonly double[] identity = Mat4d.Create();
+        // Підйом полотна вздовж погляду, уже доданий до тангажу гравця; NaN, поки гравець не в вагонетці
+        private static double appliedPitch = double.NaN;
 
         public static void Init(Harmony harmony, ICoreClientAPI api)
         {
@@ -40,21 +49,31 @@ namespace RailWorld
         public static void UpdatePostfix(Camera __instance)
         {
             EntityPlayer player = capi?.World?.Player?.Entity;
-            if (!(player?.MountedOn is TrolleySeat seat) || seat.Entity == null) return;
+            if (!(player?.MountedOn is TrolleySeat seat) || seat.Entity == null)
+            {
+                appliedPitch = double.NaN;
+                return;
+            }
 
-            TrolleySeat.GetTrolleyFrame(seat.Entity, tmp, out _, out Vec3d up);
+            TrolleySeat.ViewTilt(seat.Entity, tmp, player.Pos.Yaw, out double viewPitch, out double roll);
 
-            // Найкоротший поворот, що переводить вертикаль у верх вагонетки: вісь = вертикаль × верх
-            double angle = Math.Acos(GameMath.Clamp(up.Y, -1, 1));
-            double axisLength = Math.Sqrt(up.Z * up.Z + up.X * up.X);
-            if (angle < 1e-4 || axisLength < 1e-6) return;
+            // Погляд іде за кузовом: додаємо лише те, на скільки підйом полотна вздовж погляду змінився з минулого
+            // кадру. У гравця менший тангаж це погляд вище. Щойно сівши, нічого не додаємо: погляд лишається, як був
+            if (!double.IsNaN(appliedPitch))
+            {
+                float pitch = GameMath.Clamp(player.Pos.Pitch - (float)(viewPitch - appliedPitch), 1.5857964f, 4.697389f);
+                player.Pos.Pitch = pitch;
+                capi.Input.MousePitch = pitch;
+            }
+            appliedPitch = viewPitch;
 
-            axis[0] = up.Z / axisLength;
-            axis[1] = 0;
-            axis[2] = -up.X / axisLength;
+            if (Math.Abs(roll) < 1e-4) return;
 
-            // Камера жорстко сидить у нахиленій вагонетці, тому світ для неї повернутий у зворотний бік
-            Mat4d.Rotate(__instance.CameraMatrixOrigin, __instance.CameraMatrixOrigin, -angle, axis);
+            // Обертання в просторі камери навколо осі погляду (Z камери): множиться зліва на матрицю камери. Гравця
+            // нахиляє разом із кузовом, тож світ для нього повертається у зворотний бік: де полотно вище, горизонт нижче
+            Mat4d.Rotate(rotation, Mat4d.Identity(identity), -roll, 0, 0, 1);
+            Mat4d.Mul(__instance.CameraMatrix, rotation, __instance.CameraMatrix);
+            Mat4d.Mul(__instance.CameraMatrixOrigin, rotation, __instance.CameraMatrixOrigin);
             for (int i = 0; i < 16; i++)
             {
                 __instance.CameraMatrixOriginf[i] = (float)__instance.CameraMatrixOrigin[i];

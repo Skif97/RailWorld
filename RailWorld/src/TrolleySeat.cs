@@ -48,6 +48,24 @@ namespace RailWorld
             up = new Vec3d(u.X, u.Y, u.Z);
         }
 
+        /// <summary>
+        /// Як нахилене полотно під вагонеткою відносно погляду пасажира, що дивиться з курсом yaw (кут гравця):
+        /// pitch це підйом полотна вздовж погляду, радіани, додатний, якщо попереду вище; roll це підйом полотна
+        /// впоперек погляду, додатний, якщо праворуч вище. Пасажир сидить у кузові жорстко, тож тангаж погляду
+        /// йде за pitch, а горизонт хилиться на roll (обидва ставить TrolleyCameraPatch).
+        /// </summary>
+        public static void ViewTilt(Entity trolley, Matrixf tmp, double yaw, out double pitch, out double roll)
+        {
+            GetTrolleyFrame(trolley, tmp, out _, out Vec3d up);
+            // Погляд гравця по горизонталі, як у EntityPos.GetViewVector при горизонтальному тангажі, і праворуч від нього
+            double hx = Math.Sin(yaw), hz = Math.Cos(yaw);
+            double rx = -hz, rz = hx;
+            // Полотно це площина з нормаллю up: на одиницю шляху в напрямку d вона піднімається на -(up · d) / up.Y
+            double upY = Math.Max(up.Y, 1e-6);
+            pitch = Math.Atan(-(up.X * hx + up.Z * hz) / upY);
+            roll = Math.Atan(-(up.X * rx + up.Z * rz) / upY);
+        }
+
         // Поворот моделі вагонетки, як його збирає рендер: Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll) * Rx(нахил полотна).
         // Нахил полотна лежить не в кутах сутності, а окремо, див. ModMath.TrackFrameToEntityAngles
         private static void RotateLikeRenderer(Entity trolley, Matrixf matrix)
@@ -84,7 +102,7 @@ namespace RailWorld
 
                 // Кут сидіння це курс вагонетки по горизонталі. Він не має залежати від гравця: гра додає
                 // до погляду гравця зміну цього кута, і якщо брати його з гравця, погляд розкручується сам від себе.
-                // Нахили вагонетки камері передає TrolleyCameraPatch, тому тут їх немає
+                // Нахили вагонетки до погляду переносить TrolleyCameraPatch, тому тут їх немає
                 seatPos.Pitch = 0;
                 seatPos.Roll = 0;
                 seatPos.Yaw = (float)Math.Atan2(forwardX, forwardZ);
