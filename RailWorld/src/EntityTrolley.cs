@@ -4,6 +4,8 @@ using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Config;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using Vintagestory.API.Common.Entities;
 using RailWorld.src.RailWay;
 using RailWorld.src.Items;
@@ -44,7 +46,7 @@ namespace RailWorld
         // На якій за рахунком секції поспіль без шпали вагонетка сходить з колії
         public const int MaxSectionsWithoutSleeper = 5;
 
-        // Стан на колії. Живе на сервері, зберігається в Attributes сутності
+        // Стан на колії. Живе на сервері, зберігається в Attributes сутності, коли гра її записує (ToBytes)
         private bool onRail;
         private Vec3i railChunk = new Vec3i();
         private int railIndex;
@@ -531,18 +533,52 @@ namespace RailWorld
             WatchedAttributes.MarkPathDirty(key);
         }
 
-        public override void OnGameTick(float dt)
+        // Стан на колії пишеться в Attributes лише тоді, коли гра записує сутність (збереження світу, вивантаження
+        // чанка), а не щотіку: так само гра пише стан сидінь лише при серіалізації (EntityBehaviorSeatable.ToBytes)
+        public override void ToBytes(BinaryWriter writer, bool forClient)
         {
-            base.OnGameTick(dt);
-            // Клієнт ставить вагонетку на екрані сам, раз на кадр: див. ClientFrame
-            if (Api.Side == EnumAppSide.Client) return;
-            if (!onRail) return;
-
-            TickOnRail(dt);
-            SaveRailState();
+            if (!forClient && Api?.Side == EnumAppSide.Server) SaveRailState();
+            base.ToBytes(writer, forClient);
         }
 
-        private enum EnterResult { Entered, Blocked, Derailed }
+        // Секції, на які вагонетка заїхала в кроці фізики: сніг з них розчищає основний потік (AfterPhysicsTickOnRail)
+        private readonly List<Section> snowToClear = new List<Section>();
+        // Чанк, на який вагонетка чекає: він не завантажений, або даних колії в ньому ще немає в кеші сервера (крок
+        // фізики їх лише читає). Дані дорозбирає основний потік; незавантажений чанк завантажить гра, коли біля нього
+        // буде гравець. Вагонетка поки стоїть на місці, зберігаючи і положення, і швидкість, і їде далі, щойно
+        // чанк готовий
+        private Vec3i awaitedChunk;
+        // Чанк, про який основний потік уже з'ясував, що колії в ньому немає: туди вагонетка не їде, а сходить
+        private Vec3i chunkWithoutTrack;
+
+        /// <summary>
+        /// Сервер, крок фізики (EntityBehaviorTrolleyPhysics): веде вагонетку колією. Гра може робити його в робочому
+        /// потоці, тому тут дані колії лише читаються, а спільне змінює AfterPhysicsTickOnRail.
+        /// </summary>
+        public void PhysicsTickOnRail(float dt)
+        {
+            if (onRail) TickOnRail(dt);
+        }
+
+        /// <summary>
+        /// Сервер, основний потік, після всієї фізики тіку: розчищає сніг із секцій, на які вагонетка заїхала, і
+        /// дорозбирає дані чанка, на які вона чекає.
+        /// </summary>
+        public void AfterPhysicsTickOnRail()
+        {
+            foreach (Section section in snowToClear) TrackBed.ClearSnow(World, section, TrackBed.SnowAfterTrolley);
+            snowToClear.Clear();
+
+            if (awaitedChunk == null) return;
+            if (World.BlockAccessor.GetChunk(awaitedChunk.X, awaitedChunk.Y, awaitedChunk.Z) != null && DataInChunk.Get(World, awaitedChunk) == null)
+            {
+                chunkWithoutTrack = awaitedChunk;
+            }
+            awaitedChunk = null;
+        }
+
+        // Wait: наступний чанк не завантажений або його даних ще немає в кеші сервера; вагонетка стоїть на краю, швидкість зберігає
+        private enum EnterResult { Entered, Wait, Derailed }
 
         // Рух рахується аналітично по секціях: на секції прискорення стале, тому швидкість у її кінці
         // береться з v² = u² + 2as, а час проїзду з t = (v - u) / a. Результат не залежить від частоти тіків
@@ -715,7 +751,7 @@ namespace RailWorld
 
                 EnterResult result = EnterNext(ref section, dir < 0);
                 if (result == EnterResult.Derailed) return;
-                if (result == EnterResult.Blocked) break;
+                if (result == EnterResult.Wait) break;
             }
 
             RailPose.Place(Pos, section, railS, SelectionBox.Y2 / 2, railFacing, out float cant);
@@ -845,18 +881,10 @@ namespace RailWorld
         {
             // Лише читаємо колію: вагонетка її не міняє
             SectionStep next = SectionLinker.Next(section, leaveAtStart, findServerSection ?? (findServerSection = ServerSection));
+            // Далі колія є, але її чанк не завантажений чи ще не прочитаний: стоїмо на краю, поки не буде готовий
+            if (next == null && awaitedChunk != null) return EnterResult.Wait;
             if (next == null)
             {
-                // Зв'язок є, але секцію за ним не прочитати, бо її чанк не завантажений: стоїмо на краю.
-                // Якщо чанк завантажений, а секції немає, колія там скінчилася
-                SectionLink active = section.GetActiveLink(leaveAtStart);
-                if (active != null && World.BlockAccessor.GetChunk(active.ChunkX, active.ChunkY, active.ChunkZ) == null)
-                {
-                    // Далі колія є, але її чанк не завантажений: стоїмо на краю
-                    railVelocity = 0;
-                    return EnterResult.Blocked;
-                }
-
                 // Колія скінчилася
                 Derail(section);
                 return EnterResult.Derailed;
@@ -887,8 +915,8 @@ namespace RailWorld
             double speed = Math.Abs(railVelocity);
             section = next.Section;
 
-            // Вагонетка розчищає колію, якою їде
-            TrackBed.ClearSnow(World, section, TrackBed.SnowAfterTrolley);
+            // Вагонетка розчищає колію, якою їде. Сніг це блоки світу, тож міняє їх основний потік
+            snowToClear.Add(section);
 
             // Розгінні рейки: один раз при наїзді на секцію, в напрямку руху.
             // Рахуємо як з'їзд із гірки: v² = u² + 2gh
@@ -1006,13 +1034,24 @@ namespace RailWorld
             return GetSection(link.Chunk, link.Index, out _);
         }
 
+        // Дані колії лише з кешу сервера, без розбору й запису: так їх можна читати і з кроку фізики. Яких у кеші ще
+        // немає, ті для вагонетки ніби в незавантаженому чанку: вона чекає, поки їх дорозбирає основний потік
         private Section GetSection(Vec3i chunk, int index, out bool chunkLoaded)
         {
             chunkLoaded = World.BlockAccessor.GetChunk(chunk.X, chunk.Y, chunk.Z) != null;
-            if (!chunkLoaded) return null;
+            if (!chunkLoaded)
+            {
+                awaitedChunk ??= chunk.Clone();
+                return null;
+            }
 
-            DataInChunk data = DataInChunk.Get(World, chunk);
-            if (data == null) return null;
+            if (!DataInChunk.TryGetServerCached(chunk, out DataInChunk data))
+            {
+                if (chunk.Equals(chunkWithoutTrack)) return null;
+                awaitedChunk ??= chunk.Clone();
+                chunkLoaded = false;
+                return null;
+            }
             data.RailWaySections.TryGetValue(index, out Section section);
             return section;
         }

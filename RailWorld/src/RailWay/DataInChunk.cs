@@ -123,6 +123,16 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Дані колії чанка з кешу сервера, лише читання: нічого не розбирає і нічого не дописує, тож це можна
+        /// викликати з кроку фізики, поки основний потік чекає на неї. false, якщо чанка в кеші ще немає (його
+        /// дорозбирає Get в основному потоці) або колії в ньому немає.
+        /// </summary>
+        public static bool TryGetServerCached(Vec3i chunkCoord, out DataInChunk data)
+        {
+            return serverCache.TryGetValue(chunkCoord, out data);
+        }
+
+        /// <summary>
         /// Дані колії чанка або null, якщо чанк не завантажений чи колії в ньому немає.
         /// </summary>
         public static DataInChunk Get(IWorldAccessor world, Vec3i chunkCoord)

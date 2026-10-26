@@ -25,7 +25,7 @@
 		],
 		"behaviors": [
 			{
-				"code": "controlledphysics",
+				"code": "trolleyphysics",
 				"stepHeight": 0.2
 			},
 			{ "code": "interpolateposition" },
@@ -35,7 +35,7 @@
 	"server": {
 		"behaviors": [
 			{
-				"code": "controlledphysics",
+				"code": "trolleyphysics",
 				"stepHeight": 0.2
 			},
 			{ "code": "seatable" }
