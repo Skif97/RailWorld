@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Vintagestory.API.MathTools;
 
@@ -352,7 +352,7 @@ namespace RailWorld.src.RailWay
 
         // Дуга, якою маршрут скруглює кут, не тісніша за найменший радіус із невеликим запасом: крива Безьє
         // повторює дугу кола не точно і місцями вийшла б на волосину крутішою
-        private const double CornerRadiusFactor = 1.05;
+        internal const double CornerRadiusFactor = 1.05;
 
         // Радіус дуги, якою маршрут сходить з напрямку першої точки і заходить у напрямок останньої, у найменших
         // радіусах: спершу пробуємо просторішу, і лише якщо вона не вміщається, найтіснішу дозволену
@@ -499,8 +499,13 @@ namespace RailWorld.src.RailWay
             // точній точці з дотичної. Ухил у куті й точній точці ще обмежується так, щоб висота між вузлами не
             // виходила за висоти самих вузлів (ModMath.MonotoneSlope): інакше перед підйомом колія спершу пірнала
             // нижче за початок. На кінцях і на колії ухил не змінюється, бо там колія має зійтися з наявною
+            // Відстань уздовж справжнього шляху, а не ламаної: у куті колія йде дугою, коротшою за дві його частини
+            // ламаної (2 · cut), і якби висота розкладалася по ламаній, на дузі ухил був би крутіший, ніж на прямих
+            // поруч (на 90° на 27%). Вузол кута стоїть посередині своєї дуги
+            double[] arc = new double[n];
+            for (int i = 0; i < n; i++) arc[i] = ArcLength(nodes[i], need[i]);
             double[] at = new double[n];
-            for (int i = 1; i < n; i++) at[i] = at[i - 1] + leg[i - 1];
+            for (int i = 1; i < n; i++) at[i] = at[i - 1] + leg[i - 1] - Cut(nodes[i - 1]) - Cut(nodes[i]) + arc[i - 1] / 2 + arc[i] / 2;
 
             var knots = new List<int>();
             for (int i = 0; i < n; i++)
@@ -613,8 +618,8 @@ namespace RailWorld.src.RailWay
                 double inLength = leg[i - 1], outLength = leg[i];
                 double inPart = cut / inLength, outPart = cut / outLength;
 
-                double inY = Height(at[i] - cut, out double inSlope);
-                double outY = Height(at[i] + cut, out double outSlope);
+                double inY = Height(at[i] - arc[i] / 2, out double inSlope);
+                double outY = Height(at[i] + arc[i] / 2, out double outSlope);
 
                 result.Add(new RoutePoint
                 {
@@ -746,6 +751,22 @@ namespace RailWorld.src.RailWay
                 }
             }
             return null;
+        }
+
+        // Скільки ламаної забирає дуга кута з кожного боку; 0 для вузла, що не кут
+        private static double Cut(Node node)
+        {
+            return node.Corner ? node.Cut : 0;
+        }
+
+        // Довжина дуги кута в плані: cut · θ / tan(θ/2). Кут без дуги (маршрут іде крізь нього, бо дуга не потрібна чи
+        // не вміщається) лишає ламану як є, і його «дуга» це ті самі 2 · cut; так само для вузла, що не кут
+        private static double ArcLength(Node node, double need)
+        {
+            if (!node.Corner) return 0;
+            double cut = node.Cut, turn = node.Turn;
+            if (need <= 0 || turn < 1e-6 || 2 * cut / Math.Tan(turn / 2) * Math.Sin(turn / 2) < RouteCurve.MinSpan) return 2 * cut;
+            return cut * turn / Math.Tan(turn / 2);
         }
 
         // Ухил напрямку: на скільки блоків він піднімається на блок шляху в плані

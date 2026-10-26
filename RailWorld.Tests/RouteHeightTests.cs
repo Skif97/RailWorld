@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RailWorld.src.RailWay;
 using Vintagestory.API.MathTools;
@@ -64,6 +65,44 @@ namespace RailWorld.Tests
             int middle = points.Count / 2;
             Vec3d a = points[middle - 2].position, b = points[middle + 2].position;
             Assert.Equal(0.2, (b.Y - a.Y) / RouteBuilder.HorizontalDistance(a, b), 2);
+        }
+
+        [Theory]
+        [InlineData(20, 0.1)]
+        [InlineData(30, 0.15)]
+        public void ClimbInATurnHasTheSameSlopeAlongTheWholeTrack(int side, double slope)
+        {
+            // Рівний підйом через кут на 90°: кінці на стиках колії з ухилом slope, кут на блоці посередині по висоті,
+            // кінець на висоті slope на довжину самої колії. Висота розкладається по довжині колії, а не ламаної, тож
+            // ухил скрізь той самий; по ламаній дуга, коротша за свої дві частини ламаної, мала б ухил крутіший
+            RouteMarker Joint(double x, double y, double z, double hx, double hz) => new RouteMarker
+            {
+                Block = new BlockPos((int)Math.Floor(x), (int)Math.Floor(y), (int)Math.Floor(z), 0),
+                Position = new Vec3d(x, y, z),
+                Heading = new Vec3d(hx, slope, hz).Normalize(),
+                Snapped = true, Exact = true, Aimed = true
+            };
+            List<PointOnBezierCurve> Route(double length)
+            {
+                RouteMarker corner = RouteMarker.OnBlock(new BlockPos(side, 0, 0, 0), 0);
+                corner.Position = new Vec3d(side + 0.5, 10 + slope * length / 2, 0.5);
+                return Cut(Joint(0.5, 10, 0.5, 1, 0), corner, Joint(side + 0.5, 10 + slope * length, side + 0.5, 0, 1));
+            }
+            // Довжину колії видно лише з самого маршруту: скільки кут забирає від прямих, вирішує RouteBuilder
+            List<PointOnBezierCurve> first = Route(2 * side);
+            double planLength = 0;
+            for (int i = 1; i < first.Count; i++) planLength += RouteBuilder.HorizontalDistance(first[i - 1].position, first[i].position);
+            List<PointOnBezierCurve> points = Route(planLength);
+
+            double steepest = 0, gentlest = double.MaxValue;
+            for (int i = 4; i + 4 < points.Count; i += 2)
+            {
+                Vec3d a = points[i - 2].position, b = points[i + 2].position;
+                double s = (b.Y - a.Y) / RouteBuilder.HorizontalDistance(a, b);
+                steepest = Math.Max(steepest, s);
+                gentlest = Math.Min(gentlest, s);
+            }
+            Assert.True(steepest < gentlest * 1.05, "ухил від " + gentlest.ToString("0.000") + " до " + steepest.ToString("0.000") + " при заданому " + slope);
         }
     }
 }
