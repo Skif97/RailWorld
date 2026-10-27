@@ -605,7 +605,9 @@ namespace RailWorld
             if (session.HasChanges) session.SaveAll();
         }
 
-        // Що сервер знає про секцію: її деталі, сусідів і стрілки
+        // Що сервер знає про секцію: її деталі, сусідів і стрілки. Лише читає: записи стрілок показує такими, якими
+        // вони збережені, і нічого не перераховує, тож команда не міняє світ і не розсилає чанків. Сесія тут лише
+        // для того, щоб кожен чанк прочитати один раз
         private string DescribeSection(Vec3i chunk, int index)
         {
             RailDataSession session = new RailDataSession(sapi.World);
@@ -615,8 +617,7 @@ namespace RailWorld
 
             string start = DescribeEnd(session, section, true);
             string end = DescribeEnd(session, section, false);
-            string switches = DescribeSwitches(session, data, section);
-            if (session.HasChanges) session.SaveAll();
+            string switches = DescribeSwitches(data, section);
 
             return string.Format(
                 // Чат гри розбирає текст як розмітку: кутових дужок у ньому бути не може
@@ -626,7 +627,7 @@ namespace RailWorld
         }
 
         // Що сервер записав про стрілки, до яких секція має стосунок
-        private static string DescribeSwitches(RailDataSession session, DataInChunk data, Section section)
+        private static string DescribeSwitches(DataInChunk data, Section section)
         {
             string text = "";
             for (int end = 0; end < 2; end++)
@@ -634,12 +635,16 @@ namespace RailWorld
                 bool atStart = end == 0;
                 string name = atStart ? "start" : "end";
 
-                RailSwitch own = section.HasSwitch(atStart) ? SwitchRegistry.Get(session, section.ChunkAddres, section.IndexInChunk, atStart) : null;
+                RailSwitch own = null;
+                if (section.HasSwitch(atStart) && !data.Switches.TryGetValue(RailSwitch.KeyOf(section.IndexInChunk, atStart), out own))
+                {
+                    text += string.Format(" Switch at {0}: no record yet.", name);
+                }
                 if (own != null && own.Branches.Count == 2)
                 {
                     SwitchBranch a = own.Branches[0], b = own.Branches[1];
-                    text += string.Format(" Switch at {0}: complete {1}, resolved {2}, position {3}; blade {4}, frog {5}-{6}, shared sleepers {7}, zone {8}, members {9}/{10}.",
-                        name, own.Complete, own.Resolved, section.GetSwitchPosition(atStart), a.BladeSections, a.FrogFrom, a.FrogTo,
+                    text += string.Format(" Switch at {0}: complete {1}, resolved {2}, outdated {3}, position {4}; blade {5}, frog {6}-{7}, shared sleepers {8}, zone {9}, members {10}/{11}.",
+                        name, own.Complete, own.Resolved, own.Outdated, section.GetSwitchPosition(atStart), a.BladeSections, a.FrogFrom, a.FrogTo,
                         a.PairSections, a.ZoneSections, a.Members.Count, b.Members.Count);
                 }
 
