@@ -73,7 +73,7 @@ namespace RailWorld
         /// </summary>
         public const int Variants = 4;
 
-        public RailSectionRenderer(ICoreClientAPI capi, ItemStack itemStack) : base(capi, ItemMesh(capi, itemStack))
+        public RailSectionRenderer(ICoreClientAPI capi, LightProbe lights, ItemStack itemStack) : base(capi, lights, ItemMesh(capi, itemStack))
         {
             if (Mesh == null) return;
 

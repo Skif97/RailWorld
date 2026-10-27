@@ -305,6 +305,9 @@ namespace RailWorld
 
         private const string SpinAnimation = "spin";
         private const string SwayAnimation = "sway";
+        // IsAnimationActive приймає params string[]: масив створюється щоразу, тож ці два готові. Кличеться щокадру
+        private static readonly string[] SpinOnly = { SpinAnimation };
+        private static readonly string[] SwayOnly = { SwayAnimation };
         private const string BumpAnimation = "bump";
 
         // Радіус колеса, блоків: з нього кут, на який колеса повертаються за пройдений шлях
@@ -400,7 +403,7 @@ namespace RailWorld
         {
             wheelTurns += rolled / (2 * Math.PI * WheelRadius);
 
-            if (!AnimManager.IsAnimationActive(SpinAnimation)) AnimManager.StartAnimation(SpinAnimation);
+            if (!AnimManager.IsAnimationActive(SpinOnly)) AnimManager.StartAnimation(SpinAnimation);
             RunningAnimation spin = AnimManager.GetAnimationState(SpinAnimation);
             if (spin == null) return;
 
@@ -417,7 +420,7 @@ namespace RailWorld
         {
             if (moving < 0.05f)
             {
-                if (AnimManager.IsAnimationActive(SwayAnimation)) AnimManager.StopAnimation(SwayAnimation);
+                if (AnimManager.IsAnimationActive(SwayOnly)) AnimManager.StopAnimation(SwayAnimation);
                 return;
             }
 
@@ -427,7 +430,7 @@ namespace RailWorld
                 swayMeta = declared.Clone();
             }
             swayMeta.AnimationSpeed = SwayBaseSpeed * (1 + SwayCurveSpeedup * curved);
-            if (!AnimManager.IsAnimationActive(SwayAnimation)) AnimManager.StartAnimation(swayMeta);
+            if (!AnimManager.IsAnimationActive(SwayOnly)) AnimManager.StartAnimation(swayMeta);
         }
 
         // Поштовх: кузов коротко підскакує на підвісці. Анімація грає один раз і сама зупиняється

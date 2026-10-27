@@ -214,7 +214,8 @@ namespace RailWorld
             else
             {
                 // Зі шпалою чи рейкою в руці: чанк гравця і сусідні
-                Vec3d pos = player.Entity.Pos.XYZ;
+                // Pos.XYZ щоразу новий Vec3d, тож координати беремо прямо
+                var pos = player.Entity.Pos;
                 int cx = (int)Math.Floor(pos.X / GlobalConstants.ChunkSize);
                 int cy = (int)Math.Floor(pos.Y / GlobalConstants.ChunkSize);
                 int cz = (int)Math.Floor(pos.Z / GlobalConstants.ChunkSize);

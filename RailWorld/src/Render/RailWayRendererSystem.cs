@@ -31,8 +31,9 @@ namespace RailWorld
         private List<IInstancedParts> instanced = new List<IInstancedParts>();
 
         private long lightListenerId;
-        // Один на рендер, а не новий щотакту: між тактами він лише очищається (LightProbe.Clear)
-        private LightProbe lightProbe;
+        // Світло блоків для всіх рендерів деталей: і для такту світла, і коли деталі ставляться при перебудові чанка.
+        // Один на рендер, а не новий щоразу: на початку такту і перебудови він лише очищається (LightProbe.Clear)
+        private readonly LightProbe lightProbe;
         // Прив'язка текстури гостряків перед кожним із них. Один делегат на рендер, а не новий щокадру
         private readonly Action<int> bindBladeTexture;
 
@@ -71,6 +72,7 @@ void main()
         public RailWayRendererSystem(ICoreClientAPI capi)
         {
             this.capi = capi;
+            lightProbe = new LightProbe(capi.World.BlockAccessor);
             bindBladeTexture = textureId => chunkProg.BindTexture2D("tex", textureId, 0);
             // Before: готуємо буфери раз на кадр. Далі ті самі буфери малюються в картах тіней і в основному проході
             capi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railsection-prepare");
@@ -94,7 +96,7 @@ void main()
             {
                 ItemStack stack = CreateStack("sleeper", material);
                 if (stack == null) return;
-                renderer = new TrackPartRenderer(capi, stack);
+                renderer = new TrackPartRenderer(capi, lightProbe, stack);
                 partRenderers[material] = renderer;
                 instanced.Add(renderer);
             }
@@ -202,7 +204,7 @@ void main()
             string key = "#" + part + "-" + material;
             if (!partRenderers.TryGetValue(key, out var renderer))
             {
-                renderer = new TrackPartRenderer(capi, TesselatePart(part, material));
+                renderer = new TrackPartRenderer(capi, lightProbe, TesselatePart(part, material));
                 partRenderers[key] = renderer;
                 instanced.Add(renderer);
             }
@@ -260,7 +262,7 @@ void main()
             MeshData[] pages = mesh.SplitByTextureId();
             for (int page = 0; page < pages.Length; page++)
             {
-                var renderer = new TrackPartRenderer(capi, pages[page], mesh.TextureIds[page]);
+                var renderer = new TrackPartRenderer(capi, lightProbe, pages[page], mesh.TextureIds[page]);
                 partRenderers["@" + key + "#" + page] = renderer;
                 instanced.Add(renderer);
                 renderers.Add(renderer);
@@ -336,7 +338,7 @@ void main()
             RailSectionRenderer renderer = RailRenderer(material);
             if (renderer == null) return;
 
-            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
+            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi, lightProbe);
             var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
 
             long hash = Fingerprint.Mix(Fingerprint.Start, material);
@@ -360,7 +362,7 @@ void main()
             RailSectionRenderer renderer = RailRenderer(material);
             if (renderer == null) return true;
 
-            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi);
+            if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi, lightProbe);
             var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
 
             // Відбиток обох крайніх положень, а не теперішнього: рух його не міняє
@@ -402,7 +404,7 @@ void main()
 
             ItemStack stack = CreateStack("rail", material);
             if (stack == null) return null;
-            renderer = new RailSectionRenderer(capi, stack);
+            renderer = new RailSectionRenderer(capi, lightProbe, stack);
             railRenderers[material] = renderer;
             instanced.Add(renderer);
             return renderer;
@@ -430,6 +432,8 @@ void main()
         /// </summary>
         internal void BeginParts(Vec3i chunkCoord)
         {
+            // Світло могло змінитися з останнього такту, а деталі чанка, що ставляться далі, питають його по блоках
+            lightProbe.Clear();
             bladeRenderer?.BeginChunk(chunkCoord);
             leverRenderer?.BeginChunk(chunkCoord);
         }
@@ -460,14 +464,13 @@ void main()
         private void UpdateLights(float dt)
         {
             // Один запас світла на такт для всіх рендерів: деталі одного блока питають той самий блок
-            LightProbe probe = lightProbe ?? (lightProbe = new LightProbe(capi.World.BlockAccessor));
-            probe.Clear();
+            lightProbe.Clear();
             foreach (IInstancedParts renderer in instanced)
-                renderer.UpdateLights(LightBudget, probe);
+                renderer.UpdateLights(LightBudget, lightProbe);
 
             if (++lightTick < FullLightTicks) return;
             lightTick = 0;
-            bladeRenderer?.UpdateLights(probe);
+            bladeRenderer?.UpdateLights(lightProbe);
         }
 
         // Збирає свої шейдери. Викликається при старті і щоразу, коли гра перезбирає шейдери

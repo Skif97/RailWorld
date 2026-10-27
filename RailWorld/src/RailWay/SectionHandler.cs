@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
@@ -53,8 +54,14 @@ namespace RailWorld.src.RailWay
             Block block = stack?.Block;
             if (block?.Code == null || block.Code.Domain != "game") return null;
 
+            // Шлях саме gravel-{порода}; порівнюємо частинами, бо кличеться при прицілі на кожен бокс, і новий рядок
+            // щоразу був би сміттям
             string rock = block.Variant?["rock"];
-            return rock != null && block.Code.Path == "gravel-" + rock ? rock : null;
+            string path = block.Code.Path;
+            const string Prefix = "gravel-";
+            bool plain = rock != null && path.Length == Prefix.Length + rock.Length
+                && path.StartsWith(Prefix, StringComparison.Ordinal) && path.EndsWith(rock, StringComparison.Ordinal);
+            return plain ? rock : null;
         }
 
         /// <summary>

@@ -380,9 +380,13 @@ namespace RailWorld
         private readonly ChunkKeyed<BladeKey, Blade> blades = new ChunkKeyed<BladeKey, Blade>(key => key.Section);
         private Vec3f origin = new Vec3f();
 
-        public BladeRenderer(ICoreClientAPI capi)
+        // Звідки деталі беруть світло, коли їх ставлять: спільний з рештою рендерів колії
+        private readonly LightProbe lights;
+
+        public BladeRenderer(ICoreClientAPI capi, LightProbe lights)
         {
             this.capi = capi;
+            this.lights = lights;
         }
 
         /// <summary>
@@ -427,7 +431,7 @@ namespace RailWorld
             values[17] = (float)(blade.Origin.Y - chunkCoord.Y * GlobalConstants.ChunkSize);
             values[18] = (float)(blade.Origin.Z - chunkCoord.Z * GlobalConstants.ChunkSize);
             values[19] = 1;
-            WriteLight(blade, TrackLight.KeyOf(capi.World.BlockAccessor, blade.Origin), TrackLight.Of(capi.World.BlockAccessor, blade.Origin));
+            WriteLight(blade, lights.KeyOf(blade.Origin), lights.Of(blade.Origin));
 
             if (CullBounds.OfMesh(mesh, out Vec3f min, out Vec3f max)) AddBounds(blade, min, max);
 

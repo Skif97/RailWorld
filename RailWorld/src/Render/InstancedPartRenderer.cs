@@ -97,9 +97,14 @@ namespace RailWorld
         // Коробка моделі деталі в її власних координатах: перенесена матрицею кожної деталі, вона дає межі пачки
         private Vec3f meshMin = new Vec3f(), meshMax = new Vec3f();
 
-        public InstancedPartRenderer(ICoreClientAPI capi, MeshData mesh)
+        // Звідки деталі беруть світло, коли їх ставлять: спільний для всіх рендерів, тож деталі одного блока
+        // питають світ про нього один раз (RailWayRendererSystem)
+        private readonly LightProbe lights;
+
+        public InstancedPartRenderer(ICoreClientAPI capi, LightProbe lights, MeshData mesh)
         {
             this.capi = capi;
+            this.lights = lights;
             if (mesh == null) return;
 
             // Копія, щоб дані інстансів не потрапили в кешований меш предмета
@@ -114,7 +119,7 @@ namespace RailWorld
         /// Малює частину готового меша, текстури якої лежать на сторінці атласу textureId (MeshData.SplitByTextureId):
         /// у такої частини перелік сторінок лишається від цілого меша, тож свою сторінку їй кажуть.
         /// </summary>
-        public InstancedPartRenderer(ICoreClientAPI capi, MeshData mesh, int textureId) : this(capi, mesh)
+        public InstancedPartRenderer(ICoreClientAPI capi, LightProbe lights, MeshData mesh, int textureId) : this(capi, lights, mesh)
         {
             TextureId = textureId;
         }
@@ -174,8 +179,8 @@ namespace RailWorld
                 order.Add(batch);
             }
 
-            part.LightKey = TrackLight.KeyOf(capi.World.BlockAccessor, part.Position);
-            part.Light = TrackLight.Of(capi.World.BlockAccessor, part.Position);
+            part.LightKey = lights.KeyOf(part.Position);
+            part.Light = lights.Of(part.Position);
             batch.Parts[key] = part;
             MarkDirty(batch);
         }

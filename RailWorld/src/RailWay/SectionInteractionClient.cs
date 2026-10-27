@@ -155,6 +155,9 @@ namespace RailWorld
             system.Handler.OnBeingLookedAt(capi.World.Player, Current, firstTick);
         }
 
+        // Промінь прицілу і точки влучання: щокадру переписуються, а не створюються заново
+        private readonly Vec3d pickOrigin = new Vec3d(), pickDir = new Vec3d(), pickHit = new Vec3d();
+
         private SectionSelection PickSection()
         {
             IClientPlayer player = capi.World.Player;
@@ -162,15 +165,17 @@ namespace RailWorld
             if (entity == null || !capi.Input.MouseGrabbed) return null;
             if (player.WorldData.CurrentGameMode == EnumGameMode.Spectator) return null;
 
-            // Той самий промінь, що і в GameMain.RayTraceForSelection
-            Vec3d origin = entity.Pos.XYZ.Add(entity.LocalEyePos);
-            Ray ray = Ray.FromAngles(origin, entity.Pos.Pitch, entity.Pos.Yaw, player.WorldData.PickingRange);
-            if (ray == null) return null;
+            // Той самий промінь, що і в GameMain.RayTraceForSelection: з очей, напрямок як у Ray.FromAngles
+            // (Vec3d.AheadCopy), одиничний
+            Vec3d origin = pickOrigin.Set(entity.Pos.X + entity.LocalEyePos.X, entity.Pos.Y + entity.LocalEyePos.Y, entity.Pos.Z + entity.LocalEyePos.Z);
+            float pitch = entity.Pos.Pitch, yaw = entity.Pos.Yaw;
+            float cosPitch = GameMath.Cos(pitch);
+            Vec3d dir = pickDir.Set(-cosPitch * GameMath.Sin(yaw), GameMath.Sin(pitch), -cosPitch * GameMath.Cos(yaw)).Normalize();
 
             // Порожнє місце під деталь виділяється, лише коли предмет у руці можна туди поставити
             pickHeld = player.InventoryManager.ActiveHotbarSlot?.Itemstack;
             pickSectionTool = system.Handler.IsSectionTool(pickHeld);
-            SectionSelection sel = system.PickClient(origin, ray.dir.Clone().Normalize(), player.WorldData.PickingRange,
+            SectionSelection sel = system.PickClient(origin, dir, player.WorldData.PickingRange,
                 pickFilter ?? (pickFilter = box => PickFilter(box, pickHeld, pickSectionTool)));
             if (sel == null) return null;
 
@@ -178,14 +183,14 @@ namespace RailWorld
             BlockSelection blockSel = entity.BlockSelection;
             if (blockSel != null && !(capi.World.BlockAccessor.GetBlock(blockSel.Position) is BlockTrackBed))
             {
-                Vec3d hit = new Vec3d(blockSel.Position.X, blockSel.Position.InternalY, blockSel.Position.Z).Add(blockSel.HitPosition);
+                Vec3d hit = pickHit.Set(blockSel.Position.X + blockSel.HitPosition.X, blockSel.Position.InternalY + blockSel.HitPosition.Y, blockSel.Position.Z + blockSel.HitPosition.Z);
                 if (origin.DistanceTo(hit) < sel.Distance) return null;
             }
 
             EntitySelection entitySel = entity.EntitySelection;
             if (entitySel != null)
             {
-                Vec3d hit = entitySel.Position.AddCopy(entitySel.HitPosition);
+                Vec3d hit = pickHit.Set(entitySel.Position.X + entitySel.HitPosition.X, entitySel.Position.Y + entitySel.HitPosition.Y, entitySel.Position.Z + entitySel.HitPosition.Z);
                 if (origin.DistanceTo(hit) < sel.Distance) return null;
             }
 

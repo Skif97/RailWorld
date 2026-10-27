@@ -34,21 +34,6 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Куди дивиться перед вагонетки і куди її верх, у світових координатах.
-        /// Рахується тим самим поворотом, яким рендер ставить її модель, перед моделі це її вісь +X.
-        /// </summary>
-        public static void GetTrolleyFrame(Entity trolley, Matrixf tmp, out Vec3d forward, out Vec3d up)
-        {
-            tmp.Identity();
-            RotateLikeRenderer(trolley, tmp);
-
-            Vec4f f = tmp.TransformVector(new Vec4f(1, 0, 0, 0));
-            Vec4f u = tmp.TransformVector(new Vec4f(0, 1, 0, 0));
-            forward = new Vec3d(f.X, f.Y, f.Z);
-            up = new Vec3d(u.X, u.Y, u.Z);
-        }
-
-        /// <summary>
         /// Як нахилене полотно під вагонеткою відносно погляду пасажира, що дивиться з курсом yaw (кут гравця):
         /// pitch це підйом полотна вздовж погляду, радіани, додатний, якщо попереду вище; roll це підйом полотна
         /// впоперек погляду, додатний, якщо праворуч вище. Пасажир сидить у кузові жорстко, тож тангаж погляду
@@ -56,14 +41,18 @@ namespace RailWorld
         /// </summary>
         public static void ViewTilt(Entity trolley, Matrixf tmp, double yaw, out double pitch, out double roll)
         {
-            GetTrolleyFrame(trolley, tmp, out _, out Vec3d up);
+            // Куди верх вагонетки у світових координатах: той самий поворот, яким рендер ставить її модель, а верх
+            // моделі це її вісь +Y, тобто другий стовпець матриці. Береться прямо з матриці: кличеться щокадру
+            tmp.Identity();
+            RotateLikeRenderer(trolley, tmp);
+            double upX = tmp.Values[4], upY = tmp.Values[5], upZ = tmp.Values[6];
             // Погляд гравця по горизонталі, як у EntityPos.GetViewVector при горизонтальному тангажі, і праворуч від нього
             double hx = Math.Sin(yaw), hz = Math.Cos(yaw);
             double rx = -hz, rz = hx;
             // Полотно це площина з нормаллю up: на одиницю шляху в напрямку d вона піднімається на -(up · d) / up.Y
-            double upY = Math.Max(up.Y, 1e-6);
-            pitch = Math.Atan(-(up.X * hx + up.Z * hz) / upY);
-            roll = Math.Atan(-(up.X * rx + up.Z * rz) / upY);
+            upY = Math.Max(upY, 1e-6);
+            pitch = Math.Atan(-(upX * hx + upZ * hz) / upY);
+            roll = Math.Atan(-(upX * rx + upZ * rz) / upY);
         }
 
         // Поворот моделі вагонетки, як його збирає рендер: Rx(Pitch) * Ry(Yaw + 90°) * Rz(Roll) * Rx(нахил полотна).
@@ -83,7 +72,7 @@ namespace RailWorld
                 Entity trolley = Entity;
                 float half = trolley.SelectionBox.Y2 / 2;
 
-                // Куди дивиться перед: перший стовпець повороту, як у GetTrolleyFrame. Гра множить матрицю на
+                // Куди дивиться перед: перший стовпець повороту, бо перед моделі це її вісь +X. Гра множить матрицю на
                 // вектор стовпцями (Mat4f.MulWithVec4), тож вісь X моделі після повороту це числа 0, 1, 2
                 modelmat.Identity();
                 RotateLikeRenderer(trolley, modelmat);

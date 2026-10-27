@@ -16,18 +16,18 @@ namespace RailWorld
     {
         private float[] scale = new float[] { 1f, 1f, 1f };
 
-        public TrackPartRenderer(ICoreClientAPI capi, ItemStack itemStack) : this(capi, ItemMesh(capi, itemStack))
+        public TrackPartRenderer(ICoreClientAPI capi, LightProbe lights, ItemStack itemStack) : this(capi, lights, ItemMesh(capi, itemStack))
         {
         }
 
         /// <summary>Малює готовий меш: деталь, у якої немає свого предмета.</summary>
-        public TrackPartRenderer(ICoreClientAPI capi, MeshData mesh) : base(capi, mesh)
+        public TrackPartRenderer(ICoreClientAPI capi, LightProbe lights, MeshData mesh) : base(capi, lights, mesh)
         {
             MeasureLength();
         }
 
         /// <summary>Малює частину готового меша, текстури якої лежать на сторінці атласу textureId.</summary>
-        public TrackPartRenderer(ICoreClientAPI capi, MeshData mesh, int textureId) : base(capi, mesh, textureId)
+        public TrackPartRenderer(ICoreClientAPI capi, LightProbe lights, MeshData mesh, int textureId) : base(capi, lights, mesh, textureId)
         {
             MeasureLength();
         }
