@@ -219,7 +219,7 @@ namespace RailWorld.src.RailWay
         /// хрестовина, боки гілок, форма). Запис з іншою версією застарілий і перераховується, коли
         /// завантажується його чанк. Забути збільшити не дасть тест-еталон RecordFormulaTests.
         /// </summary>
-        public const int CurrentFormula = 2;
+        public const int CurrentFormula = 3;
 
         /// <summary>Ключ стрілки в чанку: у секції два кінці, і на кожному може бути своя.</summary>
         public int Key => KeyOf(TrunkIndex, AtStart);
@@ -443,28 +443,64 @@ namespace RailWorld.src.RailWay
             if (branches.Count != 2) return SwitchShape.Unknown;
 
             Vec3f outward = trunk.GetOutwardDirection(atStart);
+            double curvature = TrunkCurvature(trunk, atStart, outward, resolve);
             double[] turn = new double[2];
             for (int k = 0; k < 2; k++)
             {
                 SwitchBranch branch = branches[k];
                 Section far = null;
                 bool entered = true;
+                int farNumber = 0;
                 for (int n = Math.Min(Math.Max(branch.ZoneSections, 1), branch.Members.Count); n >= 1 && far == null; n--)
                 {
                     SectionLink member = branch.Member(n);
                     far = resolve(member);
                     entered = member.AtStart;
+                    farNumber = n;
                 }
                 if (far == null) return SwitchShape.Unknown;
 
                 Vec3d from = far.GetEndPosition(entered), to = far.GetEndPosition(!entered);
                 double dx = to.X - from.X, dz = to.Z - from.Z;
-                turn[k] = Math.Atan2(outward.X * dz - outward.Z * dx, outward.X * dx + outward.Z * dz);
+                // Від продовження спільної колії, а не від її дотичної на стику: на кривій лінії основна колія за
+                // тілом стрілки теж відвертає від дотичної, і з'їзд назовні кривої відвертав би від неї менше.
+                // Середина секції far лежить за (farNumber - 0.5) секцій від стику
+                double expected = curvature * (farNumber - 0.5) * RouteCurve.SectionLength;
+                turn[k] = Math.Atan2(outward.X * dz - outward.Z * dx, outward.X * dx + outward.Z * dz) - expected;
             }
 
             double gentle = Math.Min(Math.Abs(turn[0]), Math.Abs(turn[1])), steep = Math.Max(Math.Abs(turn[0]), Math.Abs(turn[1]));
             if (turn[0] * turn[1] < 0 && steep <= gentle * ForkTurnRatio) return SwitchShape.Fork;
             return Math.Abs(turn[0]) <= Math.Abs(turn[1]) ? SwitchShape.MainFirst : SwitchShape.MainSecond;
+        }
+
+        // Скільки блоків спільної колії перед стиком береться, щоб дізнатися її кривизну: кілька секцій, щоб одна
+        // коротка не давала випадкового значення
+        private const double CurvatureLength = 2;
+
+        // Кривизна спільної колії перед стиком, радіан на блок у плані, зі знаком того самого повороту, що й
+        // відхилення гілок у ShapeOf. Поворот між її напрямком CurvatureLength блоків тому і на стику, поділений
+        // на пройдену довжину; на прямій 0
+        private static double TrunkCurvature(Section trunk, bool atStart, Vec3f outward, Func<SectionLink, Section> resolve)
+        {
+            TrackWalker walk = TrackWalker.Leaving(trunk, !atStart, resolve);
+            Section far = trunk;
+            bool farEnd = !atStart;
+            double length = 0;
+            while (true)
+            {
+                Vec3d a = far.GetEndPosition(true), b = far.GetEndPosition(false);
+                length += Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Z - a.Z) * (b.Z - a.Z));
+                if (length >= CurvatureLength || !walk.Next()) break;
+                far = walk.Section;
+                farEnd = !walk.Entered;
+            }
+            if (length < 1e-6) return 0;
+
+            // Напрямок руху до стику на дальньому кінці: протилежний до того, що виходить із секції там
+            Vec3f outFar = far.GetOutwardDirection(farEnd);
+            double hx = -outFar.X, hz = -outFar.Z;
+            return Math.Atan2(hx * outward.Z - hz * outward.X, hx * outward.X + hz * outward.Z) / length;
         }
     }
 }

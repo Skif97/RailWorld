@@ -245,6 +245,46 @@ namespace RailWorld.Tests
             Assert.Equal(SwitchShape.MainSecond, SwitchBuilder.Build(last, false, Resolve).Shape);
         }
 
+        [Theory]
+        [InlineData(8)]
+        [InlineData(12)]
+        public void CrossoverToACloseParallelTrackIsTheBranch(double length)
+        {
+            // З'їзд на паралельну колію за 2.9 блока: тіло стрілки закінчується, коли гілка вже повертає назад
+            List<Section> trunk = Trunk();
+            Section last = trunk[trunk.Count - 1];
+            List<Section> crossover = Lay(Point(0, 0, 1, 0), Point(length, 2.9, 1, 0));
+            List<Section> line = Straight();
+            Join(last, crossover[0]);
+            Join(last, line[0]);
+
+            Assert.Equal(SwitchShape.MainSecond, SwitchBuilder.Build(last, false, Resolve).Shape);
+        }
+
+        [Theory]
+        [InlineData(2.9, 8)]
+        [InlineData(2.9, 12)]
+        [InlineData(-2.9, 8)]
+        [InlineData(-2.9, 12)]
+        public void CrossoverOnACurveToAConcentricTrackIsTheBranch(double offset, double length)
+        {
+            // Основна колія дугою радіуса 20 на -Z, з'їзд на концентричну колію за offset блоків: додатний назовні
+            // кривої, від'ємний усередину. У кінці тіла відвертає і основна колія, а з'їзд уже вирівнюється
+            const double radius = 20;
+            // Спільна колія теж на цій дузі: крива вся лінія, а не лише колія за стрілкою
+            double b = Math.PI / 6;
+            List<Section> trunk = Lay(Point(-radius * Math.Sin(b), -radius * (1 - Math.Cos(b)), Math.Cos(b), Math.Sin(b)), Point(0, 0, 1, 0));
+            Section last = trunk[trunk.Count - 1];
+            double a = Math.PI / 3;
+            List<Section> main = Lay(Point(0, 0, 1, 0), Point(radius * Math.Sin(a), -radius * (1 - Math.Cos(a)), Math.Cos(a), -Math.Sin(a)));
+            double outer = radius + offset, phi = length / outer;
+            List<Section> crossover = Lay(Point(0, 0, 1, 0), Point(outer * Math.Sin(phi), -radius + outer * Math.Cos(phi), Math.Cos(phi), -Math.Sin(phi)));
+            Join(last, crossover[0]);
+            Join(last, main[0]);
+
+            Assert.Equal(SwitchShape.MainSecond, SwitchBuilder.Build(last, false, Resolve).Shape);
+        }
+
         [Fact]
         public void GentleCurveAgainstASteepOneIsATurnoutNotAFork()
         {

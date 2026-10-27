@@ -20,9 +20,9 @@ namespace RailWorld.Tests
         private const string CrossingHint = "Змінився розрахунок запису перетину: збільш RailCrossing.CurrentFormula і запиши новий еталон.";
 
         private const string SwitchExpected =
-            "formula 2 shape MainFirst complete True resolved True | members 23 pair 17 overlap 18 blade 6 frog 10-13 inner 11111111111111111111111 | members 22 pair 17 overlap 17 blade 6 frog 10-13 inner 0000000000000000000000"
-            + "\n" + "formula 2 shape Fork complete True resolved True | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 000000000000000000 | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 111111111111111111"
-            + "\n" + "formula 2 shape MainFirst complete True resolved True | members 36 pair 30 overlap 31 blade 9 frog 16-23 inner 000000000000000000000000000000000000 | members 35 pair 30 overlap 30 blade 9 frog 16-23 inner 11111111111111111111111111111111111";
+            "formula 3 shape MainFirst complete True resolved True | members 23 pair 17 overlap 18 blade 6 frog 10-13 inner 11111111111111111111111 | members 22 pair 17 overlap 17 blade 6 frog 10-13 inner 0000000000000000000000"
+            + "\n" + "formula 3 shape Fork complete True resolved True | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 000000000000000000 | members 18 pair 13 overlap 13 blade 6 frog 7-9 inner 111111111111111111"
+            + "\n" + "formula 3 shape MainFirst complete True resolved True | members 36 pair 30 overlap 31 blade 9 frog 16-23 inner 000000000000000000000000000000000000 | members 35 pair 30 overlap 30 blade 9 frog 16-23 inner 11111111111111111111111111111111111";
 
         private const string CrossingExpected =
             "formula 1 complete True resolved True | members 13 center 7 node 5-9 | members 12 center 6 node 5-8"
