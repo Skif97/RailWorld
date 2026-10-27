@@ -368,10 +368,14 @@ namespace RailWorld
 
             // Маршрут чіпляється до кінця, з якого колія вже йде далі: тут виникне стрілка.
             // Поруч з іншою стрілкою її ставити не можна
-            if (marker.Track != null && SwitchZone.JointInBody(section, atStart, FindClientSection))
+            if (marker.Track != null)
             {
-                snapRefusal = "Надто близько до іншої стрілки";
-                return null;
+                SwitchBody body = SwitchZone.JointInBody(section, atStart, FindClientSection);
+                if (body != SwitchBody.Outside)
+                {
+                    snapRefusal = body == SwitchBody.Inside ? "Надто близько до іншої стрілки" : "Колія поруч ще не завантажена: про стрілку там нічого не відомо";
+                    return null;
+                }
             }
             return marker;
         }

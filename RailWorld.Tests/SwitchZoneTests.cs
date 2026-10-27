@@ -406,5 +406,44 @@ namespace RailWorld.Tests
             Assert.Same(trunk[0], found);
             Assert.True(atStart);
         }
+
+        // Дуга від третьої секції ніби в незавантаженому чанку: там гілки ще лежать одна на одній
+        private void ForgetArcFrom(int index)
+        {
+            for (int i = index; i < arc.Count; i++) Forget(arc[i]);
+        }
+
+        [Fact]
+        public void OverlapCutByAnUnreadBranchIsReported()
+        {
+            LaySwitch();
+            Section last = trunk[trunk.Count - 1];
+            int whole = SwitchZone.OverlapSections(last, false, straight[0], Resolve, out bool cut);
+            Assert.False(cut);
+
+            ForgetArcFrom(3);
+            int part = SwitchZone.OverlapSections(last, false, straight[0], Resolve, out cut);
+            Assert.True(cut);
+            Assert.True(part < whole);
+        }
+
+        [Fact]
+        public void JointInTheBodyBehindAnUnreadBranchIsUnknown()
+        {
+            LaySwitch();
+            Assert.Equal(SwitchBody.Inside, SwitchZone.JointInBody(straight[8], false, Resolve));
+
+            // Раніше відповідь була «поза тілом», і гілку тут дозволяли
+            ForgetArcFrom(3);
+            Assert.Equal(SwitchBody.Unread, SwitchZone.JointInBody(straight[8], false, Resolve));
+            Assert.Equal(SwitchZone.UnreadRefusal, SectionLinker.FindSwitchProblem(BranchAfter(8), SectionsIn, Resolve, out _));
+        }
+
+        [Fact]
+        public void JointOnTrackWithoutSwitchIsOutside()
+        {
+            straight = Straight();
+            Assert.Equal(SwitchBody.Outside, SwitchZone.JointInBody(straight[8], false, Resolve));
+        }
     }
 }

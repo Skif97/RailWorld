@@ -415,24 +415,27 @@ namespace RailWorld.src.RailWay
 
         // Чи вузол накладається на тіло стрілки перетнутої колії. Тіло починається на стику, з якого колія
         // розходиться, тож вузол, що доходить до самого стику, але не лягає на гілки за ним, його не зачіпає
-        private static bool NodeReachesSwitch(Crossing crossing, List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve)
+        private static SwitchBody NodeReachesSwitch(Crossing crossing, List<PointOnBezierCurve> points, Func<SectionLink, Section> resolve)
         {
+            bool unread = false;
             for (int end = 0; end < 2; end++)
             {
                 List<Section> chain = crossing.Chain[end];
                 for (int n = 0; n < crossing.Members[end]; n++)
                 {
-                    if (SwitchZone.InBody(chain[n], resolve)) return true;
+                    SwitchBody body = SwitchZone.InBody(chain[n], resolve);
+                    if (body == SwitchBody.Inside) return body;
+                    if (body == SwitchBody.Unread) unread = true;
                 }
 
                 if (crossing.Fork[end] == null || crossing.Members[end] < chain.Count || resolve == null) continue;
                 foreach (SectionLink link in crossing.Fork[end])
                 {
                     Section branch = resolve(link);
-                    if (branch != null && SectionOnRoute(branch, points, crossing.FirstPiece - ForkPieces, crossing.LastPiece + ForkPieces)) return true;
+                    if (branch != null && SectionOnRoute(branch, points, crossing.FirstPiece - ForkPieces, crossing.LastPiece + ForkPieces)) return SwitchBody.Inside;
                 }
             }
-            return false;
+            return unread ? SwitchBody.Unread : SwitchBody.Outside;
         }
 
         // Чи у вузлі на перетнутій колії вже лежить третя колія: інший перетин або колія впритул. Вузол це місце
@@ -547,9 +550,9 @@ namespace RailWorld.src.RailWay
                         continue;
                     }
                     if (hit.InSwitchBody == null) hit.InSwitchBody = SwitchZone.InBody(section, resolve);
-                    if (hit.InSwitchBody.Value)
+                    if (hit.InSwitchBody.Value != SwitchBody.Outside)
                     {
-                        conflict = conflict ?? "маршрут перетинає стрілку";
+                        conflict = conflict ?? (hit.InSwitchBody.Value == SwitchBody.Inside ? "маршрут перетинає стрілку" : SwitchZone.UnreadRefusal);
                         Mark(k);
                         continue;
                     }
@@ -579,9 +582,9 @@ namespace RailWorld.src.RailWay
 
                     // На тіло стрілки вузол не накладається ніде, а не лише в перетнутій секції
                     if (hit.ReachesSwitchBody == null) hit.ReachesSwitchBody = NodeReachesSwitch(crossing, points, resolve);
-                    if (hit.ReachesSwitchBody.Value)
+                    if (hit.ReachesSwitchBody.Value != SwitchBody.Outside)
                     {
-                        conflict = conflict ?? "перетин надто близько до стрілки";
+                        conflict = conflict ?? (hit.ReachesSwitchBody.Value == SwitchBody.Inside ? "перетин надто близько до стрілки" : SwitchZone.UnreadRefusal);
                         Mark(k);
                         continue;
                     }

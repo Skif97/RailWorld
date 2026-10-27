@@ -57,12 +57,12 @@ namespace RailWorld.src.RailWay
         public Section Section;
         public double T;
 
-        /// <summary>Перетнута секція лежить у тілі стрілки.</summary>
-        internal bool? InSwitchBody;
+        /// <summary>Чи перетнута секція лежить у тілі стрілки; null, поки не рахували.</summary>
+        internal SwitchBody? InSwitchBody;
         /// <summary>Точки маршруту у вузлі, для яких пораховано наступні два.</summary>
         internal double[] NodeSignature;
         /// <summary>Вузол цього перетину дістає до тіла стрілки на перетнутій колії.</summary>
-        internal bool? ReachesSwitchBody;
+        internal SwitchBody? ReachesSwitchBody;
         /// <summary>У вузлі на перетнутій колії вже лежить третя колія: два вузли наклалися б.</summary>
         internal bool? NearAnotherCrossing;
     }

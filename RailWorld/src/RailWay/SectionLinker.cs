@@ -428,9 +428,12 @@ namespace RailWorld.src.RailWay
                 // секція нового тіла знайшла б у ньому саму себе
                 mine.RemoveLink(join.AtStart, join.Copy);
                 join.Copy.RemoveLink(join.Other.AtStart, mine);
-                bool blocked = SwitchZone.JointInBody(join.Copy, join.Other.AtStart, Find) || body.Exists(section => SwitchZone.InBody(section, Find));
+                SwitchBody joint = SwitchZone.JointInBody(join.Copy, join.Other.AtStart, Find);
+                bool inside = joint == SwitchBody.Inside || body.Exists(section => SwitchZone.InBody(section, Find) == SwitchBody.Inside);
+                bool unread = joint == SwitchBody.Unread || body.Exists(section => SwitchZone.InBody(section, Find) == SwitchBody.Unread);
                 Connect(mine, join.AtStart, join.Copy, join.Other.AtStart);
-                if (blocked) return "надто близько до іншої стрілки";
+                if (inside) return "надто близько до іншої стрілки";
+                if (unread) return SwitchZone.UnreadRefusal;
 
                 // Якщо частина гілки в незавантаженому чанку, сказати про хрестовину нічого не можна,
                 // і тоді не відмовляємо
@@ -493,10 +496,14 @@ namespace RailWorld.src.RailWay
                 from = to + 1;
             }
 
-            // Чи секція лежить у стрілці колії, якою вона стане після побудови
-            bool InSwitch(Section section)
+            // Чи секція лежить у стрілці колії, якою вона стане після побудови: хоч одним стиком у тілі
+            SwitchBody InSwitch(Section section)
             {
-                return SwitchZone.JointInBody(section, true, Find) || SwitchZone.JointInBody(section, false, Find);
+                SwitchBody start = SwitchZone.JointInBody(section, true, Find);
+                if (start == SwitchBody.Inside) return start;
+                SwitchBody end = SwitchZone.JointInBody(section, false, Find);
+                if (end == SwitchBody.Inside) return end;
+                return start == SwitchBody.Unread || end == SwitchBody.Unread ? SwitchBody.Unread : SwitchBody.Outside;
             }
 
             for (int i = 0; i < planned.Count; i++)
@@ -508,9 +515,12 @@ namespace RailWorld.src.RailWay
                 if (inNode[i]) continue;
 
                 Section laid = Find(new SectionLink(other, true));
-                if (InSwitch(planned[i]) && InSwitch(laid)) continue;
+                SwitchBody mine = InSwitch(planned[i]), theirs = InSwitch(laid);
+                if (mine == SwitchBody.Inside && theirs == SwitchBody.Inside) continue;
 
                 at = i;
+                // Стрілка тут ще може знайтися в непрочитаній колії, якщо жодна з двох колій точно не поза нею
+                if (mine != SwitchBody.Outside && theirs != SwitchBody.Outside) return SwitchZone.UnreadRefusal;
                 return "колія лягає на іншу без стрілки чи перетину";
             }
 

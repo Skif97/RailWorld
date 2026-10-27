@@ -380,10 +380,14 @@ namespace RailWorld.src.RailWay
                     else partsInPlace = false;
                 }
 
+                // Гілки не дочитано, поки вони ще лежали одна на одній: тіло може тягнутися далі, запис чекає на чанк
+                int overlap = SwitchZone.OverlapSections(trunk, atStart, mine, resolve, out bool overlapCut);
+                if (overlapCut) result.Resolved = false;
+
                 var branch = new SwitchBranch
                 {
                     PairSections = SwitchZone.PairSections(mine, mineAtStart, other, otherAtStart, resolve),
-                    OverlapSections = SwitchZone.OverlapSections(trunk, atStart, mine, resolve),
+                    OverlapSections = overlap,
                     BladeSections = SwitchGeometry.BladeSections(heelAt, geometry),
                     FrogFrom = geometry.Throat >= 0 ? geometry.HideFrom : 0,
                     FrogTo = geometry.Throat >= 0 ? geometry.HideTo : 0

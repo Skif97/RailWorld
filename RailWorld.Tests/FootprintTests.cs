@@ -88,8 +88,8 @@ namespace RailWorld.Tests
             Join(last, straight[0]);
             Join(last, arc[0]);
 
-            int onStraight = SwitchZone.OverlapSections(last, false, arc[0], Resolve);
-            int onArc = SwitchZone.OverlapSections(last, false, straight[0], Resolve);
+            int onStraight = SwitchZone.OverlapSections(last, false, arc[0], Resolve, out _);
+            int onArc = SwitchZone.OverlapSections(last, false, straight[0], Resolve, out _);
             Assert.InRange(onStraight, 17, 19);
             Assert.InRange(onArc, 17, 19);
 
