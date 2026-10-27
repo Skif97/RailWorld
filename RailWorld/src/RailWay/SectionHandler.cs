@@ -214,8 +214,7 @@ namespace RailWorld.src.RailWay
                 if (!section.Blocked)
                 {
                     section.Blocked = true;
-                    DataInChunk.Save(world, sel.Chunk, data);
-                    RailWorld.SendChunkDataToClients(sel.Chunk, data);
+                    RailWorld.SendChunkDataToClients(sel.Chunk, DataInChunk.Save(world, sel.Chunk, data));
                 }
                 (byPlayer as Vintagestory.API.Server.IServerPlayer)?.SendIngameError("railblocked");
                 return;

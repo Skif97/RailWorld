@@ -145,7 +145,7 @@ namespace RailWorld
             // Латки гри живуть, поки гравець у світі: при виході їх знімає DisposeRenderers
             harmony = new Harmony(HarmonyId);
             MyChunkEvents.Init(harmony, api.Logger);
-            MyChunkEvents.ChunkUnloaded += OnChunkUnloaded;
+            MyChunkEvents.ChunkUnloaded += OnClientChunkUnloaded;
 
             interaction = new SectionInteractionClient(api, this, harmony);
 
@@ -324,8 +324,9 @@ namespace RailWorld
 
             // Чанк гра розпаковує у фоні, а пакет зі зміною приходить одразу: дані чанка, відправленого
             // до зміни, можуть дійти після неї. Той самий номер теж не приймаємо: сервер збільшує його з кожним
-            // збереженням (DataInChunk.Save), тож це ті самі дані, що вже є, лише вдруге (нашим пакетом і разом із
-            // чанком, який гра пересилає після MarkModified). Так само OnSwitchToggled відкидає пакет із номером, який уже є
+            // збереженням (DataInChunk.Save), тож це ті самі дані, що вже є, лише вдруге: чанк, надісланий разом із
+            // ними, долетів після нашого пакета, або сервер переслав чанк явно. Так само OnSwitchToggled відкидає
+            // пакет із номером, який уже є
             DataInChunk known = DataInChunk.GetClient(chunkCoord);
             if (known != null && data.Revision <= known.Revision) return false;
 
@@ -403,17 +404,11 @@ namespace RailWorld
             if (!SetChunkData(chunkCoord, railData)) chunk.SetModdata(DataInChunk.ModdataKey, DataInChunk.GetClient(chunkCoord));
         }
 
-        private void OnChunkUnloaded(IClientChunk chunk)
+        // Клієнт вивантажив чанк. Прибираємо лише той, про колію в якому знав: решта чанків нас не стосується, і
+        // ClientRevision через них мінятися не має
+        private void OnClientChunkUnloaded(Vec3i chunkCoord)
         {
-            DataInChunk railData = chunk.GetModdata<DataInChunk>(DataInChunk.ModdataKey, null);
-            if (railData == null) return;
-
-            // Координати чанку беремо з першої секції
-            foreach (var kvp in railData.RailWaySections)
-            {
-                RemoveChunk(kvp.Value.ChunkAddres);
-                break;
-            }
+            if (DataInChunk.GetClient(chunkCoord) != null) RemoveChunk(chunkCoord);
         }
 
         private const string HarmonyId = "com.railworld.myMod";
@@ -422,7 +417,7 @@ namespace RailWorld
         private void DisposeRenderers()
         {
             // Викликається двічі, при виході зі світу і при вивантаженні мода: друге нічого вже не знаходить
-            MyChunkEvents.ChunkUnloaded -= OnChunkUnloaded;
+            MyChunkEvents.ChunkUnloaded -= OnClientChunkUnloaded;
             harmony?.UnpatchAll(HarmonyId);
             harmony = null;
             TrolleyCameraPatch.Release();

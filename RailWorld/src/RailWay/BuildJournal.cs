@@ -97,7 +97,8 @@ namespace RailWorld.src.RailWay
                 found.Add(section);
                 if (!section.IsInstalled(SectionPart.Ballast)) continue;
                 section.RemovePart(SectionPart.Ballast);
-                session.MarkDirty(section.ChunkAddres);
+                // Змінилася лише деталь: перераховується лише те, чого секція стосується
+                session.MarkChanged(section);
                 ballasted.Add(section);
             }
             if (session.HasChanges) session.SaveAll();

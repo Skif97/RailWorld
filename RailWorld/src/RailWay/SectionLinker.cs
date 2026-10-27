@@ -170,8 +170,7 @@ namespace RailWorld.src.RailWay
             foreach (Vec3i chunkCoord in dirty)
             {
                 if (!loaded.TryGetValue(chunkCoord, out DataInChunk data)) continue;
-                DataInChunk.Save(world, chunkCoord, data);
-                RailWorld.SendChunkDataToClients(chunkCoord, data);
+                RailWorld.SendChunkDataToClients(chunkCoord, DataInChunk.Save(world, chunkCoord, data));
             }
             dirty.Clear();
             whole.Clear();

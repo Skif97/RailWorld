@@ -2,6 +2,7 @@ using ProtoBuf;
 using System.Collections.Generic;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Util;
 
 namespace RailWorld.src.RailWay
 {
@@ -147,19 +148,12 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static DataInChunk Get(IWorldAccessor world, Vec3i chunkCoord)
         {
+            // На клієнті дані колії з'являються лише через RailWaySystem.SetChunkData: там же будуються бокси й меш.
+            // Розібрати тут moddata чанка самим означало б покласти дані в обхід нього, і тоді SetChunkData відкинув би
+            // ті самі дані як уже відомі, а колія в чанку не намалювалася б
+            if (world.Side != EnumAppSide.Server) return GetClient(chunkCoord);
+
             IWorldChunk chunk = world.BlockAccessor.GetChunk(chunkCoord.X, chunkCoord.Y, chunkCoord.Z);
-            if (world.Side != EnumAppSide.Server)
-            {
-                if (chunk == null) return null;
-
-                DataInChunk known = GetClient(chunkCoord);
-                if (known != null) return known;
-
-                // Чанк щойно прийшов, і RailWaySystem його ще не розібрав: беремо те, що він привіз
-                known = chunk.GetModdata<DataInChunk>(ModdataKey, null);
-                if (known != null) SetClient(chunkCoord, known);
-                return known;
-            }
 
             if (chunk == null)
             {
@@ -175,16 +169,19 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Записує дані в чанк. Викликати тільки на сервері.
+        /// Записує дані в чанк. Викликати тільки на сервері. Повертає записані байти, щоб розіслати клієнтам саме їх
+        /// (RailWorld.SendChunkDataToClients), а не серіалізувати дані вдруге; null, якщо чанк не завантажений.
         /// </summary>
-        public static void Save(IWorldAccessor world, Vec3i chunkCoord, DataInChunk data)
+        public static byte[] Save(IWorldAccessor world, Vec3i chunkCoord, DataInChunk data)
         {
             IWorldChunk chunk = world.BlockAccessor.GetChunk(chunkCoord.X, chunkCoord.Y, chunkCoord.Z);
-            if (chunk == null) return;
+            if (chunk == null) return null;
             data.Revision++;
-            chunk.SetModdata(ModdataKey, data);
-            chunk.MarkModified();
+            // Так само серіалізує і гра в SetModdata<T>; позначає чанк зміненим вона сама (WorldChunk.SetModdata)
+            byte[] bytes = SerializerUtil.Serialize(data);
+            chunk.SetModdata(ModdataKey, bytes);
             serverCache[chunkCoord.Clone()] = data;
+            return bytes;
         }
     }
 }

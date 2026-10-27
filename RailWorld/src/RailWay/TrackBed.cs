@@ -434,9 +434,10 @@ namespace RailWorld.src.RailWay
                 DataInChunk data = DataInChunk.Get(world, pair.Key);
                 if (data == null) continue;
 
-                DataInChunk.Save(world, pair.Key, data);
+                // Attach лише ставить блоки під секціями, даних колії не міняє: клієнтам ідуть ті самі байти
+                byte[] saved = DataInChunk.Save(world, pair.Key, data);
                 foreach (Section section in pair.Value) Attach(world, section);
-                RailWorld.SendChunkDataToClients(pair.Key, data);
+                RailWorld.SendChunkDataToClients(pair.Key, saved);
             }
         }
 

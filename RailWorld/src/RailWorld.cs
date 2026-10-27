@@ -315,15 +315,14 @@ namespace RailWorld
         }
 
         /// <summary>
-        /// Надсилає оновлені дані колії чанка гравцям, у яких цей чанк є, після кожного збереження чанка.
+        /// Надсилає оновлені дані колії чанка гравцям, у яких цей чанк є, після кожного збереження чанка: ті самі
+        /// байти, що DataInChunk.Save записав у чанк.
         /// </summary>
-        public static void SendChunkDataToClients(Vec3i chunkCoord, DataInChunk data)
+        public static void SendChunkDataToClients(Vec3i chunkCoord, byte[] serialized)
         {
-            if (_serverChannel == null || _sapi == null) return;
+            if (_serverChannel == null || _sapi == null || serialized == null) return;
             IServerPlayer[] players = PlayersWithChunk(chunkCoord);
             if (players.Length == 0) return;
-
-            byte[] serialized = Vintagestory.API.Util.SerializerUtil.Serialize(data);
 
             RailDataPacket packet = new RailDataPacket
             {
