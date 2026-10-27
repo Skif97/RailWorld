@@ -126,11 +126,10 @@ namespace RailWorld.src.RailWay
             if (data == null || !data.RailWaySections.TryGetValue(sel.Index, out Section section)) return;
             if (!FindSwitchEnd(section, sel, out bool atStart)) return;
 
-            // Недобудовану чи розібрану стрілку перевести не можна
-            var session = new RailDataSession(world);
-            RailSwitch record = SwitchRegistry.Get(session, sel.Chunk, section.IndexInChunk, atStart);
-            if (session.HasChanges) session.SaveAll();
-            if (record == null || !record.Complete) return;
+            // Недобудовану чи розібрану стрілку перевести не можна. Запис береться готовий: його дораховує
+            // завантаження чанка (CompleteSwitches) і перераховує кожна зміна колії (RailDataSession.SaveAll), а клік
+            // лише перемикає стрілку, як важіль гри лише міняє свій стан
+            if (!data.Switches.TryGetValue(RailSwitch.KeyOf(section.IndexInChunk, atStart), out RailSwitch record) || !record.Complete) return;
 
             section.ToggleSwitch(atStart, world.ElapsedMilliseconds);
             DataInChunk.Save(world, sel.Chunk, data);
