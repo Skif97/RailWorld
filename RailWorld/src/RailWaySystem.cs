@@ -196,6 +196,9 @@ namespace RailWorld
             // Записи стрілок і перетинів, пораховані неповністю, іншою версією розрахунку або з посиланням на
             // секцію, якої вже немає
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
+            // Гра повідомляє про кожен чанк колонки, перш ніж її вивантажити; при вимкненні сервера про всі
+            // завантажені, тож обробник лише прибирає запис із кешу
+            api.Event.ChunkColumnUnloaded += DataInChunk.ForgetServer;
 
             serverChannel = api.Network
                 .RegisterChannel(ChannelName)

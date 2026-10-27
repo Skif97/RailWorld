@@ -95,6 +95,16 @@ namespace RailWorld.src.RailWay
             serverCache.Clear();
         }
 
+        /// <summary>
+        /// Забуває розібрані дані чанка, який сервер вивантажує: самі дані лишаються в чанку (Save пише в обидва місця),
+        /// і коли чанк завантажиться знову, Get розбере їх наново. Інакше кеш тримав би кожен чанк із колією, який
+        /// сервер хоч раз читав, до кінця роботи сервера.
+        /// </summary>
+        public static void ForgetServer(Vec3i chunkCoord)
+        {
+            serverCache.Remove(chunkCoord);
+        }
+
         // Дані колії на клієнті: єдина розібрана копія, з неї і малюється колія, і читає все інше.
         // Кладе їх сюди RailWaySystem, коли вони приходять із сервера
         private static Dictionary<Vec3i, DataInChunk> clientCache = new Dictionary<Vec3i, DataInChunk>();
