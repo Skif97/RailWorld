@@ -197,8 +197,8 @@ namespace RailWorld
             // секцію, якої вже немає
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
             // Гра повідомляє про кожен чанк колонки, перш ніж її вивантажити; при вимкненні сервера про всі
-            // завантажені, тож обробник лише прибирає запис із кешу
-            api.Event.ChunkColumnUnloaded += DataInChunk.ForgetServer;
+            // завантажені, тож обробник лише забуває чанк
+            api.Event.ChunkColumnUnloaded += OnChunkUnloaded;
 
             serverChannel = api.Network
                 .RegisterChannel(ChannelName)
@@ -572,6 +572,14 @@ namespace RailWorld
             // (ServerSystemSupplyChunks.mainThreadLoadChunkColumn), тож світ їх іще не віддає. Рахуємо, щойно віддасть
             int chunkX = column.X, chunkZ = column.Y, height = chunks.Length;
             sapi.Event.EnqueueMainThreadTask(() => CompleteSwitches(chunkX, chunkZ, height), "railworld-switches");
+        }
+
+        // Вивантажений чанк: забуваємо все, що сервер тримав про нього в пам'яті
+        private void OnChunkUnloaded(Vec3i chunk)
+        {
+            DataInChunk.ForgetServer(chunk);
+            SwitchRegistry.Forget(chunk);
+            CrossingRegistry.Forget(chunk);
         }
 
         private void CompleteSwitches(int chunkX, int chunkZ, int height)

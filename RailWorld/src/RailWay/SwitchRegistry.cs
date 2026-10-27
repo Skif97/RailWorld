@@ -20,6 +20,15 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Чанк вивантажено: більше не чекає. Коли він завантажиться знову, його стрілки перерахує Complete і
+        /// знову поставить чекати, якщо їх і тоді не дорахувати.
+        /// </summary>
+        public static void Forget(Vec3i chunk)
+        {
+            pending.Track(chunk, false);
+        }
+
+        /// <summary>
         /// Дораховує стрілки, які чекали на чанки колонки (chunkX, chunkZ) або сусідніх із нею.
         /// </summary>
         public static void CompletePendingNear(RailDataSession session, int chunkX, int chunkZ)
