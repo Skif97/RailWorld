@@ -127,7 +127,37 @@ namespace RailWorld
             motorGears = properties.Attributes?["motorGears"].AsArray<double>(null) ?? new double[0];
 
             spawnedAtMs = World.ElapsedMilliseconds;
-            if (api.Side == EnumAppSide.Server) LoadRailState();
+            if (api.Side == EnumAppSide.Server)
+            {
+                LoadRailState();
+                api.ModLoader.GetModSystem<RailWaySystem>()?.Collisions?.Add(this);
+            }
+        }
+
+        // Для ударів вагонеток одна об одну (TrolleyCollisions): точка на осі колії під вагонеткою і напрямок колії
+        // там, у світі. Поля, а не нові об'єкти: оновлюються щотіку
+        internal readonly Vec3d RailCenter = new Vec3d(), RailAlong = new Vec3d();
+
+        /// <summary>
+        /// Сервер: оновлює RailCenter і RailAlong і дає швидкість уздовж колії (зі знаком відносно напрямку RailAlong).
+        /// false, якщо вагонетка не на колії або її секції зараз не прочитати.
+        /// </summary>
+        internal bool UpdateRailMotion(out double velocity)
+        {
+            velocity = railVelocity;
+            if (!onRail || !DataInChunk.TryGetServerCached(railChunk, out DataInChunk data) || !data.RailWaySections.TryGetValue(railIndex, out Section section)) return false;
+
+            var chord = new SectionChord(section);
+            if (!chord.Valid) return false;
+            RailCenter.Set(chord.StartX + chord.AlongX * railS, chord.StartY + chord.AlongY * railS, chord.StartZ + chord.AlongZ * railS);
+            RailAlong.Set(chord.AlongX, chord.AlongY, chord.AlongZ);
+            return true;
+        }
+
+        /// <summary>Сервер: нова швидкість уздовж колії після удару, у тих самих знаках, що й UpdateRailMotion.</summary>
+        internal void SetRailVelocity(double velocity)
+        {
+            railVelocity = GameMath.Clamp(velocity, -MaxSpeed, MaxSpeed);
         }
 
         private void LoadRailState()
@@ -505,6 +535,7 @@ namespace RailWorld
 
         public override void OnEntityDespawn(EntityDespawnData despawn)
         {
+            if (Api?.Side == EnumAppSide.Server) Api.ModLoader.GetModSystem<RailWaySystem>()?.Collisions?.Remove(this);
             if (Api is ICoreClientAPI clientApi) clientApi.Event.UnregisterRenderer(this, EnumRenderStage.Before);
             squeal?.Stop();
             squeal?.Dispose();

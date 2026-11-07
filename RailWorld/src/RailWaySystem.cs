@@ -165,6 +165,9 @@ namespace RailWorld
             TrolleyCameraPatch.Init(harmony, api);
         }
 
+        /// <summary>Сервер: удари вагонеток одна об одну.</summary>
+        public TrolleyCollisions Collisions { get; private set; }
+
         public override void StartServerSide(ICoreServerAPI api)
         {
             base.StartServerSide(api);
@@ -176,6 +179,7 @@ namespace RailWorld
             SwitchRegistry.Reset();
             CrossingRegistry.Reset();
             Journal = new BuildJournal();
+            Collisions = new TrolleyCollisions(api);
 
             api.ChatCommands.Create("railundo")
                 .WithDescription("Undoes your last track builds, newest first. Creative mode only")
