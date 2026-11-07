@@ -172,20 +172,18 @@ namespace RailWorld
             cant = (float)Math.Atan2(levelSide, levelUp);
         }
 
-        // На скільки блоків від кінця маршруту, що примикає до нахиленої колії, нахил полотна сходить до нуля
-        public const double CantRampLength = TrackGauge.StandardWidth * 8.0;
-
         /// <summary>
         /// Кінці кривої, що примикають до вже покладеної колії, нахиленої в цьому місці впоперек (гілка стрілки
         /// на схилі лягає в полотно основної колії): на кінці нахил такий, як у тієї колії, і плавно сходить до
-        /// нуля на відрізку CantRampLength. Далі крива лежить рівно. Виражу в кривих немає: його прибрано
+        /// нуля на відрізку TrackGauge.CantRampLength. Далі крива лежить рівно. Виражу в кривих немає: його прибрано
         /// 2026-10-24, бо в грі він давав лише вигляд (відцентрової сили немає), а геометрію стрілок і перетинів
         /// ускладнював.
         /// </summary>
         /// <param name="startCant">Нахил колії, від якої крива починається, радіани; NaN, якщо з нуля.</param>
         /// <param name="endCant">Те саме для кінця кривої.</param>
-        public static void RampEndCant(List<PointOnBezierCurve> points, double startCant = double.NaN, double endCant = double.NaN)
+        public static void RampEndCant(List<PointOnBezierCurve> points, double startCant = double.NaN, double endCant = double.NaN, TrackGauge gauge = null)
         {
+            gauge = gauge ?? TrackGauge.Narrow;
             if (double.IsNaN(startCant)) startCant = 0;
             if (double.IsNaN(endCant)) endCant = 0;
 
@@ -201,7 +199,7 @@ namespace RailWorld
                 dist[i] = dist[i - 1] + Math.Sqrt(dx * dx + dy * dy + dz * dz);
             }
             double total = dist[count - 1];
-            double ramp = Math.Min(CantRampLength, total / 2);
+            double ramp = Math.Min(gauge.CantRampLength, total / 2);
             if (ramp <= 0) return;
 
             for (int i = 0; i < count; i++)

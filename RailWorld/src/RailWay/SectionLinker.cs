@@ -284,7 +284,7 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Кінці вже покладених секцій, які сходяться з цим кінцем секції: лежать у тій самій точці й дивляться
-        /// назустріч. Саме з ними кінець буде з'єднано.
+        /// назустріч. Саме з ними кінець буде з'єднано. Колії різної ширини не сходяться ніколи.
         /// </summary>
         public static List<SectionLink> Meeting(Section section, bool atStart, TrackIndex track)
         {
@@ -295,7 +295,7 @@ namespace RailWorld.src.RailWay
             // Центр секції не далі ніж за блок від її кінця
             foreach (Section other in track.Around(pos, 1, 1))
             {
-                if (other == section) continue;
+                if (other == section || !TrackGauge.Same(section, other)) continue;
 
                 for (int end = 0; end < 2; end++)
                 {

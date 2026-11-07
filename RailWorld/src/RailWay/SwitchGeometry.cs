@@ -79,10 +79,7 @@ namespace RailWorld.src.RailWay
     {
         // Гостряк стрілки: початок внутрішньої рейки кожної з двох колій, окрема деталь зі своїм мешем.
         // Розміри взято зі справжніх стрілок і перераховано на нашу рейку, головка якої 0.075 блока.
-        // Довжина: до кореня (HeelAt), але не коротше і не довше за ці межі в секціях: від 3.5 до 8 ширин
-        // колії, як на справжній залізниці. При колії 0.78 це від 3 до 6 блоків
-        public static readonly int MinBladeSections = (int)Math.Ceiling(TrackGauge.StandardWidth * 3.5 / 0.5);
-        public static readonly int MaxBladeSections = (int)Math.Floor(TrackGauge.StandardWidth * 8.0 / 0.5);
+        // Довжина: до кореня (HeelAt), але не коротше і не довше за межі ширини колії (TrackGauge.MinBladeSections)
 
         /// <summary>
         /// На скільки рамна рейка має відійти від лінії гостряка, щоб гостряк скінчився, блоків між осями рейок:
@@ -109,17 +106,17 @@ namespace RailWorld.src.RailWay
             return along;
         }
 
-        // Скільки секцій завдовжки гостряк, якщо його корінь за heelAt блоків від стрілки
-        public static int BladeSections(double heelAt)
+        // Скільки секцій завдовжки гостряк колії цієї ширини, якщо його корінь за heelAt блоків від стрілки
+        public static int BladeSections(double heelAt, TrackGauge gauge)
         {
-            return GameMath.Clamp((int)Math.Ceiling(heelAt / 0.5 - 1e-6), MinBladeSections, MaxBladeSections);
+            return GameMath.Clamp((int)Math.Ceiling(heelAt / 0.5 - 1e-6), gauge.MinBladeSections, gauge.MaxBladeSections);
         }
 
         // Те саме, але гостряк не заходить у хрестовину. На крутій стрілці вона починається ближче, ніж
         // найменша довжина гостряка, і тоді гостряк коротший: закінчується там, де починається хрестовина
-        public static int BladeSections(double heelAt, BranchGeometry side)
+        public static int BladeSections(double heelAt, BranchGeometry side, TrackGauge gauge)
         {
-            int sections = BladeSections(heelAt);
+            int sections = BladeSections(heelAt, gauge);
             if (side != null && side.Throat >= 0) sections = Math.Min(sections, Math.Max(side.HideFrom - 1, 1));
             return sections;
         }

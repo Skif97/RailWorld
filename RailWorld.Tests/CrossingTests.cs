@@ -12,7 +12,7 @@ namespace RailWorld.Tests
     /// </summary>
     public class CrossingTests : TrackTestBase
     {
-        private const double Sleeper = TrackGauge.StandardSleeperLength;
+        private static readonly double Sleeper = TrackGauge.Narrow.SleeperLength;
         private List<Section> main, other;
         private Section mainCenter, otherCenter;
 

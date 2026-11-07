@@ -344,12 +344,12 @@ namespace RailWorld.src.RailWay
         /// теж: привати вона розсилає клієнтам сама. Креатив із правом гри будувати всюди приватів не помічає.
         /// Гравцеві нічого не пише: перегляд маршруту питає часто, а причину відмови показує сам.
         /// </summary>
-        public static bool ClaimedSections(IWorldAccessor world, IPlayer player, List<PointOnBezierCurve> points, List<int> at)
+        public static bool ClaimedSections(IWorldAccessor world, IPlayer player, List<PointOnBezierCurve> points, List<int> at, TrackGauge gauge)
         {
             bool found = false;
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
-                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                Section section = gauge.NewSection(points[i], points[i + 1], points[i + 2]);
                 foreach (BlockPos pos in AllCells(section))
                 {
                     if (world.Claims.TestAccess(player, pos, EnumBlockAccessFlags.BuildOrBreak) == EnumWorldAccessResponse.Granted) continue;

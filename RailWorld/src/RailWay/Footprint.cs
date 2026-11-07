@@ -16,9 +16,6 @@ namespace RailWorld.src.RailWay
         /// <summary>На скільки блоків габарит ширший за шпалу: по половині з кожного боку.</summary>
         public const double Margin = 0.2;
 
-        /// <summary>Ширина габариту колії зі звичайною шпалою.</summary>
-        public const double StandardWidth = TrackGauge.StandardSleeperLength + Margin;
-
         // Спільна площа, менша за це, перекриттям не вважається: два прямокутники лише торкаються
         private const double MinArea = 1e-4;
 

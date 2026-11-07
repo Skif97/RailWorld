@@ -62,6 +62,7 @@ namespace RailWorld
         // Те, що між перерахунками маршруту лишається тим самим: поки гравець веде останню точку,
         // міняється лише хвіст маршруту. Дійсне, доки не змінилася покладена колія
         private readonly RouteCache cache = new RouteCache();
+        private TrackGauge cacheGauge;
         private int cacheRevision = -1;
 
         // Маршрут малюється частинами по PartPoints точок нарізки. Поки гравець веде останню точку, міняється
@@ -126,7 +127,13 @@ namespace RailWorld
         {
             ITreeAttribute attributes = Tool().Attributes;
             return RouteTemplate.Build(anchor.Block, anchor.Yaw, attributes.GetString("railMode", RouteTemplate.SingleBlock),
-                attributes.GetInt("railLengRad", 30), attributes.GetInt("railClimDes", 0), attributes.GetString("railDirection", "Left") == "Left");
+                attributes.GetInt("railLengRad", 30), attributes.GetInt("railClimDes", 0), attributes.GetString("railDirection", "Left") == "Left", Gauge());
+        }
+
+        // Ширина колії, вибрана в меню
+        private TrackGauge Gauge()
+        {
+            return TrackGauge.OfTool(Tool());
         }
 
         private void Cancel()
@@ -290,8 +297,9 @@ namespace RailWorld
             if (player?.Entity == null) return null;
 
             // Уже покладена колія: точка стає на стик її секцій, положення і напрямок звідти
+            // Колія іншої ширини точку не притягує: з'єднати їх однаково не можна
             SectionSelection sel = system.CurrentSelection;
-            if (sel != null && sel.Part == SectionPart.Whole)
+            if (sel != null && sel.Part == SectionPart.Whole && TrackGauge.Of(sel.Section) == Gauge())
             {
                 if (!onTrack) return null;
                 return SnapToTrack(sel.Section, sel.HitPosition, first, player.Entity.Pos.GetViewVector());
@@ -310,7 +318,7 @@ namespace RailWorld
 
             // Блок біля покладеної колії: точка стає на колію, ніби приціл навели на неї в найближчому місці
             if (onTrack && TrackSurvey.NearestAxis(free.Position, TrackRules.MarkerReach,
-                new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid), out Section near, out Vec3d at))
+                new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid), out Section near, out Vec3d at, Gauge()))
             {
                 return SnapToTrack(near, at, first, view);
             }
@@ -632,22 +640,31 @@ namespace RailWorld
 
             meshOrigin = new Vec3d(shown[0].Block.X, shown[0].Block.Y, shown[0].Block.Z);
             var conflictAt = new List<int>();
-            // Колія змінилася: запам'ятоване посилається на секції, яких уже може не бути
-            if (cacheRevision != system.ClientRevision)
+            // Колія змінилася: запам'ятоване посилається на секції, яких уже може не бути. Інша ширина: габарит
+            // маршруту інший, і те, що він зачіпає, теж
+            TrackGauge gauge = Gauge();
+            if (cacheRevision != system.ClientRevision || cacheGauge != gauge)
             {
+                // Частини меша впізнаються за точками, а ширина в них не входить: інша ширина малюється заново
+                if (cacheGauge != gauge)
+                {
+                    foreach (MeshPart part in parts) part.Mesh.Dispose();
+                    parts.Clear();
+                }
                 cache.Clear();
                 cacheRevision = system.ClientRevision;
+                cacheGauge = gauge;
             }
             var laid = new TrackIndex(chunk => DataInChunk.GetClient(chunk)?.Grid);
             List<RouteMarker> settled = RouteBuilder.SettleSwitches(shown, FindClientSection);
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled), FindClientSection, out string conflict, laid, conflictAt, cache);
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(RouteBuilder.Build(settled, gauge), FindClientSection, out string conflict, laid, conflictAt, cache, gauge);
             // Секції в чужому приваті: сервер такий маршрут не покладе (RailWorld.BuildRoute)
-            if (TrackBed.ClaimedSections(capi.World, capi.World.Player, points, conflictAt)) conflict = conflict ?? TrackBed.ClaimedRefusal;
+            if (TrackBed.ClaimedSections(capi.World, capi.World.Player, points, conflictAt, gauge)) conflict = conflict ?? TrackBed.ClaimedRefusal;
             // Забагато точок чи надто далеко одна від одної: так само відмовить сервер. Готова форма ставить свої
             // точки сама, тож для неї межі видно лише тут
             conflict = conflict ?? RouteRules.MarkersProblem(shown);
 
-            RouteCheck check = RouteRules.Check(points);
+            RouteCheck check = RouteRules.Check(points, gauge);
             bool[] problems = check.Problems;
 
             // Порушення жорстких умов теж підсвічуються: там, де воно сталося, а якщо місце невідоме, увесь маршрут
@@ -661,7 +678,7 @@ namespace RailWorld
             }
 
             double maxSlope = MaxSlope(points);
-            UpdateParts(points, problems);
+            UpdateParts(points, problems, gauge);
 
             // Мітки точок: стовпчик у кожній, у тієї, що під прицілом, іншого кольору
             MeshData data = new MeshData(24 * shown.Count, 36 * shown.Count, false, false, true, false);
@@ -697,7 +714,7 @@ namespace RailWorld
         }
 
         // Приводить частини меша у відповідність до маршруту: незмінні лишає, змінені збирає наново, зайві прибирає
-        private void UpdateParts(List<PointOnBezierCurve> points, bool[] problems)
+        private void UpdateParts(List<PointOnBezierCurve> points, bool[] problems, TrackGauge gauge)
         {
             int count = 0;
             for (int from = 0; from + 1 < points.Count; from += PartPoints, count++)
@@ -711,8 +728,8 @@ namespace RailWorld
                 // У перегляді секція це шпала і чотири шматки рейок, у розмітці на кожен відрізок два шматки
                 int boxes = preview ? (to - from) / 2 * 5 + 5 : (to - from) * 2;
                 MeshData data = new MeshData(24 * boxes, 36 * boxes, false, false, true, false);
-                if (preview) AddPreviewSections(data, points, problems, from, to);
-                else AddRailLines(data, points, problems, from, to);
+                if (preview) AddPreviewSections(data, points, problems, from, to, gauge);
+                else AddRailLines(data, points, problems, from, to, gauge);
 
                 part?.Mesh.Dispose();
                 var built = new MeshPart { Signature = signature, Mesh = capi.Render.UploadMesh(data) };
@@ -763,9 +780,9 @@ namespace RailWorld
         }
 
         // Дві лінії на місці рейок між точками from і to, кожен відрізок пофарбований за своїм ухилом
-        private void AddRailLines(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to)
+        private void AddRailLines(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to, TrackGauge gauge)
         {
-            double offset = TrackGauge.StandardWidth / 2;
+            double offset = gauge.Width / 2;
 
             for (int i = from; i < to; i++)
             {
@@ -786,9 +803,9 @@ namespace RailWorld
 
         // Нарізані секції між точками from і to жовтим: шпала і дві рейки кожної, як вони ляжуть у світ.
         // Секція це три точки поспіль, починаючи з парної: частини меша починаються з парних точок
-        private void AddPreviewSections(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to)
+        private void AddPreviewSections(MeshData data, List<PointOnBezierCurve> points, bool[] problems, int from, int to, TrackGauge gauge)
         {
-            double offset = TrackGauge.StandardWidth / 2;
+            double offset = gauge.Width / 2;
 
             for (int i = from; i + 2 <= to; i += 2)
             {
@@ -812,7 +829,7 @@ namespace RailWorld
 
                 RailSelectionRenderer.AddBox(data, rgba,
                     center.X - meshOrigin.X, center.Y - meshOrigin.Y, center.Z - meshOrigin.Z, side, up, along,
-                    TrackGauge.StandardSleeperLength / 2, -SectionBox.SleeperDepth, 0, SectionBox.SleeperHalfWidth);
+                    gauge.SleeperLength / 2, -SectionBox.SleeperDepth, 0, SectionBox.SleeperHalfWidth);
             }
         }
 

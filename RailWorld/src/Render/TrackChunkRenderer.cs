@@ -541,7 +541,9 @@ namespace RailWorld
 
         // Секції двох колій зібраного перетину по порядку крізь вузол: від перетнутої секції в обидва боки,
         // до першої секції без шпали чи рейок. entered каже, котрим кінцем у секцію заїжджають у цьому
-        // порядку, centers номери перетнутих секцій. false, якщо перетин не зібрано або прочитати його не вдається
+        // порядку, centers номери перетнутих секцій. Перша колія основна: її бруси лежать під вузлом, а рейки
+        // йдуть суцільно. Це ширша з двох, а однакові в тому порядку, як записано. false, якщо перетин не зібрано
+        // або прочитати його не вдається
         private bool CrossingTracks(Vec3i chunk, RailCrossing record, out List<Section>[] tracks, out List<bool>[] entered, out int[] centers)
         {
             var key = new SectionKey(chunk, record.Key);
@@ -583,6 +585,14 @@ namespace RailWorld
                 }
                 centers[k] = crossed.Center - 1 - from;
             }
+
+            // Ширша колія головніша
+            if (tracks[1][centers[1]].TrackWidth > tracks[0][centers[0]].TrackWidth + 1e-3)
+            {
+                (tracks[0], tracks[1]) = (tracks[1], tracks[0]);
+                (entered[0], entered[1]) = (entered[1], entered[0]);
+                (centers[0], centers[1]) = (centers[1], centers[0]);
+            }
             return true;
         }
 
@@ -615,7 +625,7 @@ namespace RailWorld
             {
                 Section owner = timber.Owner;
                 string metal = owner.GetMaterial(SectionPart.FirstRail) ?? owner.GetMaterial(SectionPart.SecondRail) ?? "iron";
-                renderer.AddRailPart(chunkCoord, RailWayRendererSystem.SlidePlatePart, metal, owner.GetGlobalPos(), rotation);
+                renderer.AddRailPart(chunkCoord, RailWayRendererSystem.SlidePlatePart, metal, owner.GetGlobalPos(), rotation, (double)owner.TrackWidth);
             }
         }
 

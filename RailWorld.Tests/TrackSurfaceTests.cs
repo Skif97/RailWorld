@@ -23,7 +23,7 @@ namespace RailWorld.Tests
 
             var track = new List<Section>();
             for (int i = 0; i + 2 < points.Count; i += 2)
-                track.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                track.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength));
             return track;
         }
 

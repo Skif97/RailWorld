@@ -203,7 +203,7 @@ namespace RailWorld.Tests
         private static Timber AcrossDiagonal(Vec3d at)
         {
             double h = Math.Sqrt(0.5);
-            return new Timber { Position = at, Across = new Vec3d(-h, 0, h), Length = TrackGauge.StandardSleeperLength };
+            return new Timber { Position = at, Across = new Vec3d(-h, 0, h), Length = TrackGauge.Narrow.SleeperLength };
         }
 
         [Fact]

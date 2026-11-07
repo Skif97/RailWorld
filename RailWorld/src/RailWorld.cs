@@ -24,6 +24,8 @@ namespace RailWorld
         [ProtoMember(7)] public string ballastMaterial;
         // Ламати блоки на шляху колії замість того, щоб лишати секцію заблокованою
         [ProtoMember(8)] public bool replaceBlocks;
+        // Ширина нової колії (TrackGauge.Code)
+        [ProtoMember(9)] public string trackGauge;
     }
 
     /// <summary>
@@ -183,6 +185,7 @@ namespace RailWorld
                 mystack.Attributes.SetString("railMaterial", packet.railMaterial ?? "iron");
                 mystack.Attributes.SetString("ballastMaterial", packet.ballastMaterial ?? DontBuild);
                 mystack.Attributes.SetBool("replaceBlocks", packet.replaceBlocks);
+                mystack.Attributes.SetString(TrackGauge.AttributeKey, TrackGauge.ByCode(packet.trackGauge).Code);
                 slot.MarkDirty();
             }
         }
@@ -250,6 +253,7 @@ namespace RailWorld
                 || packet.JointIndex?.Length != count || packet.JointAtStart?.Length != count || packet.Sign?.Length != count) return "пошкоджений запит";
 
             RailDataSession lookup = new RailDataSession(_sapi.World);
+            TrackGauge gauge = TrackGauge.OfTool(tool);
             var markers = new List<RouteMarker>();
             for (int i = 0; i < count; i++)
             {
@@ -259,6 +263,8 @@ namespace RailWorld
                     var link = new SectionLink { ChunkX = packet.JointChunkX[i], ChunkY = packet.JointChunkY[i], ChunkZ = packet.JointChunkZ[i], Index = packet.JointIndex[i] };
                     Section joint = lookup.GetSection(link);
                     if (joint == null) return "колії в точці " + (i + 1) + " уже немає";
+                    // Клієнт до колії іншої ширини точку не ставить, але його дані могли застаріти
+                    if (TrackGauge.Of(joint) != gauge) return "колія в точці " + (i + 1) + " іншої ширини";
 
                     bool atStart = packet.JointAtStart[i];
                     marker = RouteMarker.OnJoint(joint, atStart, packet.Sign[i] < 0 ? -1 : 1, i == 0, lookup.GetSection);
@@ -286,18 +292,18 @@ namespace RailWorld
             if (limits != null) return limits;
 
             var laid = new TrackIndex(chunk => lookup.Get(chunk)?.Grid);
-            List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(markers, lookup.GetSection));
+            List<RoutePoint> route = RouteBuilder.Build(RouteBuilder.SettleSwitches(markers, lookup.GetSection), gauge);
             if (route == null) return "з цих точок маршрут не складається";
 
-            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict, laid);
+            List<PointOnBezierCurve> points = RouteCurve.BuildPoints(route, lookup.GetSection, out string conflict, laid, gauge: gauge);
 
             // Клієнт уже перевірив маршрут у себе, але колія з того часу могла змінитися. Маршрут,
             // який порушує жорсткі умови, не будуємо зовсім: половина маршруту гірша за жоден
-            string problem = conflict ?? RouteRules.FindProblem(points);
+            string problem = conflict ?? RouteRules.FindProblem(points, gauge);
             if (problem != null) return problem;
             if (points.Count < 3) return "маршрут надто короткий";
             // Перегляд у клієнта вже попереджав, але вирішує сервер
-            if (TrackBed.ClaimedSections(_sapi.World, fromPlayer, points, null)) return TrackBed.ClaimedRefusal;
+            if (TrackBed.ClaimedSections(_sapi.World, fromPlayer, points, null, gauge)) return TrackBed.ClaimedRefusal;
 
             return TrackBuilder.Build(_sapi.World, fromPlayer, tool, points);
         }

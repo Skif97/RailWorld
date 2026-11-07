@@ -14,8 +14,8 @@ namespace RailWorld.Tests
     {
         private static bool Overlap(double ax, double az, double bx, double bz, double cx, double cz, double dx, double dz)
         {
-            return Footprint.Overlap(new Vec3d(ax, 0, az), new Vec3d(bx, 0, bz), Footprint.StandardWidth,
-                new Vec3d(cx, 0, cz), new Vec3d(dx, 0, dz), Footprint.StandardWidth, out _, out _);
+            return Footprint.Overlap(new Vec3d(ax, 0, az), new Vec3d(bx, 0, bz), TrackGauge.Narrow.FootprintWidth,
+                new Vec3d(cx, 0, cz), new Vec3d(dx, 0, dz), TrackGauge.Narrow.FootprintWidth, out _, out _);
         }
 
         [Fact]
@@ -27,7 +27,7 @@ namespace RailWorld.Tests
             Assert.False(Overlap(0, 0, 0.5, 0, 0, 2.0, 0.5, 2.0));
 
             // Між кінцями самих шпал при цьому ще лишається щілина: запас її перекриває
-            Assert.True(1.9 > TrackGauge.StandardSleeperLength);
+            Assert.True(1.9 > TrackGauge.Narrow.SleeperLength);
         }
 
         [Fact]
@@ -49,8 +49,8 @@ namespace RailWorld.Tests
         [Fact]
         public void MiddleOfTheOverlapLiesInsideBothFootprints()
         {
-            Assert.True(Footprint.Overlap(new Vec3d(0, 0, 0), new Vec3d(0.5, 0, 0), Footprint.StandardWidth,
-                new Vec3d(0, 0, 1.5), new Vec3d(0.5, 0, 1.5), Footprint.StandardWidth, out double x, out double z));
+            Assert.True(Footprint.Overlap(new Vec3d(0, 0, 0), new Vec3d(0.5, 0, 0), TrackGauge.Narrow.FootprintWidth,
+                new Vec3d(0, 0, 1.5), new Vec3d(0.5, 0, 1.5), TrackGauge.Narrow.FootprintWidth, out double x, out double z));
             Assert.InRange(x, 0, 0.5);
             // Спільна смуга від 1.5 - 0.975 до 0.975
             Assert.InRange(z, 0.525, 0.975);
@@ -63,7 +63,7 @@ namespace RailWorld.Tests
             // Це та сама колія: такі секції розпізнаються за спільним стиком
             double angle = Math.PI / 2;
             List<Section> arc = Lay(Point(0, 0, 1, 0),
-                Point(TrackRules.MinRadius * Math.Sin(angle), TrackRules.MinRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
+                Point(TrackGauge.Narrow.MinRadius * Math.Sin(angle), TrackGauge.Narrow.MinRadius * (1 - Math.Cos(angle)), Math.Cos(angle), Math.Sin(angle)));
 
             for (int i = 0; i + 1 < arc.Count; i++)
             {

@@ -201,6 +201,28 @@ void main()
         /// </summary>
         public void AddRailPart(Vec3i chunkCoord, string part, string material, Vec3d position, Vec3f rotation)
         {
+            AddRailPart(chunkCoord, part, material, position, rotation, 1f);
+        }
+
+        /// <summary>
+        /// Те саме, але деталь, що лежить упоперек колії (пластина під гостряки), розтягнута по довжині на іншу ширину
+        /// колії: модель намальована для вузької, а звиси за рамними рейками лишаються ті самі.
+        /// </summary>
+        public void AddRailPart(Vec3i chunkCoord, string part, string material, Vec3d position, Vec3f rotation, double trackWidth)
+        {
+            TrackPartRenderer renderer = RailPart(part, material);
+            if (renderer == null) return;
+            double length = trackWidth + renderer.ModelLength - TrackGauge.Narrow.Width;
+            renderer.Add(chunkCoord, position, rotation, (float)(length / renderer.ModelLength));
+        }
+
+        private void AddRailPart(Vec3i chunkCoord, string part, string material, Vec3d position, Vec3f rotation, float scale)
+        {
+            RailPart(part, material)?.Add(chunkCoord, position, rotation, scale);
+        }
+
+        private TrackPartRenderer RailPart(string part, string material)
+        {
             string key = "#" + part + "-" + material;
             if (!partRenderers.TryGetValue(key, out var renderer))
             {
@@ -208,7 +230,7 @@ void main()
                 partRenderers[key] = renderer;
                 instanced.Add(renderer);
             }
-            renderer.Add(chunkCoord, position, rotation, 1f);
+            return renderer;
         }
 
         // Меш деталі з моделі shapes/part, з текстурою потрібного металу. Свого предмета в такої деталі немає:

@@ -35,9 +35,6 @@ namespace RailWorld.src.RailWay
         /// <summary>Найменший радіус повороту в плані і перелому по висоті, у ширинах колії.</summary>
         public static double MinRadiusGauges { get; private set; } = DefaultMinRadiusGauges;
 
-        /// <summary>Найменший радіус повороту в плані і перелому по висоті, блоків.</summary>
-        public static double MinRadius => TrackGauge.StandardWidth * MinRadiusGauges;
-
         /// <summary>
         /// Найменший просвіт між двома коліями, що проходять одна над одною, блоків. Якщо колія, яку маршрут
         /// перетинає в плані, вища чи нижча за нього менше ніж на стільки, це перетин в одному рівні, і маршрут

@@ -13,7 +13,7 @@ namespace RailWorld.Tests
     /// </summary>
     public class NodeTimbersTests : TrackTestBase
     {
-        private const double Sleeper = TrackGauge.StandardSleeperLength;
+        private static readonly double Sleeper = TrackGauge.Narrow.SleeperLength;
         private List<Section> straight, arc;
 
         // arcFirst: дуга стоїть у записі стрілки першою гілкою, а не другою
@@ -175,7 +175,7 @@ namespace RailWorld.Tests
                 Vec3d end = End(timber, 1);
                 double fromCentre = Math.Sqrt(end.X * end.X + (end.Z - radius) * (end.Z - radius));
                 // Ближня до прямої колії рейка дуги лежить зовні: далі від центра на пів ширини колії
-                Assert.True(fromCentre <= radius + TrackGauge.StandardWidth / 2 - NodeTimbers.RailTail * 0.5,
+                Assert.True(fromCentre <= radius + TrackGauge.Narrow.Width / 2 - NodeTimbers.RailTail * 0.5,
                     "подовжена шпала не дістає до рейки відгалуження: до центра " + fromCentre.ToString("0.00"));
             }
         }

@@ -53,7 +53,7 @@ namespace RailWorld.Tests
             var track = new List<Section>();
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
-                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength);
                 section.InstallationSleeper("oak");
                 section.InstallationRails("iron");
                 Store(section);
@@ -80,7 +80,7 @@ namespace RailWorld.Tests
             var planned = new List<Section>();
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
-                planned.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                planned.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength));
             }
             return planned;
         }
@@ -99,7 +99,7 @@ namespace RailWorld.Tests
                 var normal = new Vec3f(-tangent.Z, 0, tangent.X);
                 PointOnBezierCurve At(double x, double z) => new PointOnBezierCurve { position = new Vec3d(x, 0, z), tangent = tangent, normal = normal };
                 sections.Add(new Section(At(ends[i].X, ends[i].Z), At(ends[i].X + dx / 2, ends[i].Z + dz / 2), At(ends[i + 1].X, ends[i + 1].Z),
-                    TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                    TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength));
             }
             return sections;
         }

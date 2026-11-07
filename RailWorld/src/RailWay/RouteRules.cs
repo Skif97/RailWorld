@@ -11,6 +11,8 @@ namespace RailWorld.src.RailWay
         public bool[] Problems;
         public double MinRadius;
         public double MinVerticalRadius;
+        /// <summary>Ширина колії маршруту: від неї найменший радіус.</summary>
+        public TrackGauge Gauge = TrackGauge.Narrow;
         public bool CrossesItself;
         public bool Broken;
 
@@ -21,9 +23,10 @@ namespace RailWorld.src.RailWay
             if (Broken) reasons.Add("рейки розриваються по висоті");
             // Радіус натурний, тож ловить і перелом по висоті. Якщо він порушений і окремо по висоті, причина
             // саме там; інакше це поворот
-            bool vertical = MinVerticalRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance;
-            if (vertical) reasons.Add("перелом по висоті крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
-            if (MinRadius < TrackRules.MinRadius - RouteRules.RadiusTolerance && !vertical) reasons.Add("поворот крутіший за радіус " + TrackRules.MinRadius.ToString("0.0"));
+            double limit = Gauge.MinRadius - Gauge.RadiusTolerance;
+            bool vertical = MinVerticalRadius < limit;
+            if (vertical) reasons.Add("перелом по висоті крутіший за радіус " + Gauge.MinRadius.ToString("0.0"));
+            if (MinRadius < limit && !vertical) reasons.Add("поворот крутіший за радіус " + Gauge.MinRadius.ToString("0.0"));
             if (CrossesItself) reasons.Add("маршрут перетинає сам себе");
             return reasons;
         }
@@ -36,8 +39,6 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class RouteRules
     {
-        // Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення
-        public const double RadiusTolerance = TrackGauge.StandardWidth * 0.3;
         // Точки маршруту, ближчі одна до одної за це вздовж колії, на перетин не перевіряються: це сусіди
         private const double NeighbourRun = 6;
         // На скількох точках нарізки в кожен бік міряється радіус (точка це чверть блока)
@@ -69,9 +70,9 @@ namespace RailWorld.src.RailWay
         /// <summary>
         /// Коротка причина, чому нарізаний маршрут не можна будувати, або null, якщо можна.
         /// </summary>
-        public static string FindProblem(List<PointOnBezierCurve> points)
+        public static string FindProblem(List<PointOnBezierCurve> points, TrackGauge gauge = null)
         {
-            List<string> reasons = Check(points).Reasons();
+            List<string> reasons = Check(points, gauge).Reasons();
             return reasons.Count == 0 ? null : reasons[0];
         }
 
@@ -86,15 +87,17 @@ namespace RailWorld.src.RailWay
             return Math.Atan2(Math.Sqrt(cx * cx + cy * cy + cz * cz), ax * bx + ay * by + az * bz);
         }
 
-        public static RouteCheck Check(List<PointOnBezierCurve> points)
+        public static RouteCheck Check(List<PointOnBezierCurve> points, TrackGauge gauge = null)
         {
+            gauge = gauge ?? TrackGauge.Narrow;
+            double limit = gauge.MinRadius - gauge.RadiusTolerance;
             int count = points.Count;
             bool[] problems = new bool[count];
             double minRadius = double.MaxValue;
             double minVerticalRadius = double.MaxValue;
             bool crossesItself = false;
             bool broken = false;
-            var check = new RouteCheck { Problems = problems, MinRadius = minRadius, MinVerticalRadius = minVerticalRadius };
+            var check = new RouteCheck { Problems = problems, MinRadius = minRadius, MinVerticalRadius = minVerticalRadius, Gauge = gauge };
             if (count < 3) return check;
 
             // Сходинка: сусідні точки нарізки стоять на різній висоті майже одна над одною
@@ -146,7 +149,7 @@ namespace RailWorld.src.RailWay
 
                 if (radius < minRadius) minRadius = radius;
                 if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                if (radius < TrackRules.MinRadius - RadiusTolerance || verticalRadius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
+                if (radius < limit || verticalRadius < limit) problems[i] = true;
             }
 
             // Злам між сусідніми секціями. Попередня перевірка порівнює напрямок на кінцях відрізка
@@ -163,13 +166,13 @@ namespace RailWorld.src.RailWay
                 // Від середини однієї секції до середини наступної
                 double radius = (run[i + 2] - run[i - 2]) / 2 / turn;
                 if (radius < minRadius) minRadius = radius;
-                if (radius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
+                if (radius < limit) problems[i] = true;
             }
 
             // Те саме по висоті.
             // Міряється по осі колії і по кожній рейці окремо. Там, де різко міняється нахил полотна, вісь
             // лишається на місці, а рейки розходяться: одна йде вгору, друга вниз, і ламаються обидві
-            double halfGauge = TrackGauge.StandardWidth / 2;
+            double halfGauge = gauge.Width / 2;
             for (int i = 2; i + 2 < count; i++)
             {
                 for (int side = -1; side <= 1; side++)
@@ -183,13 +186,13 @@ namespace RailWorld.src.RailWay
                     // Від середини однієї секції до середини наступної
                     double verticalRadius = (run[i + 2] - run[i - 2]) / 2 / bend;
                     if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                    if (verticalRadius < TrackRules.MinRadius - RadiusTolerance) problems[i] = true;
+                    if (verticalRadius < limit) problems[i] = true;
                 }
             }
 
             // Перетин із собою. Точки розкладені по клітинках, щоб не порівнювати кожну з кожною. Клітинка
             // не менша за відстань, на якій шукаємо: тоді все, що може бути поруч, лежить у сусідніх клітинках
-            double reach = Footprint.StandardWidth;
+            double reach = gauge.FootprintWidth;
             int cellSize = (int)Math.Ceiling(reach);
 
             var cells = new Dictionary<long, List<int>>();

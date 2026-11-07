@@ -348,12 +348,12 @@ namespace RailWorld
         private const float SwayCurveSpeedup = 1.8f;
         // На кривій такого радіуса і крутіше кузов гойдається найшвидше, на пологішій повільніше, за кривизною.
         // У ширинах колії: 13.5 це 10.5 блока, три найменші радіуси маршруту
-        private const double SwayCurveRadius = TrackGauge.StandardWidth * 13.5;
+        private static readonly double SwayCurveRadius = TrackGauge.Narrow.Width * 13.5;
         // Поштовхи йдуть через випадковий проміжок у цих межах, секунди руху
         private const float BumpEveryMin = 1.2f;
         private const float BumpEveryMax = 4.5f;
         // З якого радіуса і крутіше колеса скрегочуть об рейки, і на якій швидкості щонайменше
-        private static double SquealRadius => TrackRules.MinRadius * 1.4;
+        private static double SquealRadius => TrackGauge.Narrow.MinRadius * 1.4;
         private const float SquealSpeed = 0.4f;
         // Скрегіт не безперервний: уривки через випадкові паузи, як поштовхи. Скільки триває уривок і пауза між
         // ними, секунди на крутій кривій, і як швидко уривок наростає і затихає

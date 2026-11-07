@@ -39,7 +39,7 @@ namespace RailWorld.Tests
                 config.SetDouble(TrackRules.ClearanceCode, 3.5);
                 TrackRules.Load(config, false);
 
-                Assert.Equal(6 * TrackGauge.StandardWidth, TrackRules.MinRadius, 6);
+                Assert.Equal(6 * TrackGauge.Narrow.Width, TrackGauge.Narrow.MinRadius, 6);
                 Assert.Equal(3.5, TrackRules.Clearance, 6);
                 Assert.Equal(3.5 / 2, TrackLevel.Limit, 6);
                 Assert.Equal(TrackRules.DefaultMarkerReach, TrackRules.MarkerReach, 6);

@@ -58,7 +58,7 @@ namespace RailWorld.Tests
             var shared = new List<Section>();
             for (int i = 0; i < 12; i += 2)
             {
-                shared.Add(new Section(route[i], route[i + 1], route[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                shared.Add(new Section(route[i], route[i + 1], route[i + 2], TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength));
             }
             List<Section> together = Lay(shared);
             Vec3d parting = route[12].position;

@@ -396,27 +396,30 @@ namespace RailWorld.src.RailWay
                 axes[k] = AxisOf(tracks[k], entered[k]);
             }
 
-            double gauge = tracks[0][centers[0]].TrackWidth / 2;
             double head = RailProfile.HeadHalfWidth, foot = RailProfile.FootHalfWidth, web = RailProfile.WebHalfWidth, groove = SwitchGeometry.FrogFlangeway;
-            // Місця впоперек колії, від її осі: вісь контррейки і дальній від ходової рейки бік проставки,
-            // він же ближчий до ходової рейки бік шийки контррейки
-            double line = gauge - GuardAxis, spacerEdge = line + web;
 
             var result = new CrossingRails();
             for (int k = 0; k < 2; k++)
             {
                 int other = 1 - k;
                 double near = centers[k] * 2 + 1;
+                // Колії можуть бути різної ширини. own це пів ширини своєї колії: на стільки рейка відходить від її
+                // осі. gauge пів ширини іншої: розриви, жолоби й контррейки стоять там, де проходять її рейки, і
+                // міряються від її осі (At)
+                double own = tracks[k][centers[k]].TrackWidth / 2, gauge = tracks[other][centers[other]].TrackWidth / 2;
+                // Місця впоперек іншої колії, від її осі: вісь контррейки і дальній від ходової рейки бік проставки,
+                // він же ближчий до ходової рейки бік шийки контррейки
+                double line = gauge - GuardAxis, spacerEdge = line + web;
 
                 for (int side = -1; side <= 1; side += 2)
                 {
                     var rail = new CrossingRail
                     {
-                        Track = k, Side = side, Frames = Shifted(axes[k].Frames, side * gauge),
+                        Track = k, Side = side, Frames = Shifted(axes[k].Frames, side * own),
                         Owner = tracks[k][centers[k]], OwnerPart = axes[k].FirstOnSide[centers[k]] == side > 0 ? SectionPart.FirstRail : SectionPart.SecondRail
                     };
                     // Край, що йде вздовж іншої колії за across блоків від її осі
-                    RailEdge At(double across) => Edge(axes[k], side * gauge, axes[other], across, near);
+                    RailEdge At(double across) => Edge(axes[k], side * own, axes[other], across, near);
                     RailSpan Cut(double from, bool capFrom, double to, bool capTo)
                     {
                         RailEdge first = At(from), second = At(to);
@@ -456,7 +459,7 @@ namespace RailWorld.src.RailWay
                         }
                     }
                     // Ділянка накриває і кінці контррейок на плечах
-                    double? middle = Meet(axes[k].Frames, side * gauge, axes[other].Frames, 0, near);
+                    double? middle = Meet(axes[k].Frames, side * own, axes[other].Frames, 0, near);
                     for (int across = -1; across <= 1 && middle != null; across += 2)
                     {
                         RailEdge far = LegEnd(rail, At(across * (gauge + foot)), middle.Value);

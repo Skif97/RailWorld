@@ -63,7 +63,7 @@ namespace RailWorld.Tests
             Assert.Null(conflict);
             // Розворот ухилу від slope до нуля з радіусом переламу R опускає колію на slope² · R / 2; R удвічі більший за
             // найменший радіус (RouteCurve.MonotoneRamp)
-            double turnaround = slope * slope * 2 * TrackRules.MinRadius / 2;
+            double turnaround = slope * slope * 2 * TrackGauge.Narrow.MinRadius / 2;
             Assert.True(below < turnaround + 0.01, "перехід пролітає на " + below.ToString("0.000") + " нижче за місце сходу з основної колії, а розворот ухилу лише " + turnaround.ToString("0.000"));
         }
 

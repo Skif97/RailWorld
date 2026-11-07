@@ -224,12 +224,12 @@ namespace RailWorld.Tests
             Section trunk = LaySwitchAtOrigin();
             Vec3d lever = SectionPicker.LeverPosition(trunk, false);
             double side = Math.Sign(lever.Z);
-            double body = Footprint.StandardWidth / 2;
+            double body = TrackGauge.Narrow.FootprintWidth / 2;
 
             // Колія вздовж стрілки, далі за важіль: шпалами до самого важеля вона не дістає, але заходить
             // у місце, де ходить його вантаж
             double touching = body + SectionBox.LeverReachAcross - 0.2;
-            Assert.True(touching > TrackGauge.StandardSleeperLength / 2 + 0.2);
+            Assert.True(touching > TrackGauge.Narrow.SleeperLength / 2 + 0.2);
             List<Section> beside = Plan(Point(lever.X - 3, lever.Z + side * touching, 1, 0), Point(lever.X + 3, lever.Z + side * touching, 1, 0));
             Assert.True(SectionLinker.FindLeverInTrack(beside, SectionsIn) >= 0);
 
@@ -245,7 +245,7 @@ namespace RailWorld.Tests
             Section trunk = LaySwitchAtOrigin();
             Vec3d lever = SectionPicker.LeverPosition(trunk, false);
             double side = Math.Sign(lever.Z);
-            double body = Footprint.StandardWidth / 2;
+            double body = TrackGauge.Narrow.FootprintWidth / 2;
 
             // Коротка колія впоперек, одразу за важелем уздовж стрілки і лише з його боку: повз сам важіль
             // вона проходить, але вантаж посередині ходу дивиться вздовж колії і зачепив би її
@@ -340,7 +340,7 @@ namespace RailWorld.Tests
         public void TurnOnTheSmallestRadiusIsStillAllowed(double radiusFactor, double degrees)
         {
             // Дуга рівно на найменшому радіусі: суворіша перевірка не має відхиляти те, що правилом дозволено
-            double radius = TrackRules.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
+            double radius = TrackGauge.Narrow.MinRadius * radiusFactor, angle = degrees * Math.PI / 180;
             var route = new List<RoutePoint>
             {
                 new RoutePoint { Position = new Vec3d(-5, 0, 0), Tangent = new Vec3d(1, 0, 0) },
@@ -412,7 +412,7 @@ namespace RailWorld.Tests
             // вздовж маршруту в кожен бік від перетину осей. Доти маршрут мусить лежати рівно в площині колії.
             // Якби вузол рахувався по рейках, він кінчався б уже за 1.96 блока, і шпала маршруту
             // піднімалася б, ще лежачи під рейкою колії
-            double overlap = Footprint.StandardWidth / 2 * (1 / Math.Sin(Math.PI / 6) + 1 / Math.Tan(Math.PI / 6));
+            double overlap = TrackGauge.Narrow.FootprintWidth / 2 * (1 / Math.Sin(Math.PI / 6) + 1 / Math.Tan(Math.PI / 6));
             Assert.Equal(3.64, overlap, 2);
 
             int checkedPoints = 0;
@@ -446,7 +446,7 @@ namespace RailWorld.Tests
             for (int i = 0; i + 1 < points.Count; i++)
             {
                 Vec3d p = points[i].position, q = points[i + 1].position;
-                bool onTrack = laid.Exists(section => Footprint.Overlap(p, q, Footprint.StandardWidth,
+                bool onTrack = laid.Exists(section => Footprint.Overlap(p, q, TrackGauge.Narrow.FootprintWidth,
                     section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _));
                 if (onTrack)
                 {

@@ -99,7 +99,7 @@ namespace RailWorld.src.RailWay
         /// виграє в колії над чи під нею. Вісь секції це ламана через її початок, середину й кінець.
         /// false, якщо такої секції немає.
         /// </summary>
-        public static bool NearestAxis(Vec3d p, double reach, TrackIndex track, out Section nearest, out Vec3d at)
+        public static bool NearestAxis(Vec3d p, double reach, TrackIndex track, out Section nearest, out Vec3d at, TrackGauge gauge = null)
         {
             nearest = null;
             at = null;
@@ -108,6 +108,8 @@ namespace RailWorld.src.RailWay
             // Середина секції не далі ніж за блок від будь-якої точки її осі
             foreach (Section section in track.Around(p, reach + 1, reach + 1))
             {
+                // Колія іншої ширини точку не притягує: з'єднати їх однаково не можна
+                if (gauge != null && TrackGauge.Of(section) != gauge) continue;
                 Vec3d start = section.FullStartPosition, middle = section.GetGlobalPos(), end = section.FullEndPosition;
                 for (int half = 0; half < 2; half++)
                 {

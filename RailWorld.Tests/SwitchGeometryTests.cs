@@ -34,7 +34,7 @@ namespace RailWorld.Tests
 
             // Дуга відходить у бік +Z, тож внутрішня рейка прямої лежить за пів колії в той самий бік
             RailFrame first = geometry.Frames[0];
-            Assert.Equal(TrackGauge.StandardWidth / 2, first.Center.Z, 3);
+            Assert.Equal(TrackGauge.Narrow.Width / 2, first.Center.Z, 3);
             Assert.Equal(1, first.Side.Z, 3);
             Assert.Equal(1, first.Along.X, 3);
         }
@@ -54,7 +54,7 @@ namespace RailWorld.Tests
 
             // Рейки перетинаються там, де дуга відійшла від прямої на ширину колії:
             // R * (1 - cos a) = ширина, уздовж прямої це R * sin a. Перерізи стоять через чверть блока
-            double angle = Math.Acos(1 - TrackGauge.StandardWidth / ArcRadius);
+            double angle = Math.Acos(1 - TrackGauge.Narrow.Width / ArcRadius);
             double expected = ArcRadius * Math.Sin(angle) / 0.25;
             Assert.InRange(geometry.Crossing, expected - 2, expected + 2);
         }
@@ -112,12 +112,12 @@ namespace RailWorld.Tests
         public void BladeLengthIsLimitedAndStopsAtTheFrog()
         {
             // Корінь зовсім близько: гостряк не коротший за найменший. Дуже далеко: не довший за найбільший
-            Assert.Equal(SwitchGeometry.MinBladeSections, SwitchGeometry.BladeSections(0.1));
-            Assert.Equal(SwitchGeometry.MaxBladeSections, SwitchGeometry.BladeSections(100));
+            Assert.Equal(TrackGauge.Narrow.MinBladeSections, SwitchGeometry.BladeSections(0.1, TrackGauge.Narrow));
+            Assert.Equal(TrackGauge.Narrow.MaxBladeSections, SwitchGeometry.BladeSections(100, TrackGauge.Narrow));
 
             // Хрестовина починається з третьої секції: гостряк закінчується перед нею
             var steep = new BranchGeometry { Throat = 3, HideFrom = 3 };
-            Assert.Equal(2, SwitchGeometry.BladeSections(100, steep));
+            Assert.Equal(2, SwitchGeometry.BladeSections(100, steep, TrackGauge.Narrow));
         }
     }
 }

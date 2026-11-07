@@ -80,7 +80,7 @@ namespace RailWorld.Tests
             // Гвинтовий підйом на 30°: натурний радіус це радіус у плані, поділений на cos² ухилу. Радіус у
             // плані на п'яту менший за межу, а натурний більший, тож такий підйом можна. Рівне коло того самого
             // радіуса в плані вже ні
-            double limit = TrackRules.MinRadius - RouteRules.RadiusTolerance;
+            double limit = TrackGauge.Narrow.MinRadius - TrackGauge.Narrow.RadiusTolerance;
             double plan = limit * 0.8;
             Assert.Null(RouteRules.FindProblem(Helix(plan, Math.PI / 6, 6)));
             Assert.NotNull(RouteRules.FindProblem(Helix(plan, 0, 6)));

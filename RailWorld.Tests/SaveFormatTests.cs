@@ -147,7 +147,7 @@ namespace RailWorld.Tests
             int next = read.Add(new Section(new PointOnBezierCurve { position = new Vec3d(5, 10, 5), tangent = new Vec3f(1, 0, 0), normal = new Vec3f(0, 0, 1) },
                 new PointOnBezierCurve { position = new Vec3d(5.25, 10, 5), tangent = new Vec3f(1, 0, 0), normal = new Vec3f(0, 0, 1) },
                 new PointOnBezierCurve { position = new Vec3d(5.5, 10, 5), tangent = new Vec3f(1, 0, 0), normal = new Vec3f(0, 0, 1) },
-                TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength));
             Assert.True(next > data.RailWaySections.Keys.Max());
         }
 

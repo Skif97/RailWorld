@@ -19,6 +19,7 @@ namespace RailWorld
         string railMaterial;
         string ballastMaterial;
         bool replaceBlocks;
+        string trackGauge;
 
         // Слоти лише для показу вибраної шпали і рейки поруч зі списками
         DummyInventory previewInventory;
@@ -38,6 +39,7 @@ namespace RailWorld
                 railMaterial = mystack.Attributes.GetString("railMaterial", "iron");
                 ballastMaterial = mystack.Attributes.GetString("ballastMaterial", RailWorld.DontBuild);
                 replaceBlocks = mystack.Attributes.GetBool("replaceBlocks");
+                trackGauge = TrackGauge.OfTool(mystack).Code;
 
             }
         }
@@ -84,6 +86,11 @@ namespace RailWorld
 
             ElementBounds replaceText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(8) + labelDrop, 400, RowHeight);
             ElementBounds replaceSwitch = ElementBounds.Fixed(EnumDialogArea.RightFixed, -20, Row(8), 40, 40);
+
+            ElementBounds gaugeText = ElementBounds.Fixed(EnumDialogArea.LeftFixed, 20, Row(9) + labelDrop, 160, RowHeight);
+            ElementBounds gaugeDropDown = ElementBounds.Fixed(EnumDialogArea.RightFixed, -80, Row(9), 400, 40);
+            string[] gaugeValues = Array.ConvertAll(TrackGauge.All, gauge => gauge.Code);
+            string[] gaugeNames = Array.ConvertAll(TrackGauge.All, gauge => Lang.Get("railworld:gauge-" + gauge.Code));
 
             string[] ballastValues = BuildBallastOptions(out string[] ballastNames);
             previewInventory[2].Itemstack = BallastPreviewStack(ballastMaterial);
@@ -137,7 +144,10 @@ namespace RailWorld
             .AddPassiveItemSlot(ballastIcon, previewInventory, previewInventory[2])
 
             .AddStaticText(Lang.Get("railworld:menu-replace"), CairoFont.WhiteSmallishText(), replaceText, "ReplaceText")
-            .AddSwitch(OnReplaceToggled, replaceSwitch, "ReplaceSwitch");
+            .AddSwitch(OnReplaceToggled, replaceSwitch, "ReplaceSwitch")
+
+            .AddStaticText(Lang.Get("railworld:menu-gauge"), CairoFont.WhiteSmallishText(), gaugeText, "GaugeText")
+            .AddDropDown(gaugeValues, gaugeNames, Math.Max(0, Array.IndexOf(gaugeValues, trackGauge)), OnGaugeSelected, gaugeDropDown, "GaugeDropDown");
             SingleComposer.GetSwitch("ReplaceSwitch").SetValue(replaceBlocks);
             SingleComposer.GetSlider("RadiusLengthSlider").SetValues(railLengRad, 4, 150, 1);
             SingleComposer.GetSlider("ClimbDescentSlider").SetValues(railClimDes, -20, 20, 1);
@@ -224,6 +234,12 @@ namespace RailWorld
             UpdateRailMode();
         }
 
+        private void OnGaugeSelected(string code, bool selected)
+        {
+            trackGauge = code;
+            UpdateRailMode();
+        }
+
         private void OnBallastSelected(string code, bool selected)
         {
             ballastMaterial = code;
@@ -285,7 +301,7 @@ namespace RailWorld
         // Висота кнопки, повзунка чи списку в рядку
         private const double RowHeight = 40;
         // Скільки рядків у меню: два рядки режимів, повзунки, бік, три списки і перемикач
-        private const int MenuRows = 9;
+        private const int MenuRows = 10;
 
         // Найбільша висота розгорнутого списку, як у гри (GuiElementListMenu.MaxHeight)
         private const int DropDownMaxHeight = 350;
@@ -362,6 +378,7 @@ namespace RailWorld
                 packet.railMaterial = railMaterial;
                 packet.ballastMaterial = ballastMaterial;
                 packet.replaceBlocks = replaceBlocks;
+                packet.trackGauge = trackGauge;
                 SendRailMenuPacket(capi.Network,packet);
             }
         }

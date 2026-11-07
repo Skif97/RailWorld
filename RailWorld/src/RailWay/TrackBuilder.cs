@@ -20,6 +20,7 @@ namespace RailWorld.src.RailWay
         {
             string sleeperMaterial = tool.Attributes.GetString("sleeperMaterial", "oak");
             string railMaterial = tool.Attributes.GetString("railMaterial", "iron");
+            TrackGauge gauge = TrackGauge.OfTool(tool);
             string ballastMaterial = tool.Attributes.GetString("ballastMaterial", RailWorld.DontBuild);
             bool replaceBlocks = tool.Attributes.GetBool("replaceBlocks");
 
@@ -36,8 +37,7 @@ namespace RailWorld.src.RailWay
 
             for (int i = 0; i < pointList.Count - 2; i += 2)
             {
-                var section = new Section(
-                    pointList[i], pointList[i + 1], pointList[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                Section section = gauge.NewSection(pointList[i], pointList[i + 1], pointList[i + 2]);
 
                 // Чанк може бути не завантажений, тоді секцію записати нікуди
                 DataInChunk data = session.Get(section.ChunkAddres, create: true);

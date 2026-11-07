@@ -55,10 +55,12 @@ namespace RailWorld.src.RailWay
                 at.Add(points.Count - 1);
             }
 
+            // Гілка тієї самої ширини, що й колія, до якої чіпляється: колії різної ширини не з'єднуються
+            TrackGauge gauge = TrackGauge.Of(marker.Track);
             var branch = new List<Section>();
             for (int i = 0; i + 2 < points.Count && branch.Count < SwitchSides.MaxSections; i += 2)
             {
-                branch.Add(new Section(points[i], points[i + 1], points[i + 2], TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength));
+                branch.Add(gauge.NewSection(points[i], points[i + 1], points[i + 2]));
             }
             var track = new List<Section>();
             var entered = new List<bool>();
@@ -122,16 +124,16 @@ namespace RailWorld.src.RailWay
         /// З точок розмітки робить маршрут: кінці виносить на край блока, проміжні точки вирівнює по сусідах
         /// і скруглює кути. null, якщо точок менше двох.
         /// </summary>
-        public static List<RoutePoint> Build(List<RouteMarker> points)
+        public static List<RoutePoint> Build(List<RouteMarker> points, TrackGauge gauge = null)
         {
-            return Build(points, null);
+            return Build(points, null, gauge);
         }
 
         /// <summary>
         /// Те саме, але ще каже про кожну точку маршруту, з якої точки гравця (номер у points) її зроблено:
         /// кут маршрут заміняє двома точками, початком і кінцем дуги, і додає свої точки на сході з колії.
         /// </summary>
-        internal static List<RoutePoint> Build(List<RouteMarker> points, List<int> sources)
+        internal static List<RoutePoint> Build(List<RouteMarker> points, List<int> sources, TrackGauge gauge = null)
         {
             int count = points.Count;
             if (count < 2) return null;
@@ -200,7 +202,7 @@ namespace RailWorld.src.RailWay
                 });
             }
 
-            return SplitIntoArcs(RoundCorners(points, route, sources), sources);
+            return SplitIntoArcs(RoundCorners(points, route, sources, gauge ?? TrackGauge.Narrow), sources);
         }
 
         // Напрямки на кінцях ділянки лягають на одну дугу, якщо вони дзеркальні відносно хорди, з таким допуском, рад
@@ -400,7 +402,7 @@ namespace RailWorld.src.RailWay
         /// Якби висота йшла прямими між точками, увесь перехід від рівного кінця маршруту до ухилу дістався б
         /// короткому шматку прямої перед першою дугою: там виходив злам, а за ним горбок.
         /// </summary>
-        private static List<RoutePoint> RoundCorners(List<RouteMarker> markers, List<RoutePoint> route, List<int> sources)
+        private static List<RoutePoint> RoundCorners(List<RouteMarker> markers, List<RoutePoint> route, List<int> sources, TrackGauge gauge)
         {
             int count = route.Count;
             if (count < 3)
@@ -422,7 +424,7 @@ namespace RailWorld.src.RailWay
             // Схід із напрямку першої точки і захід у напрямок останньої
             if (nodes[1].Corner)
             {
-                Node lead = LeadIn(nodes[0], nodes[1].Position, 1);
+                Node lead = LeadIn(nodes[0], nodes[1].Position, 1, gauge);
                 if (lead != null)
                 {
                     lead.Marker = 0;
@@ -431,7 +433,7 @@ namespace RailWorld.src.RailWay
             }
             if (nodes[nodes.Count - 2].Corner)
             {
-                Node lead = LeadIn(nodes[nodes.Count - 1], nodes[nodes.Count - 2].Position, -1);
+                Node lead = LeadIn(nodes[nodes.Count - 1], nodes[nodes.Count - 2].Position, -1, gauge);
                 if (lead != null)
                 {
                     lead.Marker = count - 1;
@@ -466,7 +468,7 @@ namespace RailWorld.src.RailWay
                 // Точка на прямій або розворот назад: дуги тут немає
                 if (node.Turn < 0.01 || node.Turn > Math.PI - 0.05) continue;
 
-                need[i] = TrackRules.MinRadius * CornerRadiusFactor * Math.Tan(node.Turn / 2);
+                need[i] = gauge.MinRadius * CornerRadiusFactor * Math.Tan(node.Turn / 2);
                 node.Cut = Math.Min(need[i], Math.Min(Limit(i - 1, leg[i - 1]), Limit(i + 1, leg[i])));
             }
 
@@ -685,7 +687,7 @@ namespace RailWorld.src.RailWay
         /// майже прямо по курсу) чи не вміщається (кут усередині кола найменшого радіуса).
         /// direction це 1 для початку маршруту і -1 для кінця: там маршрут іде навпаки, з кута в точку.
         /// </summary>
-        private static Node LeadIn(Node end, Vec3d target, int direction)
+        private static Node LeadIn(Node end, Vec3d target, int direction, TrackGauge gauge)
         {
             double tx = end.Tangent.X * direction, tz = end.Tangent.Z * direction;
             double length = Math.Sqrt(tx * tx + tz * tz);
@@ -707,7 +709,7 @@ namespace RailWorld.src.RailWay
 
             foreach (double factor in LeadRadiusFactors)
             {
-                double radius = TrackRules.MinRadius * factor;
+                double radius = gauge.MinRadius * factor;
                 double ox = p.X + nx * radius, oz = p.Z + nz * radius;
                 double vx = target.X - ox, vz = target.Z - oz;
                 double far = Math.Sqrt(vx * vx + vz * vz);

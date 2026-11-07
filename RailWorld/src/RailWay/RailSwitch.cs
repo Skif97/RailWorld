@@ -388,7 +388,7 @@ namespace RailWorld.src.RailWay
                 {
                     PairSections = SwitchZone.PairSections(mine, mineAtStart, other, otherAtStart, resolve),
                     OverlapSections = overlap,
-                    BladeSections = SwitchGeometry.BladeSections(heelAt, geometry),
+                    BladeSections = SwitchGeometry.BladeSections(heelAt, geometry, TrackGauge.Of(trunk)),
                     FrogFrom = geometry.Throat >= 0 ? geometry.HideFrom : 0,
                     FrogTo = geometry.Throat >= 0 ? geometry.HideTo : 0
                 };

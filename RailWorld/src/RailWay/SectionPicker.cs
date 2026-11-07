@@ -5,15 +5,103 @@ using Vintagestory.API.MathTools;
 namespace RailWorld.src.RailWay
 {
     /// <summary>
-    /// Розміри типів колії. Зараз тип один; вузька шахтна колія буде ще одним набором цих двох чисел.
+    /// Ширина колії: відстань між осями рейок і довжина шпали. Від неї ж і правила, що міряються в ширинах колії:
+    /// найменший радіус, допуск радіуса, наростання нахилу полотна, довжина гостряка, габарит. Кожна секція
+    /// зберігає свою ширину (Section.TrackWidth, SleeperLength); колії різної ширини не з'єднуються, але можуть
+    /// перетинатися в одному рівні, і кожна тримається своїх правил. Блок це метр.
     /// </summary>
-    public static class TrackGauge
+    public sealed class TrackGauge
     {
-        /// <summary>Відстань між осями рейок.</summary>
-        public const float StandardWidth = 0.78f;
+        /// <summary>Вузька колія, 750 мм. Шпала трохи більша за блок, тому колія займає смугу в три блоки.</summary>
+        public static readonly TrackGauge Narrow = new TrackGauge("narrow", 0.78f, 1.75f);
 
-        /// <summary>Довжина шпали. Трохи більша за блок, тому колія займає смугу в три блоки завширшки.</summary>
-        public const float StandardSleeperLength = 1.75f;
+        /// <summary>Широка колія, 1520 мм, шпала як справжня під неї, 2.75 м.</summary>
+        public static readonly TrackGauge Broad = new TrackGauge("broad", 1.52f, 2.75f);
+
+        public static readonly TrackGauge[] All = { Narrow, Broad };
+
+        /// <summary>Під цим ключем ширина нової колії лежить у властивостях інструмента (меню колії).</summary>
+        public const string AttributeKey = "trackGauge";
+
+        /// <summary>Ширина, вибрана в меню колії на цьому інструменті.</summary>
+        public static TrackGauge OfTool(Vintagestory.API.Common.ItemStack tool)
+        {
+            return ByCode(tool?.Attributes?.GetString(AttributeKey));
+        }
+
+        /// <summary>Код для збереження в предметі й пакеті.</summary>
+        public readonly string Code;
+
+        /// <summary>Відстань між осями рейок.</summary>
+        public readonly float Width;
+
+        /// <summary>Довжина шпали.</summary>
+        public readonly float SleeperLength;
+
+        private TrackGauge(string code, float width, float sleeperLength)
+        {
+            Code = code;
+            Width = width;
+            SleeperLength = sleeperLength;
+        }
+
+        /// <summary>Найменший радіус повороту в плані і перелому по висоті, блоків.</summary>
+        public double MinRadius => Width * TrackRules.MinRadiusGauges;
+
+        /// <summary>Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення.</summary>
+        public double RadiusTolerance => Width * 0.3;
+
+        /// <summary>На скільки блоків від кінця маршруту, що примикає до нахиленої колії, нахил полотна сходить до нуля.</summary>
+        public double CantRampLength => Width * 8.0;
+
+        /// <summary>Ширина габариту колії: шпала із запасом (Footprint).</summary>
+        public double FootprintWidth => SleeperLength + Footprint.Margin;
+
+        /// <summary>
+        /// Межі довжини гостряка в секціях: від 3.5 до 8 ширин колії, як на справжній залізниці. При колії 0.78
+        /// це від 3 до 6 блоків.
+        /// </summary>
+        public int MinBladeSections => (int)Math.Ceiling(Width * 3.5 / 0.5);
+        public int MaxBladeSections => (int)Math.Floor(Width * 8.0 / 0.5);
+
+        /// <summary>Ширина за кодом; невідомий код це вузька колія.</summary>
+        public static TrackGauge ByCode(string code)
+        {
+            foreach (TrackGauge gauge in All)
+            {
+                if (gauge.Code == code) return gauge;
+            }
+            return Narrow;
+        }
+
+        /// <summary>Ширина, з якою покладено секцію.</summary>
+        public static TrackGauge Of(Section section)
+        {
+            return OfWidth(section.TrackWidth);
+        }
+
+        /// <summary>Ширина з такою відстанню між рейками; найближча, якщо точно такої немає.</summary>
+        public static TrackGauge OfWidth(double width)
+        {
+            TrackGauge best = Narrow;
+            foreach (TrackGauge gauge in All)
+            {
+                if (Math.Abs(gauge.Width - width) < Math.Abs(best.Width - width)) best = gauge;
+            }
+            return best;
+        }
+
+        /// <summary>Чи дві секції однієї ширини: лише такі з'єднуються стиком і стрілкою.</summary>
+        public static bool Same(Section a, Section b)
+        {
+            return Math.Abs(a.TrackWidth - b.TrackWidth) < 1e-3;
+        }
+
+        /// <summary>Нова секція цієї ширини.</summary>
+        public Section NewSection(PointOnBezierCurve start, PointOnBezierCurve middle, PointOnBezierCurve end)
+        {
+            return new Section(start, middle, end, Width, SleeperLength);
+        }
     }
 
     /// <summary>

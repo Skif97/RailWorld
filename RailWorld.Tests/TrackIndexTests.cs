@@ -167,7 +167,7 @@ namespace RailWorld.Tests
 
             foreach (Section planned in Plan(Point(0, 3, 1, 0), Point(20, 3, 1, 0)))
             {
-                Section lifted = new Section(Lifted(planned.Start, planned), Lifted(planned.Center, planned), Lifted(planned.End, planned), TrackGauge.StandardWidth, TrackGauge.StandardSleeperLength);
+                Section lifted = new Section(Lifted(planned.Start, planned), Lifted(planned.Center, planned), Lifted(planned.End, planned), TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength);
                 Assert.Null(SectionLinker.FindSame(lifted, SectionsIn));
             }
         }
