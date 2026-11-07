@@ -29,7 +29,7 @@ namespace RailWorld
 
         public override void AfterPhysicsTick(float dt)
         {
-            if (entity is EntityTrolley trolley) trolley.AfterPhysicsTickOnRail();
+            if (entity is EntityTrolley trolley) trolley.AfterPhysicsTickOnRail(dt);
             base.AfterPhysicsTick(dt);
         }
 

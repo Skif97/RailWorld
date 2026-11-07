@@ -558,7 +558,7 @@ namespace RailWorld
         private readonly List<Section> snowToClear = new List<Section>();
         // Чанк, на який вагонетка чекає: він не завантажений, або даних колії в ньому ще немає в кеші сервера (крок
         // фізики їх лише читає). Дані дорозбирає основний потік; незавантажений чанк завантажить гра, коли біля нього
-        // буде гравець. Вагонетка поки стоїть на місці, зберігаючи і положення, і швидкість, і їде далі, щойно
+        // буде гравець, або попросить сама вагонетка (RunUnattended). Вагонетка поки стоїть на місці, зберігаючи і положення, і швидкість, і їде далі, щойно
         // чанк готовий
         private Vec3i awaitedChunk;
         // Чанк, про який основний потік уже з'ясував, що колії в ньому немає: туди вагонетка не їде, а сходить
@@ -575,12 +575,19 @@ namespace RailWorld
 
         /// <summary>
         /// Сервер, основний потік, після всієї фізики тіку: розчищає сніг із секцій, на які вагонетка заїхала, і
-        /// дорозбирає дані чанка, на які вона чекає.
+        /// дорозбирає дані чанка, на які вона чекає. dt це час, який фізика пройшла за цей тік.
         /// </summary>
-        public void AfterPhysicsTickOnRail()
+        public void AfterPhysicsTickOnRail(float dt)
         {
+            // Сутність, якої не відстежує жоден гравець, гра через крок фізики не проганяє зовсім, хоч би яка вона
+            // була активна (PhysicsManager.DoWork, IsTracked == 0), а AfterPhysicsTick кличе для всіх. Тож вагонетку
+            // далеко від гравців веде колією звідси, тим самим кроком руху. Її положення однаково нікому не шлеться
+            if (onRail && IsTracked == 0 && TrackRules.TrolleysUnattended && Api.Side == EnumAppSide.Server) TickOnRail(dt);
+
             foreach (Section section in snowToClear) TrackBed.ClearSnow(World, section, TrackBed.SnowAfterTrolley);
             snowToClear.Clear();
+
+            if (TrackRules.TrolleysUnattended && Api is ICoreServerAPI sapi) RunUnattended(sapi);
 
             if (awaitedChunk == null) return;
             if (World.BlockAccessor.GetChunk(awaitedChunk.X, awaitedChunk.Y, awaitedChunk.Z) != null && DataInChunk.Get(World, awaitedChunk) == null)
@@ -588,6 +595,73 @@ namespace RailWorld
                 chunkWithoutTrack = awaitedChunk;
             }
             awaitedChunk = null;
+        }
+
+        // Швидкість, нижче за яку вагонетка вважається такою, що стоїть, блоків за секунду
+        private const double RunningSpeed = 0.001;
+        // Як часто оновлювати колонки під вагонеткою, мс. Гра вивантажує колонку без оновлень приблизно за 12 с
+        private const long HoldColumnsMs = 1000;
+        private long columnsHeldAtMs;
+        // Колонки, які вже попросили завантажити: просимо один раз, а не щосекунди
+        private readonly HashSet<(int, int)> requestedColumns = new HashSet<(int, int)>();
+
+        // Вагонетка їде далеко від гравців. Гра вивантажує колонку, яку ніхто не оновлює (MarkFresh), і робить
+        // неактивною сутність далі за її SimulationRange. Тому в русі вагонетка лишається активною й оновлює колонку
+        // під собою і попереду, як гра оновлює колонки навколо гравців. Коли вона спиниться, гра сама збереже й
+        // вивантажить їх разом із нею: утримання через KeepLoaded тут не годиться, бо відпустити колонку можна лише
+        // UnloadChunkColumn, а він її не зберігає
+        private void RunUnattended(ICoreServerAPI sapi)
+        {
+            bool running = onRail && Math.Abs(railVelocity) > RunningSpeed;
+            AlwaysActive = running;
+            if (!running) return;
+
+            if (State != EnumEntityState.Active)
+            {
+                // Гра сама стан постійно активної сутності вже не міняє (PhysicsManager.UpdateTrackedEntityState)
+                EnumEntityState before = State;
+                State = EnumEntityState.Active;
+                OnStateChanged(before);
+            }
+
+            long now = World.ElapsedMilliseconds;
+            if (now - columnsHeldAtMs < HoldColumnsMs) return;
+            columnsHeldAtMs = now;
+
+            int size = GlobalConstants.ChunkSize;
+            int chunkY = (int)Pos.Y / size;
+            HoldColumn(sapi, (int)Pos.X / size, chunkY, (int)Pos.Z / size);
+            if (awaitedChunk != null) HoldColumn(sapi, awaitedChunk.X, awaitedChunk.Y, awaitedChunk.Z);
+
+            // Колонка попереду, щоб не чекати на її межі. Куди далі поверне колія, тут не видно: якщо не вгадали,
+            // вагонетка почекає на межі (awaitedChunk)
+            if (DataInChunk.TryGetServerCached(railChunk, out DataInChunk data) && data.RailWaySections.TryGetValue(railIndex, out Section section))
+            {
+                Vec3d start = section.FullStartPosition, end = section.FullEndPosition;
+                double dx = end.X - start.X, dz = end.Z - start.Z;
+                double length = Math.Sqrt(dx * dx + dz * dz);
+                if (length > 1e-6)
+                {
+                    double ahead = size * Math.Sign(railVelocity) / length;
+                    HoldColumn(sapi, (int)(Pos.X + dx * ahead) / size, chunkY, (int)(Pos.Z + dz * ahead) / size);
+                }
+            }
+        }
+
+        // Оновлює колонку, щоб гра її не вивантажила; незавантажену просить завантажити
+        private void HoldColumn(ICoreServerAPI sapi, int chunkX, int chunkY, int chunkZ)
+        {
+            IBlockAccessor blocks = World.BlockAccessor;
+            int size = GlobalConstants.ChunkSize;
+            if (chunkX < 0 || chunkZ < 0 || chunkX >= blocks.MapSizeX / size || chunkZ >= blocks.MapSizeZ / size) return;
+
+            if (blocks.GetChunk(chunkX, chunkY, chunkZ) == null)
+            {
+                if (requestedColumns.Add((chunkX, chunkZ))) sapi.WorldManager.LoadChunkColumnPriority(chunkX, chunkZ);
+                return;
+            }
+            requestedColumns.Remove((chunkX, chunkZ));
+            blocks.GetMapChunk(chunkX, chunkZ)?.MarkFresh();
         }
 
         // Wait: наступний чанк не завантажений або його даних ще немає в кеші сервера; вагонетка стоїть на краю, швидкість зберігає

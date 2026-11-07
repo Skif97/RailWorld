@@ -5,5 +5,7 @@
 	"worldattribute-railClearance": "Просвіт між коліями одна над одною",
 	"worldattribute-railClearance-desc": "Блоків. При 2,5 під мостом потрібно три блоки. Діє після перезапуску світу.",
 	"worldattribute-railMarkerReach": "Притягування точки маршруту до колії",
-	"worldattribute-railMarkerReach-desc": "За скільки блоків від колії точка розмітки стає на неї. Діє після перезапуску світу."
+	"worldattribute-railMarkerReach-desc": "За скільки блоків від колії точка розмітки стає на неї. Діє після перезапуску світу.",
+	"worldattribute-railTrolleysUnattended": "Вагонетки їздять без гравців",
+	"worldattribute-railTrolleysUnattended-desc": "Вагонетка в русі сама тримає завантаженими чанки під собою і попереду, тож їде колією і далеко від гравців. Вимкнено: чекає на межі завантаженого світу. Діє після перезапуску світу."
 }

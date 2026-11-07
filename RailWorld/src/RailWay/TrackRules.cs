@@ -17,6 +17,7 @@ namespace RailWorld.src.RailWay
         public const string MinRadiusCode = "railMinRadius";
         public const string ClearanceCode = "railClearance";
         public const string MarkerReachCode = "railMarkerReach";
+        public const string TrolleysUnattendedCode = "railTrolleysUnattended";
 
         /// <summary>Найменший радіус за замовчуванням, у ширинах колії: при колії 0.78 це 3.51 блока.</summary>
         public const double DefaultMinRadiusGauges = 4.5;
@@ -54,6 +55,12 @@ namespace RailWorld.src.RailWay
         public static double MarkerReach { get; private set; } = DefaultMarkerReach;
 
         /// <summary>
+        /// Чи вагонетки їздять далеко від гравців: у русі самі тримають завантаженими чанки під собою і попереду.
+        /// Інакше вагонетка чекає на межі завантаженого світу, поки туди не прийде гравець.
+        /// </summary>
+        public static bool TrolleysUnattended { get; private set; }
+
+        /// <summary>
         /// Бере правила з налаштувань світу. remember: світ, створений до появи цих налаштувань, отримує в них
         /// значення за замовчуванням, і далі тримає їх, хоч би як потім змінилися значення за замовчуванням у моді.
         /// Так робить сервер: налаштування світу зберігаються разом із ним.
@@ -63,6 +70,18 @@ namespace RailWorld.src.RailWay
             MinRadiusGauges = Read(config, MinRadiusCode, DefaultMinRadiusGauges, remember);
             Clearance = Read(config, ClearanceCode, DefaultClearance, remember);
             MarkerReach = Read(config, MarkerReachCode, DefaultMarkerReach, remember);
+            TrolleysUnattended = ReadBool(config, TrolleysUnattendedCode, false, remember);
+        }
+
+        private static bool ReadBool(ITreeAttribute config, string code, bool fallback, bool remember)
+        {
+            if (config == null) return fallback;
+            if (!config.HasAttribute(code))
+            {
+                if (remember) config.SetBool(code, fallback);
+                return fallback;
+            }
+            return config.GetBool(code, fallback);
         }
 
         private static double Read(ITreeAttribute config, string code, double fallback, bool remember)
