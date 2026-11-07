@@ -355,6 +355,16 @@ namespace RailWorld
 
         private void ShowMotion(float dt)
         {
+            // Поки з сервера не прийшло жодне положення, гра на кадрі з dt = 0 ставить у Pos NaN: веде сутність
+            // між положеннями з часткою dtAccum / interval, а там обидва нулі (EntityBehaviorInterpolatePosition.OnRenderFrame).
+            // Наступного кадру положення вже справжнє. Такий кадр пропускаємо і відлік починаємо з першого справжнього:
+            // інакше NaN потрапив би в згладжену швидкість назавжди, і кузов стоячої вагонетки гойдався б і підскакував
+            if (!double.IsFinite(Pos.X) || !double.IsFinite(Pos.InternalY) || !double.IsFinite(Pos.Z))
+            {
+                shownBefore = false;
+                return;
+            }
+
             if (!shownBefore || dt <= 0)
             {
                 shownAt.Set(Pos.X, Pos.InternalY, Pos.Z);
