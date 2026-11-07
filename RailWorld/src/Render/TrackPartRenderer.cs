@@ -51,16 +51,19 @@ namespace RailWorld
         /// <summary>
         /// Ставить деталь на місце position у пачку чанка chunkCoord: того, у даних якого лежить її секція.
         /// </summary>
-        public void Add(Vec3i chunkCoord, Vec3d position, Vec3f rotation, float stretch)
+        public void Add(Vec3i chunkCoord, Vec3d position, Vec3f rotation, float stretch, float thickness = 1f, float breadth = 1f)
         {
-            Add(chunkCoord, position, new TrackPartInstance(position, rotation, stretch));
+            Add(chunkCoord, position, new TrackPartInstance(position, rotation, stretch, thickness, breadth));
         }
 
-        // Шпала розтягується вздовж своєї осі X навколо середини моделі
+        // Шпала розтягується вздовж своєї осі X і впоперек (Z) навколо середини моделі, а по товщині від верху вниз:
+        // верх моделі лежить на нулі
         protected override void Transform(TrackPartInstance part, float[] matrix)
         {
             SetRotation(matrix, part.Rotation);
             scale[0] = part.Stretch;
+            scale[1] = part.Thickness;
+            scale[2] = part.Breadth;
             Mat4f.Scale(matrix, matrix, scale);
             Mat4f.Translate(matrix, matrix, -0.5f, 0f, -0.5f);
         }

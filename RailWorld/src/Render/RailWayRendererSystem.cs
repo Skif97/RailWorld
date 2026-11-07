@@ -90,7 +90,7 @@ void main()
         /// <summary>
         /// Додає шпалу для рендеру.
         /// </summary>
-        public void AddSleeper(Vec3i chunkCoord, string material, Vec3d position, Vec3f rotation, float length)
+        public void AddSleeper(Vec3i chunkCoord, string material, Vec3d position, Vec3f rotation, float length, TrackGauge gauge)
         {
             if (!partRenderers.TryGetValue(material, out var renderer))
             {
@@ -100,8 +100,10 @@ void main()
                 partRenderers[material] = renderer;
                 instanced.Add(renderer);
             }
-            // Модель шпали намальована своєї звичайної довжини; довший брус стрілки це вона ж, розтягнута
-            renderer.Add(chunkCoord, position, rotation, length / renderer.ModelLength);
+            // Модель шпали намальована своєї звичайної довжини і з перерізом вузької колії; довший брус стрілки і
+            // товща шпала широкої колії це вона ж, розтягнута
+            renderer.Add(chunkCoord, position, rotation, length / renderer.ModelLength,
+                (float)(gauge.SleeperDepth / TrackGauge.Narrow.SleeperDepth), (float)(gauge.SleeperWidth / TrackGauge.Narrow.SleeperWidth));
         }
 
         /// <summary>Скріплення рейки зі шпалою: підкладка з костилями.</summary>

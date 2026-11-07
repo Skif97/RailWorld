@@ -13,10 +13,14 @@ namespace RailWorld.src.RailWay
     public sealed class TrackGauge
     {
         /// <summary>Вузька колія, 750 мм. Шпала трохи більша за блок, тому колія займає смугу в три блоки.</summary>
-        public static readonly TrackGauge Narrow = new TrackGauge("narrow", 0.78f, 1.75f);
+        public static readonly TrackGauge Narrow = new TrackGauge("narrow", 0.78f, 1.75f, SectionBox.SleeperHalfWidth * 2, SectionBox.SleeperDepth);
 
-        /// <summary>Широка колія, 1520 мм, шпала як справжня під неї, 2.75 м.</summary>
-        public static readonly TrackGauge Broad = new TrackGauge("broad", 1.52f, 2.75f);
+        /// <summary>
+        /// Широка колія, 1520 мм, шпала як справжня під неї: 2.75 м, переріз 0.25 на 0.2. Крок шпал той самий, пів
+        /// блока, як і справжній під 1520 (близько 0.54 м), тож проміжок між шпалами дорівнює ширині шпали, як на
+        /// справжній колії.
+        /// </summary>
+        public static readonly TrackGauge Broad = new TrackGauge("broad", 1.52f, 2.75f, 0.25, 0.2);
 
         public static readonly TrackGauge[] All = { Narrow, Broad };
 
@@ -38,11 +42,19 @@ namespace RailWorld.src.RailWay
         /// <summary>Довжина шпали.</summary>
         public readonly float SleeperLength;
 
-        private TrackGauge(string code, float width, float sleeperLength)
+        /// <summary>
+        /// Переріз шпали: ширина вздовж колії і товщина. Верх шпали в усіх колій на одній висоті, під підошвою рейки,
+        /// тож рейки однакові по висоті, а товща шпала глибше сидить у землі.
+        /// </summary>
+        public readonly double SleeperWidth, SleeperDepth;
+
+        private TrackGauge(string code, float width, float sleeperLength, double sleeperWidth, double sleeperDepth)
         {
             Code = code;
             Width = width;
             SleeperLength = sleeperLength;
+            SleeperWidth = sleeperWidth;
+            SleeperDepth = sleeperDepth;
         }
 
         /// <summary>Найменший радіус повороту в плані і перелому по висоті, блоків.</summary>
@@ -289,15 +301,16 @@ namespace RailWorld.src.RailWay
             Vec3d middle = new Vec3d((start.X + end.X) / 2, (start.Y + end.Y) / 2, (start.Z + end.Z) / 2);
 
             // Шпала лежить посередині секції, під серединою рейок
+            TrackGauge gauge = TrackGauge.Of(s);
             boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Sleeper, middle, chord, s.CenterNormal,
-                SectionBox.SleeperHalfWidth, s.SleeperLength / 2, -SectionBox.SleeperDepth, 0)
+                gauge.SleeperWidth / 2, s.SleeperLength / 2, -gauge.SleeperDepth, 0)
             {
                 Installed = s.SleeperInstalled
             });
 
             // Бокс на всю секцію: від краю до краю шпали, від низу шпали до верху рейки
             boxes.Add(new SectionBox(chunkCoord, index, s, SectionPart.Whole, middle, chord, s.CenterNormal,
-                chord.Length() / 2, s.SleeperLength / 2, -SectionBox.SleeperDepth, SectionBox.RailHeight)
+                chord.Length() / 2, s.SleeperLength / 2, -gauge.SleeperDepth, SectionBox.RailHeight)
             {
                 Installed = true
             });

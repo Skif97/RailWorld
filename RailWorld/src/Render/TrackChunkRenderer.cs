@@ -106,7 +106,7 @@ namespace RailWorld
                     float roll = (float)((Math.Asin(GameMath.Clamp(section.StartNormal.Y, -1, 1)) + Math.Asin(GameMath.Clamp(section.EndNormal.Y, -1, 1))) / 2);
                     // Між шпалою і рейкою лежить підкладка, тож шпала нижча за підошву рейки на її товщину
                     var sleeperPos = new Vec3d(globalPos.X, globalPos.Y - RailProfile.PlateThickness, globalPos.Z);
-                    renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", sleeperPos, new Vec3f(pitch, yaw, roll), section.SleeperLength);
+                    renderer.AddSleeper(chunkCoord, section.SleeperMaterial ?? "oak", sleeperPos, new Vec3f(pitch, yaw, roll), section.SleeperLength, TrackGauge.Of(section));
 
                     // Скріплення: під кожною рейкою, там де вона лежить на шпалі. Друге повернуте на пів оберта,
                     // тож костилі двох рейок стоять дзеркально відносно осі колії. Де на секції стик рейок,
@@ -618,7 +618,7 @@ namespace RailWorld
 
             // Між брусом і рейкою лежить підкладка, тож брус нижчий за підошву рейки на її товщину, як і шпала
             var position = new Vec3d(timber.Position.X, timber.Position.Y - RailProfile.PlateThickness, timber.Position.Z);
-            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", position, rotation, (float)timber.Length);
+            renderer.AddSleeper(chunkCoord, timber.Owner.SleeperMaterial ?? "oak", position, rotation, (float)timber.Length, TrackGauge.Of(timber.Owner));
 
             // Пластина під гостряки: на осі колії, упоперек неї, як сам брус. З металу рейки над нею
             if (timber.SlidePlate)

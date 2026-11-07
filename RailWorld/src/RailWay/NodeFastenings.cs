@@ -235,7 +235,8 @@ namespace RailWorld.src.RailWay
 
             double flat = Math.Sqrt(across.X * across.X + across.Z * across.Z);
             double sideways = flat < 1e-9 ? 0 : (-dx * across.Z + dz * across.X) / flat;
-            return Math.Abs(lengthwise) <= timber.Length / 2 && Math.Abs(sideways) <= SectionBox.SleeperHalfWidth;
+            double halfWidth = timber.Owner != null ? TrackGauge.Of(timber.Owner).SleeperWidth / 2 : SectionBox.SleeperHalfWidth;
+            return Math.Abs(lengthwise) <= timber.Length / 2 && Math.Abs(sideways) <= halfWidth;
         }
     }
 }

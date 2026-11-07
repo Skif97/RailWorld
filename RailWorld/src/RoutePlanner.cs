@@ -829,7 +829,7 @@ namespace RailWorld
 
                 RailSelectionRenderer.AddBox(data, rgba,
                     center.X - meshOrigin.X, center.Y - meshOrigin.Y, center.Z - meshOrigin.Z, side, up, along,
-                    gauge.SleeperLength / 2, -SectionBox.SleeperDepth, 0, SectionBox.SleeperHalfWidth);
+                    gauge.SleeperLength / 2, -gauge.SleeperDepth, 0, gauge.SleeperWidth / 2);
             }
         }
 
