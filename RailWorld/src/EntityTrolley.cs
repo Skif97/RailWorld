@@ -686,6 +686,11 @@ namespace RailWorld
             }
 
             double timeLeft = dt;
+            // Де вагонетка стояла на початку кроку: якщо кузов у новому місці влізе в блок, вона лишиться тут
+            Section startSection = section;
+            startChunk.Set(railChunk.X, railChunk.Y, railChunk.Z);
+            int startIndex = railIndex, startFacing = railFacing, startNoSleeper = sectionsWithoutSleeper;
+            double startS = railS, startVelocity = railVelocity;
 
             // Моторизовану вагонетку пасажир не розганяє сам: він лише вмикає мотор і гальмує
             bool hasMotor = motorGears.Length > 0;
@@ -841,9 +846,97 @@ namespace RailWorld
                 if (result == EnterResult.Wait) break;
             }
 
+            // Кузов у новому місці вліз би в блок: доїжджаємо до блока і трохи відскакуємо назад, як від стіни. Якщо
+            // кузов уже стояв у блоці (блок поставили на вагонетку), не тримаємо: хай виїде
+            bool moved = section != startSection || railS != startS;
+            if (moved && BodyHitsBlock(section, railS) && !BodyHitsBlock(startSection, startS))
+            {
+                double speed = Math.Abs(railVelocity);
+                // Звідки в останній секції кроку її проїхали: з початку кроку, якщо секція та сама, інакше з того
+                // кінця, яким у неї заїхали. Якщо кузов не влазить уже там, до блока доїжджаємо поділом навпіл
+                int along = Math.Sign(railVelocity) != 0 ? Math.Sign(railVelocity) : Math.Sign(startVelocity);
+                double from = section == startSection ? startS : (along > 0 ? 0 : RailPose.Length(section));
+                if ((section != startSection || from != railS) && !BodyHitsBlock(section, from))
+                {
+                    double to = railS;
+                    for (int i = 0; i < ContactSteps && Math.Abs(to - from) > ContactPrecision; i++)
+                    {
+                        double middle = (from + to) / 2;
+                        if (BodyHitsBlock(section, middle)) to = middle;
+                        else from = middle;
+                    }
+                    railS = from;
+                    railVelocity = speed > MinBounceSpeed ? -along * BlockRestitution * speed : 0;
+                }
+                else
+                {
+                    // Стіна на самому стику секцій: лишаємося, де були на початку кроку. Знак швидкості відносно тієї секції
+                    section = startSection;
+                    railChunk.Set(startChunk.X, startChunk.Y, startChunk.Z);
+                    railIndex = startIndex;
+                    railFacing = startFacing;
+                    sectionsWithoutSleeper = startNoSleeper;
+                    railS = startS;
+                    railVelocity = speed > MinBounceSpeed ? -Math.Sign(startVelocity) * BlockRestitution * speed : 0;
+                    SyncTrackPlace();
+                }
+            }
+
             RailPose.Place(Pos, section, railS, SelectionBox.Y2 / 2, railFacing, out float cant);
             SetCant(cant);
             Pos.Motion.Set(0, 0, 0);
+        }
+
+        // Кузов для зіткнень із блоками: коробка, що стоїть на полотні, блоків. Розміри з моделі вагонетки
+        // (shapes/entity/trolley.json): довжина по самому кузову, без буферів, тож буфери заходять у блок сантиметрів
+        // на 12; ширина й висота трохи менші, щоб вона не чіпляла стіни впритул. Низ піднято над полотном, щоб не
+        // чіпляти землю обабіч колії і краї схилу; сам блок колії не рахується
+        private const double BodyLength = 1.6, BodyWidth = 1.1, BodyHeight = 0.8, BodyLift = 0.25;
+        // Як точно вагонетка доїжджає до блока, блоків, і запобіжник на кількість поділів навпіл
+        private const double ContactPrecision = 0.01;
+        private const int ContactSteps = 12;
+        // Яку частку швидкості вагонетка зберігає, відскакуючи від блока, і повільніше за яку просто зупиняється
+        public const double BlockRestitution = 0.2;
+        private const double MinBounceSpeed = 1;
+        private readonly Vec3i startChunk = new Vec3i();
+        private readonly BlockPos bodyBlockPos = new BlockPos(0);
+
+        // Чи кузов вагонетки, що стоїть на секції за s від її початку, перетинає твердий блок. Кличеться з кроку
+        // фізики: лише читає блоки, як і фізика гри
+        private bool BodyHitsBlock(Section section, double s)
+        {
+            var chord = new SectionChord(section);
+            if (!chord.Valid) return false;
+
+            double up = BodyLift + BodyHeight / 2;
+            var body = new OrientedBox(
+                chord.StartX + chord.AlongX * s + chord.UpX * up,
+                chord.StartY + chord.AlongY * s + chord.UpY * up,
+                chord.StartZ + chord.AlongZ * s + chord.UpZ * up,
+                chord.AlongX, chord.AlongY, chord.AlongZ, BodyLength / 2,
+                chord.SideX, chord.SideY, chord.SideZ, BodyWidth / 2,
+                chord.UpX, chord.UpY, chord.UpZ, BodyHeight / 2);
+
+            IBlockAccessor blocks = World.BlockAccessor;
+            int minX = (int)Math.Floor(body.CX - body.Reach(0)), maxX = (int)Math.Floor(body.CX + body.Reach(0));
+            int minY = (int)Math.Floor(body.CY - body.Reach(1)), maxY = (int)Math.Floor(body.CY + body.Reach(1));
+            int minZ = (int)Math.Floor(body.CZ - body.Reach(2)), maxZ = (int)Math.Floor(body.CZ + body.Reach(2));
+            for (int x = minX; x <= maxX; x++)
+                for (int y = minY; y <= maxY; y++)
+                    for (int z = minZ; z <= maxZ; z++)
+                    {
+                        bodyBlockPos.Set(x, y, z);
+                        Block block = blocks.GetBlock(bodyBlockPos);
+                        if (block.Id == 0 || block is BlockTrackBed) continue;
+
+                        Cuboidf[] boxes = block.GetCollisionBoxes(blocks, bodyBlockPos);
+                        if (boxes == null) continue;
+                        foreach (Cuboidf box in boxes)
+                        {
+                            if (body.Overlaps(x + box.X1, y + box.Y1, z + box.Z1, x + box.X2, y + box.Y2, z + box.Z2)) return true;
+                        }
+                    }
+            return false;
         }
 
         // Читає керування пасажира моторизованої вагонетки і повертає швидкість, яку мотор має тримати.
@@ -1072,11 +1165,12 @@ namespace RailWorld
         }
 
         // Правий клік садить у вагонетку (це робить поведінка seatable), Shift + правий клік штовхає її по колії
+        // ПКМ сідає, Shift+ПКМ забирає порожню вагонетку предметом, як пліт гри, ЛКМ штовхає її вздовж колії
         public override void OnInteract(EntityAgent byEntity, ItemSlot slot, Vec3d hitPosition, EnumInteractMode mode)
         {
-            if (mode != EnumInteractMode.Interact)
+            if (mode == EnumInteractMode.Attack)
             {
-                base.OnInteract(byEntity, slot, hitPosition, mode);
+                if (Api.Side == EnumAppSide.Server && onRail) Push(byEntity);
                 return;
             }
 
@@ -1086,11 +1180,27 @@ namespace RailWorld
 
             if (byEntity.Controls.ShiftKey)
             {
-                if (Api.Side == EnumAppSide.Server && onRail) Push(byEntity);
+                if (Api.Side == EnumAppSide.Server) PickUp(byEntity);
                 return;
             }
 
             base.OnInteract(byEntity, slot, hitPosition, mode);
+        }
+
+        // Віддає порожню вагонетку гравцю предметом, а вагонетка зникає. Так само гра забирає пліт (EntityBoat.tryPickup):
+        // не влізла в інвентар, падає поруч, і про це запис у журнал аудиту
+        private void PickUp(EntityAgent byEntity)
+        {
+            if (GetBehavior<EntityBehaviorSeatable>()?.AnyMounted() == true) return;
+
+            // Предмет має той самий код, що й сутність (ItemTrolley)
+            Item item = World.GetItem(Code);
+            if (item == null) return;
+
+            var stack = new ItemStack(item);
+            if (!byEntity.TryGiveItemStack(stack)) World.SpawnItemEntity(stack, Pos.XYZ);
+            World.Logger.Audit("{0} Picked up 1x{1} at {2}.", byEntity.GetName(), stack.Collectible.Code, Pos);
+            Die(EnumDespawnReason.Death);
         }
 
         // Штовхає вздовж колії в той бік, куди дивиться гравець
