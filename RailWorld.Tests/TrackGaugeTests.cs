@@ -29,11 +29,11 @@ namespace RailWorld.Tests
         }
 
         [Theory]
-        [InlineData(0.10, false)]
-        [InlineData(0.04, true)]
+        [InlineData(0.12, false)]
+        [InlineData(0.09, true)]
         public void BroadTrackIsNoSteeperThanItsMaxSlope(double slope, bool allowed)
         {
-            // Пряма з одним ухилом: зміни ухилу немає, лишається сам ухил. На широкій колії межа 5%
+            // Пряма з одним ухилом: зміни ухилу немає, лишається сам ухил. На широкій колії межа 10%
             var route = new List<RoutePoint>
             {
                 new RoutePoint { Position = new Vec3d(0, 0, 0), Tangent = new Vec3d(1, slope, 0).Normalize() },

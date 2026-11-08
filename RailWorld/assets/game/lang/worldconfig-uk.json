@@ -7,7 +7,7 @@
 	"worldattribute-railSlopeChangeNarrow": "Найбільша зміна ухилу вузької колії",
 	"worldattribute-railSlopeChangeNarrow-desc": "Відсоткових пунктів на блок шляху: наскільки плавно колія переходить з рівного на підйом. 28,5 це радіус 3,5 блока.",
 	"worldattribute-railSlopeChangeBroad": "Найбільша зміна ухилу широкої колії",
-	"worldattribute-railSlopeChangeBroad-desc": "Відсоткових пунктів на блок шляху. Довгим вагонам потрібно плавно: на 0,5 верхи сусідніх вагонів на переломі не сходяться.",
+	"worldattribute-railSlopeChangeBroad-desc": "Відсоткових пунктів на блок шляху. Довгим вагонам потрібно плавно: на 1 кузови сусідніх вагонів на переломі не сходяться.",
 	"worldattribute-railMaxSlopeNarrow": "Найбільший ухил вузької колії",
 	"worldattribute-railMaxSlopeNarrow-desc": "У відсотках: 5 це 5 блоків підйому на 100 блоків шляху. 175 це 60°, тобто без окремої межі.",
 	"worldattribute-railMaxSlopeBroad": "Найбільший ухил широкої колії",

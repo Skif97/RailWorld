@@ -33,15 +33,17 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Найбільша зміна ухилу за замовчуванням, відсоткових пунктів на блок шляху. Вузька: стільки, скільки дає її
-        /// найменший радіус (100 / 3.51). Широка: 0.5, щоб на переломі профілю верхи сусідніх вагонів не сходилися.
+        /// найменший радіус (100 / 3.51). Широка: 1, тоді на переломі профілю кузови сусідніх вагонів не сходяться
+        /// (лише середини дахів у ямці торкаються на сантиметр).
         /// </summary>
-        public const double DefaultSlopeChangeNarrow = 28.5, DefaultSlopeChangeBroad = 0.5;
+        public const double DefaultSlopeChangeNarrow = 28.5, DefaultSlopeChangeBroad = 1;
 
         /// <summary>
         /// Найбільший ухил за замовчуванням, відсотків. Вузька: 175, це 60°, тобто межа лише та сама, що й розрив рейок
-        /// (RouteRules.BreakSlopeDeg). Широка: 5, трохи крутіше за метро.
+        /// (RouteRules.BreakSlopeDeg). Широка: 10. Крутіше за справжні магістралі, але звичайна колія таке ще бачила
+        /// (гірські трамваї, легкі моторвагонні потяги).
         /// </summary>
-        public const double DefaultMaxSlopeNarrow = 175, DefaultMaxSlopeBroad = 5;
+        public const double DefaultMaxSlopeNarrow = 175, DefaultMaxSlopeBroad = 10;
 
         /// <summary>
         /// Просвіт за замовчуванням, блоків. Колії на рівній землі стоять на висотах, кратних блоку, тож зазор між
