@@ -200,9 +200,10 @@ namespace RailWorld
             // Записи стрілок і перетинів, пораховані неповністю, іншою версією розрахунку або з посиланням на
             // секцію, якої вже немає
             api.Event.ChunkColumnLoaded += OnChunkColumnLoaded;
-            // Гра повідомляє про кожен чанк колонки, перш ніж її вивантажити; при вимкненні сервера про всі
-            // завантажені, тож обробник лише забуває чанк
-            api.Event.ChunkColumnUnloaded += OnChunkUnloaded;
+            // Гра вивантажує колонку цілком. При звичайному вивантаженні повідомляє один раз на колонку з Y = 0
+            // (ServerSystemUnloadChunks.UnloadChunkColumns), при вимкненні сервера і в UnloadChunkColumn про кожен
+            // чанк: Y у події нічого не значить, обробник забуває всю колонку
+            api.Event.ChunkColumnUnloaded += OnChunkColumnUnloaded;
 
             serverChannel = api.Network
                 .RegisterChannel(ChannelName)
@@ -573,12 +574,18 @@ namespace RailWorld
             sapi.Event.EnqueueMainThreadTask(() => CompleteSwitches(chunkX, chunkZ, height), "railworld-switches");
         }
 
-        // Вивантажений чанк: забуваємо все, що сервер тримав про нього в пам'яті
-        private void OnChunkUnloaded(Vec3i chunk)
+        // Вивантажена колонка: забуваємо все, що сервер тримав у пам'яті про кожен її чанк. Повторна подія на ту саму
+        // колонку (при вимкненні сервера) нічого не міняє
+        private void OnChunkColumnUnloaded(Vec3i column)
         {
-            DataInChunk.ForgetServer(chunk);
-            SwitchRegistry.Forget(chunk);
-            CrossingRegistry.Forget(chunk);
+            int height = sapi.World.BlockAccessor.MapSizeY / GlobalConstants.ChunkSize;
+            for (int y = 0; y < height; y++)
+            {
+                var chunk = new Vec3i(column.X, y, column.Z);
+                DataInChunk.ForgetServer(chunk);
+                SwitchRegistry.Forget(chunk);
+                CrossingRegistry.Forget(chunk);
+            }
         }
 
         private void CompleteSwitches(int chunkX, int chunkZ, int height)
