@@ -54,8 +54,9 @@ namespace RailWorld.Tests
             for (int i = 0; i + 2 < points.Count; i += 2)
             {
                 var section = new Section(points[i], points[i + 1], points[i + 2], TrackGauge.Narrow.Width, TrackGauge.Narrow.SleeperLength);
-                section.InstallationSleeper("oak");
-                section.InstallationRails("iron");
+                section.InstallPart(SectionPart.Sleeper, "normal", "oak");
+                section.InstallPart(SectionPart.FirstRail, "normal", "iron");
+                section.InstallPart(SectionPart.SecondRail, "normal", "iron");
                 Store(section);
 
                 if (track.Count > 0) Join(track[track.Count - 1], section);
@@ -110,8 +111,9 @@ namespace RailWorld.Tests
             for (int i = 0; i < track.Count; i++)
             {
                 Section section = track[i];
-                section.InstallationSleeper("oak");
-                section.InstallationRails("iron");
+                section.InstallPart(SectionPart.Sleeper, "normal", "oak");
+                section.InstallPart(SectionPart.FirstRail, "normal", "iron");
+                section.InstallPart(SectionPart.SecondRail, "normal", "iron");
                 Store(section);
                 if (i > 0) Join(track[i - 1], section);
             }

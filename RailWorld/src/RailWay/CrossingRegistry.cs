@@ -311,8 +311,7 @@ namespace RailWorld.src.RailWay
             {
                 for (int number = track.NodeFrom; number <= track.NodeTo; number++)
                 {
-                    SectionLink member = track.Members[number - 1];
-                    if (member.ChunkX == link.ChunkX && member.ChunkY == link.ChunkY && member.ChunkZ == link.ChunkZ && member.Index == link.Index) return true;
+                    if (track.Members[number - 1].SameSection(link)) return true;
                 }
             }
             return false;

@@ -192,33 +192,35 @@ namespace RailWorld
             return stack;
         }
 
-        // Варіанти підсипки: зверху «не будувати», далі всі породи, з яких у грі буває гравій
+        // Варіанти підсипки: зверху «не будувати», далі всі породи, з яких у грі буває гравій. Назви беруться на
+        // кожне відкриття меню: мову гравець може змінити, не виходячи з гри
         private string[] BuildBallastOptions(out string[] names)
         {
             // Блоки гри за світ не міняються, тож перебираємо їх раз, а не на кожне відкриття меню
-            string[][] options = ObjectCacheUtil.GetOrCreate(capi, "railworld-ballast-options", () => FindBallastOptions());
-            names = options[1];
-            return options[0];
+            List<(string Rock, Block Gravel)> gravels = ObjectCacheUtil.GetOrCreate(capi, "railworld-ballast-gravels", FindGravels);
+            var values = new string[gravels.Count + 1];
+            names = new string[gravels.Count + 1];
+            values[0] = RailWorld.DontBuild;
+            names[0] = Lang.Get("railworld:menu-dontbuild");
+            for (int i = 0; i < gravels.Count; i++)
+            {
+                values[i + 1] = gravels[i].Rock;
+                names[i + 1] = gravels[i].Gravel.GetHeldItemName(new ItemStack(gravels[i].Gravel));
+            }
+            return values;
         }
 
-        // Варіанти підсипки і їхні назви: [0] значення, [1] назви
-        private string[][] FindBallastOptions()
+        // Блоки гравію гри і порода кожного
+        private List<(string Rock, Block Gravel)> FindGravels()
         {
-            var values = new List<string> { RailWorld.DontBuild };
-            var nameList = new List<string> { Lang.Get("railworld:menu-dontbuild") };
-
+            var gravels = new List<(string Rock, Block Gravel)>();
             foreach (Block block in capi.World.Blocks)
             {
                 if (block?.Code == null) continue;
-                ItemStack stack = new ItemStack(block);
-                string rock = SectionHandler.GetGravelRock(stack);
-                if (rock == null) continue;
-
-                values.Add(rock);
-                nameList.Add(block.GetHeldItemName(stack));
+                string rock = SectionHandler.GetGravelRock(new ItemStack(block));
+                if (rock != null) gravels.Add((rock, block));
             }
-
-            return new[] { values.ToArray(), nameList.ToArray() };
+            return gravels;
         }
 
         private ItemStack BallastPreviewStack(string rock)

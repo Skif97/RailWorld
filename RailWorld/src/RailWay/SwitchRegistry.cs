@@ -221,8 +221,7 @@ namespace RailWorld.src.RailWay
             {
                 foreach (SectionLink member in branch.Members)
                 {
-                    if (member.ChunkX == link.ChunkX && member.ChunkY == link.ChunkY && member.ChunkZ == link.ChunkZ
-                        && member.Index == link.Index && member.AtStart == link.AtStart) return true;
+                    if (member.SameAs(link)) return true;
                 }
             }
             return false;

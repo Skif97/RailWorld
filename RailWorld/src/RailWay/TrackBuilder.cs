@@ -62,8 +62,12 @@ namespace RailWorld.src.RailWay
                 if (TrackBed.CanAttach(world, section))
                 {
                     // Деталь, для якої в меню вибрано «не будувати», лишається порожнім місцем
-                    if (sleeperMaterial != RailWorld.DontBuild) section.InstallationSleeper(sleeperMaterial);
-                    if (railMaterial != RailWorld.DontBuild) section.InstallationRails(railMaterial);
+                    if (sleeperMaterial != RailWorld.DontBuild) section.InstallPart(SectionPart.Sleeper, "normal", sleeperMaterial);
+                    if (railMaterial != RailWorld.DontBuild)
+                    {
+                        section.InstallPart(SectionPart.FirstRail, "normal", railMaterial);
+                        section.InstallPart(SectionPart.SecondRail, "normal", railMaterial);
+                    }
                     if (ballastMaterial != RailWorld.DontBuild) section.InstallPart(SectionPart.Ballast, "normal", ballastMaterial);
                 }
                 else

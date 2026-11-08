@@ -205,7 +205,5 @@ namespace RailWorld.src.RailWay
 
             return Footprint.Overlap(from, to, SectionBox.LeverReachAcross * 2, section.FullStartPosition, section.FullEndPosition, Footprint.Width(section), out _, out _);
         }
-
-        // Ті самі кінці, в будь-якому з двох напрямків
     }
 }

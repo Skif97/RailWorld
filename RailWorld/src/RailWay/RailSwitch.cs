@@ -131,9 +131,7 @@ namespace RailWorld.src.RailWay
             if (other.Members.Count > Members.Count) return false;
             for (int n = 0; n < other.Members.Count; n++)
             {
-                SectionLink mine = Members[n], theirs = other.Members[n];
-                if (mine.ChunkX != theirs.ChunkX || mine.ChunkY != theirs.ChunkY || mine.ChunkZ != theirs.ChunkZ
-                    || mine.Index != theirs.Index || mine.AtStart != theirs.AtStart) return false;
+                if (!Members[n].SameAs(other.Members[n])) return false;
             }
             return true;
         }

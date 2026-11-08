@@ -103,7 +103,7 @@ namespace RailWorld.src.RailWay
                     {
                         foreach (SectionLink theirs in b.GetLinks(otherEnd == 0))
                         {
-                            if (mine.ChunkX == theirs.ChunkX && mine.ChunkY == theirs.ChunkY && mine.ChunkZ == theirs.ChunkZ && mine.Index == theirs.Index) return true;
+                            if (mine.SameSection(theirs)) return true;
                         }
                     }
                 }

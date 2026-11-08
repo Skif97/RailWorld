@@ -83,15 +83,16 @@ namespace RailWorld
 
             // Усі шість методів гри закриті, і оновлення може їх перейменувати. Без будь-котрого з них перехоплення
             // кліків не працює як ціле, тож не ставимо жодного: колію тоді не виділити, але гра не падає
-            if (beginUseItem == null || beginUseItemTyped == null || startAttackAnimation == null || updateSelection == null || noBlockSelected == null || blockSelected == null)
+            const string lost = "колію не можна буде виділити й розібрати";
+            if (beginUseItem == null || beginUseItemTyped == null || startAttackAnimation == null)
             {
-                capi.Logger.Error("[RailWorld] у грі змінилися методи SystemMouseInWorldInteractions: колію не можна буде виділити й розібрати");
+                capi.Logger.Error("[RailWorld] у грі змінилися методи SystemMouseInWorldInteractions: " + lost);
                 return;
             }
-
-            harmony.Patch(updateSelection, postfix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(UpdateCurrentSelectionPostfix)));
-            harmony.Patch(noBlockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(NoBlockSelectedPrefix)));
-            harmony.Patch(blockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(BlockSelectedPrefix)));
+            GamePatches.Apply(harmony, capi.Logger, lost,
+                new GamePatches.Patch(updateSelection, postfix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(UpdateCurrentSelectionPostfix))),
+                new GamePatches.Patch(noBlockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(NoBlockSelectedPrefix))),
+                new GamePatches.Patch(blockSelected, prefix: new HarmonyMethod(typeof(SectionInteractionClient), nameof(BlockSelectedPrefix))));
         }
 
         public void Dispose()

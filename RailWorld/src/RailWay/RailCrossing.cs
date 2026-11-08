@@ -85,8 +85,7 @@ namespace RailWorld.src.RailWay
         public bool SameCenter(CrossingTrack other)
         {
             if (other == null || Center < 1 || Center > Members.Count || other.Center < 1 || other.Center > other.Members.Count) return false;
-            SectionLink mine = Members[Center - 1], theirs = other.Members[other.Center - 1];
-            return mine.ChunkX == theirs.ChunkX && mine.ChunkY == theirs.ChunkY && mine.ChunkZ == theirs.ChunkZ && mine.Index == theirs.Index;
+            return Members[Center - 1].SameSection(other.Members[other.Center - 1]);
         }
 
         [ProtoAfterDeserialization]

@@ -193,7 +193,10 @@ namespace RailWorld.src.RailWay
                 cut = true;
                 return 0;
             }
-            // Сусідньою гілкою йдемо так, як стоять її стрілки
+            // Сусідньою гілкою йдемо так, як стоять її стрілки. Від їхнього положення відповідь не залежить: стрілка
+            // на сусідній гілці там, де гілки ще лежать одна на одній, це стик у тілі цієї стрілки, а його правила не
+            // дають покласти ні планувальнику, ні серверу (JointInBody). Тож у межах перекриття сусідня гілка не
+            // розходиться
             TrackWalker beside = TrackWalker.Riding(otherFirst, theirs.AtStart, resolve);
             TrackWalker walk = TrackWalker.Entering(branch, mine.AtStart, resolve);
             int count = 0;

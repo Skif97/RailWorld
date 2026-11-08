@@ -9,30 +9,30 @@ namespace RailWorld.src.RailWay
     public class Section
     {
         [ProtoMember(1)]
-        private Vec3i _chunkAddres; //адрес и стартовая точка для отрисовки
+        private Vec3i _chunkAddres; // чанк секції: від його кута відкладені всі її точки
         [ProtoMember(2)]
         private float _trackWidth;
        
         [ProtoMember(3)]
         private Vec3d _startPosition;
         [ProtoMember(4)]
-        private Vec3f _startTangent; //нормализированный вектор
+        private Vec3f _startTangent; // одиничний вектор
         [ProtoMember(5)]
-        private Vec3f _startNormal; //нормализированный вектор
+        private Vec3f _startNormal; // одиничний вектор
         
         [ProtoMember(6)]
         private Vec3d _centerPosition;
         [ProtoMember(7)]
-        private Vec3f _centerTangent; //нормализированный вектор
+        private Vec3f _centerTangent; // одиничний вектор
         [ProtoMember(8)]
-        private Vec3f _centerNormal; //нормализированный вектор
+        private Vec3f _centerNormal; // одиничний вектор
 
         [ProtoMember(9)]
         private Vec3d _endPosition;
         [ProtoMember(10)]
-        private Vec3f _endTangent; //нормализированный вектор
+        private Vec3f _endTangent; // одиничний вектор
         [ProtoMember(11)]
-        private Vec3f _endNormal; //нормализированный вектор
+        private Vec3f _endNormal; // одиничний вектор
 
         [ProtoMember(12)]
         private bool _firstRailInstalled;
@@ -114,13 +114,12 @@ namespace RailWorld.src.RailWay
         // вони рахуються раз; у збереження не потрапляють
         internal List<BlockPos> Cells;
 
-        public Section() { }// для серриализатора
+        public Section() { } // для серіалізатора
 
 
         /// <summary>
-        /// Использовать если начальная, центральная и конечная точки находятся в глобальных координатах.
+        /// Секція з точками у світових координатах. Чанк секції той, де її середина.
         /// </summary>
-
         public Section(PointOnBezierCurve start, PointOnBezierCurve center, PointOnBezierCurve end, float trackWidth, float sleeperLength)
         {
             _sleeperLength = sleeperLength;
@@ -132,11 +131,7 @@ namespace RailWorld.src.RailWay
 
         }
 
-        /// <summary>
-        /// Использовать если начальная, центральная и конечная точки находятся в координатах чанка.
-        /// </summary>
-
-
+        // Точки в координатах чанка chunkAddres
         private void Initialization(Vec3i chunkAddres, float trackWidth, Vec3d startPosition, Vec3f startTangent, Vec3f startNormal, Vec3d centerPosition, Vec3f centerTangent, Vec3f centerNormal, Vec3d endPosition, Vec3f endTangent, Vec3f endNormal)
         {
             _chunkAddres = chunkAddres;
@@ -255,19 +250,6 @@ namespace RailWorld.src.RailWay
             return new Vec3d(_chunkAddres.X * GlobalConstants.ChunkSize + _centerPosition.X, _chunkAddres.Y * GlobalConstants.ChunkSize + _centerPosition.Y, _chunkAddres.Z * GlobalConstants.ChunkSize + _centerPosition.Z);
         }
 
-        public bool InstallationRails(string material) 
-        {
-            if (!_firstRailInstalled)
-            {
-                _firstRailInstalled = true;
-                _secondRailInstalled = true;
-                _railMaterial = material;
-                _secondRailMaterial = material;
-                return true;
-            }
-            return false;
-        }
-
         /// <summary>
         /// Встановлює одну деталь і запам'ятовує тип і матеріал предмета, з якого її зроблено.
         /// </summary>
@@ -352,16 +334,6 @@ namespace RailWorld.src.RailWay
             }
         }
 
-        public bool InstallationSleeper(string material)
-        {
-            if (!_sleeperInstalled)
-            {
-                _sleeperInstalled = true;
-                _sleeperMaterial = material;
-                return true;
-            }
-            return false;
-        }
 
         /// <summary>
         /// Їхати можна там, де стоять обидві рейки.
@@ -384,10 +356,9 @@ namespace RailWorld.src.RailWay
             return atStart ? new Vec3f(-_startTangent.X, -_startTangent.Y, -_startTangent.Z) : _endTangent;
         }
 
-        // Коли стрілку на цьому кінці востаннє почали переводити, у мілісекундах роботи сервера. 0, якщо ніколи
-        // Коли стрілку востаннє перевели, за годинником сервера. Не зберігається: годинник сервера після
-        // перезапуску починає з нуля, і збережена мить знову «настала б». Номери 37 і 38 були в цих полів
-        // у старих збереженнях, іншим полям їх не давати
+        // Коли стрілку на цьому кінці востаннє почали переводити, у мілісекундах роботи сервера; 0, якщо ніколи.
+        // Не зберігається: годинник сервера після перезапуску починає з нуля, і збережена мить знову «настала б».
+        // Номери 37 і 38 були в цих полів у старих збереженнях, іншим полям їх не давати
         private long _startSwitchMs;
         private long _endSwitchMs;
 
@@ -621,8 +592,7 @@ namespace RailWorld.src.RailWay
 
             foreach (SectionLink existing in links)
             {
-                if (existing.Index == link.Index && existing.AtStart == link.AtStart
-                    && existing.ChunkX == link.ChunkX && existing.ChunkY == link.ChunkY && existing.ChunkZ == link.ChunkZ) return false;
+                if (existing.SameAs(link)) return false;
             }
 
             links.Add(link);
@@ -632,7 +602,10 @@ namespace RailWorld.src.RailWay
         public bool RemoveLink(bool atStart, SectionLink link)
         {
             List<SectionLink> links = atStart ? _startLinks : _endLinks;
-            return links != null && links.Remove(link);
+            int at = links == null ? -1 : links.FindIndex(existing => existing.SameAs(link));
+            if (at < 0) return false;
+            links.RemoveAt(at);
+            return true;
         }
 
         /// <summary>

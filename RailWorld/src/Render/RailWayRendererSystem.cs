@@ -7,6 +7,17 @@ using RailWorld.src.RailWay;
 
 namespace RailWorld
 {
+    /// <summary>Як рухатиметься деталь стрілки, поставлена RailWayRendererSystem.SetMovingLoft.</summary>
+    internal enum LoftMotion
+    {
+        /// <summary>Меш один, рух лише змішує два крайні положення (MoveLoft).</summary>
+        Moving,
+        /// <summary>Два положення не дали відповідних мешів: у кожному положенні деталь збирається заново (SetLoft).</summary>
+        Rebuilt,
+        /// <summary>Малювати нічого.</summary>
+        Nothing
+    }
+
     /// <summary>
     /// Головна система рендеру колії. Реєструється як IRenderer і малює всю колію, яку клієнт знає,
     /// однаковими деталями пачками по чанках (instanced rendering). Що в полі зору, а що ні, не перевіряє.
@@ -377,14 +388,16 @@ void main()
         /// <summary>
         /// Ставить рухому деталь стрілки, гостряк, у двох крайніх положеннях closed і thrown і переставляє її в
         /// положення open між ними. Поки колія та сама, меші не перезбираються: рух лише змішує положення
-        /// (MoveLoft). false, якщо два положення не дали відповідних мешів: тоді деталь треба поставити через SetLoft.
+        /// (MoveLoft). Rebuilt, якщо два положення не дали відповідних мешів: тоді деталь треба ставити через SetLoft
+        /// у кожному положенні. Nothing, якщо малювати нічого (немає предмета рейки цього металу чи меша).
         /// </summary>
-        internal bool SetMovingLoft(Vec3i chunkCoord, int index, bool left, string tag, string material, List<LoftPart> closed, List<LoftPart> thrown, double open)
+        internal LoftMotion SetMovingLoft(Vec3i chunkCoord, int index, bool left, string tag, string material, List<LoftPart> closed, List<LoftPart> thrown, double open)
         {
-            if (closed == null || closed.Count == 0 || thrown == null || thrown.Count == 0) return false;
+            if (closed == null || closed.Count == 0) return LoftMotion.Nothing;
+            if (thrown == null || thrown.Count == 0) return LoftMotion.Rebuilt;
 
             RailSectionRenderer renderer = RailRenderer(material);
-            if (renderer == null) return true;
+            if (renderer == null) return LoftMotion.Nothing;
 
             if (bladeRenderer == null) bladeRenderer = new BladeRenderer(capi, lightProbe);
             var key = new BladeKey(new SectionKey(chunkCoord, index), left, tag);
@@ -393,12 +406,12 @@ void main()
             long hash = Fingerprint.Mix(Fingerprint.Start, material);
             foreach (LoftPart part in closed) hash = BladeMesh.Mix(hash, part);
             foreach (LoftPart part in thrown) hash = BladeMesh.Mix(hash, part);
-            if (bladeRenderer.Keep(key, hash) && bladeRenderer.Move(key, open)) return true;
+            if (bladeRenderer.Keep(key, hash) && bladeRenderer.Move(key, open)) return LoftMotion.Moving;
 
             MeshData from = BladeMesh.BuildLoft(renderer.TemplateMesh, closed, out RailFrame basis);
-            if (from == null) return true;
+            if (from == null) return LoftMotion.Nothing;
             MeshData to = BladeMesh.BuildLoft(renderer.TemplateMesh, thrown, basis);
-            return bladeRenderer.SetMoving(chunkCoord, key, hash, from, to, basis, renderer.TextureId, open);
+            return bladeRenderer.SetMoving(chunkCoord, key, hash, from, to, basis, renderer.TextureId, open) ? LoftMotion.Moving : LoftMotion.Rebuilt;
         }
 
         /// <summary>Переставляє рухому деталь, поставлену SetMovingLoft, у положення open. false, якщо її немає.</summary>

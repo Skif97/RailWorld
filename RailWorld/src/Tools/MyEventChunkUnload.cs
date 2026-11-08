@@ -1,4 +1,3 @@
-using System.Reflection;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
@@ -19,21 +18,9 @@ namespace RailWorld
 
         public static void Init(Harmony harmony, ILogger logger)
         {
-            var originalMethod = typeof(SystemUnloadChunks).GetMethod(
-                "HandleChunkUnload",
-                BindingFlags.NonPublic | BindingFlags.Instance);
-
-            if (originalMethod == null)
-            {
-                logger.Error("[RailWorld] у грі немає методу SystemUnloadChunks.HandleChunkUnload: колія вивантажених чанків не прибиратиметься з пам'яті");
-                return;
-            }
-
-            var postfixMethod = typeof(MyChunkEvents).GetMethod(
-                "HandleChunkUnloadPostfix",
-                BindingFlags.NonPublic | BindingFlags.Static);
-
-            harmony.Patch(originalMethod, postfix: new HarmonyMethod(postfixMethod));
+            GamePatches.Apply(harmony, logger, "колія вивантажених чанків не прибиратиметься з пам'яті",
+                new GamePatches.Patch(AccessTools.Method(typeof(SystemUnloadChunks), "HandleChunkUnload"),
+                    postfix: new HarmonyMethod(typeof(MyChunkEvents), nameof(HandleChunkUnloadPostfix))));
         }
 
         private static void HandleChunkUnloadPostfix(Packet_Server packet)

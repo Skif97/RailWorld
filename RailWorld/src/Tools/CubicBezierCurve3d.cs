@@ -157,9 +157,10 @@ namespace RailWorld
         }
 
 
-        public double LenghtLine3D(double x0, double y0, double z0, double x1, double y1, double z1) 
+        private static double Distance(double x0, double y0, double z0, double x1, double y1, double z1)
         {
-            return Math.Sqrt(Math.Pow(x1 - x0, 2) + Math.Pow(y1 - y0, 2) + Math.Pow(z1 - z0, 2));
+            double dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+            return Math.Sqrt(dx * dx + dy * dy + dz * dz);
         }
 
 
@@ -178,7 +179,7 @@ namespace RailWorld
             double dx = InterpolationX_WithWeight(t2) - InterpolationX_WithWeight(t1);
             double dy = InterpolationY_WithWeight(t2) - InterpolationY_WithWeight(t1);
             double dz = InterpolationZ_WithWeight(t2) - InterpolationZ_WithWeight(t1);
-            return Math.Sqrt(Math.Pow(dx, 2) + Math.Pow(dy, 2) + Math.Pow(dz, 2));
+            return Math.Sqrt(dx * dx + dy * dy + dz * dz);
         }
 
         public List<PointOnBezierCurve> CutIntoEqualPieces(double approximatelyPieceLength)
@@ -202,20 +203,18 @@ namespace RailWorld
                 yNext = InterpolationY_WithWeight(time);
                 zNext = InterpolationZ_WithWeight(time);
 
-                walked += LenghtLine3D(xNext, yNext, zNext, xPrevious, yPrevious, zPrevious);
+                walked += Distance(xNext, yNext, zNext, xPrevious, yPrevious, zPrevious);
                 xPrevious = xNext;
                 yPrevious = yNext;
                 zPrevious = zNext;
                 times.Add(time);
                 lengths.Add(walked);
             }
-            double fullLength = walked + LenghtLine3D(xNext, yNext, zNext, x3, y3, z3);
+            double fullLength = walked + Distance(xNext, yNext, zNext, x3, y3, z3);
 
             int approximateQuantityPiece = (int)Math.Floor(fullLength / approximatelyPieceLength);
-            int quntityPoints = 0;
-            //if (approximateQuantityPiece % 2 == 0) { quntityPoints = approximateQuantityPiece - 1; }
-           // else { quntityPoints = approximateQuantityPiece; }
-            quntityPoints = ((int)Math.Floor(approximateQuantityPiece / 2f) * 2)+1;
+            // Точок непарна кількість: секція займає три точки, і сусідні секції ділять крайню
+            int quntityPoints = ((int)Math.Floor(approximateQuantityPiece / 2f) * 2) + 1;
             double pieceLength = fullLength / (quntityPoints - 1f);
 
             point.position = InterpolationWithWeight(0f);

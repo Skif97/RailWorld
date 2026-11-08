@@ -29,15 +29,9 @@ namespace RailWorld
 
         public static void Init(Harmony harmony, ICoreClientAPI api)
         {
-            var update = AccessTools.Method(typeof(Camera), "Update");
-            if (update == null)
-            {
-                api.Logger.Error("[RailWorld] у грі немає методу Camera.Update: камера пасажира не нахилятиметься разом з вагонеткою");
-                return;
-            }
-
             capi = api;
-            harmony.Patch(update, postfix: new HarmonyMethod(typeof(TrolleyCameraPatch), nameof(UpdatePostfix)));
+            GamePatches.Apply(harmony, api.Logger, "камера пасажира не нахилятиметься разом з вагонеткою",
+                new GamePatches.Patch(AccessTools.Method(typeof(Camera), "Update"), postfix: new HarmonyMethod(typeof(TrolleyCameraPatch), nameof(UpdatePostfix))));
         }
 
         /// <summary>Світ покинуто: латку знімає RailWaySystem, тут лише відпускаємо гру.</summary>

@@ -42,6 +42,18 @@ namespace RailWorld.src.RailWay
             Vec3i chunk = section.ChunkAddres;
             return Index == section.IndexInChunk && ChunkX == chunk.X && ChunkY == chunk.Y && ChunkZ == chunk.Z;
         }
+
+        /// <summary>Чи веде на ту саму секцію, що й other, яким би кінцем не був приєднаний.</summary>
+        public bool SameSection(SectionLink other)
+        {
+            return other != null && Index == other.Index && ChunkX == other.ChunkX && ChunkY == other.ChunkY && ChunkZ == other.ChunkZ;
+        }
+
+        /// <summary>Чи те саме посилання, що й other: та сама секція, приєднана тим самим кінцем.</summary>
+        public bool SameAs(SectionLink other)
+        {
+            return SameSection(other) && AtStart == other.AtStart;
+        }
     }
 
     /// <summary>

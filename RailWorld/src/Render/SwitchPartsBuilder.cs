@@ -107,6 +107,8 @@ namespace RailWorld
             public int TrunkIndex;
             public bool AtStart;
             public int Branch;
+            // Як рухається гостряк, з першої постановки; поки його ще не ставили, null
+            public LoftMotion? Motion;
         }
 
         // Гілки стрілок, пораховані в перебудовах чанків, за першою секцією гілки
@@ -129,9 +131,21 @@ namespace RailWorld
             double open = Open(setup);
             if (open < 0) return;
 
-            // Обидва крайні положення вже в рендері: переставити гостряк це змішати їх. Якщо їх там немає
-            // (меші двох положень не збіглися), гостряк збирається заново, як раніше
-            if (!renderer.MoveLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", open)) PlaceBlade(setup);
+            // Обидва крайні положення вже в рендері: переставити гостряк це змішати їх. Якщо меші двох положень не
+            // збіглися, гостряк збирається в кожному положенні заново, а якщо малювати нічого, то й нічого. Що з
+            // цього, видно з першої постановки, і на кожному кроці руху її не повторюємо
+            switch (setup.Motion)
+            {
+                case LoftMotion.Moving:
+                    if (renderer.MoveLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", open)) return;
+                    break;
+                case LoftMotion.Rebuilt:
+                    renderer.SetLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, BladeParts(setup, open));
+                    return;
+                case LoftMotion.Nothing:
+                    return;
+            }
+            PlaceBlade(setup);
         }
 
         // Наскільки гостряк гілки відведений від рамної рейки зараз: 0 притиснутий, 1 відведений на повний хід.
@@ -156,11 +170,10 @@ namespace RailWorld
             if (open < 0) return;
 
             List<LoftPart> closed = BladeParts(setup, 0), thrown = BladeParts(setup, 1);
-            if (closed == null) return;
-            if (renderer.SetMovingLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, closed, thrown, open)) return;
+            setup.Motion = renderer.SetMovingLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, closed, thrown, open);
 
             // Два положення не дали відповідних мешів: деталь збирається в теперішньому, і кожен крок руху заново
-            renderer.SetLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, BladeParts(setup, open));
+            if (setup.Motion == LoftMotion.Rebuilt) renderer.SetLoft(setup.Chunk, setup.Section.IndexInChunk, setup.Left, "", setup.Material, BladeParts(setup, open));
         }
 
         // Частини гостряка гілки і її тяги, коли гостряк відведений на open; null, якщо гостряка немає
