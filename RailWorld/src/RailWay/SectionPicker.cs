@@ -65,8 +65,17 @@ namespace RailWorld.src.RailWay
             CheckRailOverBlade = checkRailOverBlade;
         }
 
-        /// <summary>Найменший радіус повороту в плані і перелому по висоті, блоків.</summary>
-        public double MinRadius => Width * TrackRules.MinRadiusGauges;
+        /// <summary>Найменший радіус повороту в плані, блоків.</summary>
+        public double MinRadius => this == Broad ? TrackRules.MinRadiusBroad : TrackRules.MinRadiusNarrow;
+
+        /// <summary>
+        /// Найменший радіус перелому по висоті, блоків: з найбільшої зміни ухилу. Ухил, що змінюється на c відсоткових
+        /// пунктів на блок, це радіус 100 / c.
+        /// </summary>
+        public double VerticalRadius => 100 / (this == Broad ? TrackRules.SlopeChangeBroad : TrackRules.SlopeChangeNarrow);
+
+        /// <summary>Найбільший ухил, частка (0.05 це 5%).</summary>
+        public double MaxSlope => (this == Broad ? TrackRules.MaxSlopeBroad : TrackRules.MaxSlopeNarrow) / 100;
 
         /// <summary>Крива між точками не ідеальне коло, тому радіус трохи менший за межу ще не порушення.</summary>
         public double RadiusTolerance => Width * 0.3;
@@ -76,6 +85,14 @@ namespace RailWorld.src.RailWay
 
         /// <summary>Ширина габариту колії: шпала із запасом (Footprint).</summary>
         public double FootprintWidth => SleeperLength + Footprint.Margin;
+
+        /// <summary>
+        /// Габарит рухомого складу над колією, який розчищають будування з руйнуванням блоків і тунельний вагон
+        /// (TrackBed.ClearanceCells): скільки клітинок угору від полотна і як далеко в кожен бік від осі, блоків.
+        /// Широка: вагон 4.36 над рейкою і 3.10 завширшки, плюс винос кузова на кривій. Вузька: вагонетка і гравець на ній.
+        /// </summary>
+        public int ClearanceHeight => this == Broad ? 5 : 3;
+        public double ClearanceHalfWidth => this == Broad ? 2.1 : 1.0;
 
         /// <summary>
         /// Межі довжини гостряка в секціях: від 3.5 до 8 ширин колії, як на справжній залізниці. При колії 0.78

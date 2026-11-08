@@ -677,7 +677,6 @@ namespace RailWorld
                 for (int i = 0; i < problems.Length; i++) problems[i] = true;
             }
 
-            double maxSlope = MaxSlope(points);
             UpdateParts(points, problems, gauge);
 
             // Мітки точок: стовпчик у кожній, у тієї, що під прицілом, іншого кольору
@@ -700,9 +699,13 @@ namespace RailWorld
             routeProblem = reasons.Count == 0 ? null : string.Join(", ", reasons);
 
             bool template = templateAnchor != null || hoverTemplate != null;
-            hud.Show(string.Format("{0}\nТочок: {1}\nНайбільший ухил: {2:0.0}°\nНайменший радіус: {3}, по висоті: {4}{5}{6}",
-                preview ? "Перегляд маршруту" : template ? "Готова форма: клік ставить її" : "Розмітка маршруту", shown.Count, maxSlope,
-                RadiusText(check.MinRadius), RadiusText(check.MinVerticalRadius),
+            // Ухил і його зміна у відсотках, як їх задають налаштування світу: зміна ухилу на c відсоткових пунктів на
+            // блок це радіус по висоті 100 / c
+            hud.Show(string.Format("{0}\nТочок: {1}\nНайбільший ухил: {2:0.#}% з {3:0.#}%, зміна ухилу: {4:0.##}% на блок з {5:0.##}%\nНайменший радіус: {6} з {7:0.#}{8}{9}",
+                preview ? "Перегляд маршруту" : template ? "Готова форма: клік ставить її" : "Розмітка маршруту", shown.Count,
+                check.MaxSlope * 100, gauge.MaxSlope * 100,
+                check.MinVerticalRadius > 1e6 ? 0 : 100 / check.MinVerticalRadius, 100 / gauge.VerticalRadius,
+                RadiusText(check.MinRadius), gauge.MinRadius,
                 template ? "" : "\nCtrl + клік: точка, через яку маршрут пройде точно",
                 (routeProblem == null ? "" : "\nНе можна будувати: " + routeProblem)
                 + (awaitingId != 0 ? "\nЧекаємо відповіді сервера" : serverRefusal != null ? "\nСервер відхилив: " + serverRefusal : "")));
@@ -860,16 +863,6 @@ namespace RailWorld
             side.Sub(along.Clone().Mul(side.Dot(along)));
             if (side.Length() < 1e-9) side = new Vec3d(-along.Z, 0, along.X);
             return side.Normalize();
-        }
-
-        private static double MaxSlope(List<PointOnBezierCurve> points)
-        {
-            double max = 0;
-            for (int i = 0; i + 1 < points.Count; i++)
-            {
-                max = Math.Max(max, RouteRules.SlopeDeg(points[i].position, points[i + 1].position));
-            }
-            return max;
         }
 
         public void Dispose()

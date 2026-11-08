@@ -308,7 +308,7 @@ namespace RailWorld.Tests
 
             string problem = RouteRules.FindProblem(points);
             Assert.NotNull(problem);
-            Assert.Contains("по висоті", problem);
+            Assert.Contains("ухил змінюється", problem);
         }
 
         [Fact]
@@ -376,7 +376,7 @@ namespace RailWorld.Tests
             // а рейки розходяться: одна стрибає вгору, друга вниз
             string problem = RouteRules.FindProblem(Tilted(x => x < 10 ? 0 : 0.3));
             Assert.NotNull(problem);
-            Assert.Contains("по висоті", problem);
+            Assert.Contains("ухил змінюється", problem);
 
             // Той самий перекіс, набраний поступово на десяти блоках, рейок не ламає
             Assert.Null(RouteRules.FindProblem(Tilted(x => 0.3 * GameMath.Clamp((x - 5) / 10, 0, 1))));

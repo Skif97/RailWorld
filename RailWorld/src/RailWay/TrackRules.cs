@@ -14,13 +14,34 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class TrackRules
     {
-        public const string MinRadiusCode = "railMinRadius";
+        public const string MinRadiusNarrowCode = "railMinRadiusNarrow";
+        public const string MinRadiusBroadCode = "railMinRadiusBroad";
+        public const string SlopeChangeNarrowCode = "railSlopeChangeNarrow";
+        public const string SlopeChangeBroadCode = "railSlopeChangeBroad";
+        public const string MaxSlopeNarrowCode = "railMaxSlopeNarrow";
+        public const string MaxSlopeBroadCode = "railMaxSlopeBroad";
         public const string ClearanceCode = "railClearance";
         public const string MarkerReachCode = "railMarkerReach";
         public const string TrolleysUnattendedCode = "railTrolleysUnattended";
 
-        /// <summary>Найменший радіус за замовчуванням, у ширинах колії: при колії 0.78 це 3.51 блока.</summary>
-        public const double DefaultMinRadiusGauges = 4.5;
+        /// <summary>
+        /// Найменший радіус за замовчуванням, блоків. Вузька колія для вагонеток: 4.5 її ширини. Широка під справжні
+        /// вагони колії 1520: на такій кривій кузов вагона завдовжки 24 блоки виходить за свою смугу на прямій
+        /// трохи більше ніж на пів блока.
+        /// </summary>
+        public const double DefaultMinRadiusNarrow = 3.51, DefaultMinRadiusBroad = 50;
+
+        /// <summary>
+        /// Найбільша зміна ухилу за замовчуванням, відсоткових пунктів на блок шляху. Вузька: стільки, скільки дає її
+        /// найменший радіус (100 / 3.51). Широка: 0.5, щоб на переломі профілю верхи сусідніх вагонів не сходилися.
+        /// </summary>
+        public const double DefaultSlopeChangeNarrow = 28.5, DefaultSlopeChangeBroad = 0.5;
+
+        /// <summary>
+        /// Найбільший ухил за замовчуванням, відсотків. Вузька: 175, це 60°, тобто межа лише та сама, що й розрив рейок
+        /// (RouteRules.BreakSlopeDeg). Широка: 5, трохи крутіше за метро.
+        /// </summary>
+        public const double DefaultMaxSlopeNarrow = 175, DefaultMaxSlopeBroad = 5;
 
         /// <summary>
         /// Просвіт за замовчуванням, блоків. Колії на рівній землі стоять на висотах, кратних блоку, тож зазор між
@@ -32,8 +53,17 @@ namespace RailWorld.src.RailWay
         /// <summary>Як далеко за замовчуванням точка розмітки притягується до колії, блоків.</summary>
         public const double DefaultMarkerReach = 2.5;
 
-        /// <summary>Найменший радіус повороту в плані і перелому по висоті, у ширинах колії.</summary>
-        public static double MinRadiusGauges { get; private set; } = DefaultMinRadiusGauges;
+        /// <summary>Найменший радіус повороту в плані і перелому по висоті на вузькій і на широкій колії, блоків.</summary>
+        public static double MinRadiusNarrow { get; private set; } = DefaultMinRadiusNarrow;
+        public static double MinRadiusBroad { get; private set; } = DefaultMinRadiusBroad;
+
+        /// <summary>Найбільша зміна ухилу на вузькій і на широкій колії, відсоткових пунктів на блок.</summary>
+        public static double SlopeChangeNarrow { get; private set; } = DefaultSlopeChangeNarrow;
+        public static double SlopeChangeBroad { get; private set; } = DefaultSlopeChangeBroad;
+
+        /// <summary>Найбільший ухил на вузькій і на широкій колії, відсотків.</summary>
+        public static double MaxSlopeNarrow { get; private set; } = DefaultMaxSlopeNarrow;
+        public static double MaxSlopeBroad { get; private set; } = DefaultMaxSlopeBroad;
 
         /// <summary>
         /// Найменший просвіт між двома коліями, що проходять одна над одною, блоків. Якщо колія, яку маршрут
@@ -64,7 +94,12 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public static void Load(ITreeAttribute config, bool remember)
         {
-            MinRadiusGauges = Read(config, MinRadiusCode, DefaultMinRadiusGauges, remember);
+            MinRadiusNarrow = Read(config, MinRadiusNarrowCode, DefaultMinRadiusNarrow, remember);
+            MinRadiusBroad = Read(config, MinRadiusBroadCode, DefaultMinRadiusBroad, remember);
+            SlopeChangeNarrow = Read(config, SlopeChangeNarrowCode, DefaultSlopeChangeNarrow, remember);
+            SlopeChangeBroad = Read(config, SlopeChangeBroadCode, DefaultSlopeChangeBroad, remember);
+            MaxSlopeNarrow = Read(config, MaxSlopeNarrowCode, DefaultMaxSlopeNarrow, remember);
+            MaxSlopeBroad = Read(config, MaxSlopeBroadCode, DefaultMaxSlopeBroad, remember);
             Clearance = Read(config, ClearanceCode, DefaultClearance, remember);
             MarkerReach = Read(config, MarkerReachCode, DefaultMarkerReach, remember);
             TrolleysUnattended = ReadBool(config, TrolleysUnattendedCode, false, remember);

@@ -11,6 +11,8 @@ namespace RailWorld.src.RailWay
         public bool[] Problems;
         public double MinRadius;
         public double MinVerticalRadius;
+        /// <summary>Найкрутіший ухил маршруту, частка.</summary>
+        public double MaxSlope;
         /// <summary>Ширина колії маршруту: від неї найменший радіус.</summary>
         public TrackGauge Gauge = TrackGauge.Narrow;
         public bool CrossesItself;
@@ -24,9 +26,10 @@ namespace RailWorld.src.RailWay
             // Радіус натурний, тож ловить і перелом по висоті. Якщо він порушений і окремо по висоті, причина
             // саме там; інакше це поворот
             double limit = Gauge.MinRadius - Gauge.RadiusTolerance;
-            bool vertical = MinVerticalRadius < limit;
-            if (vertical) reasons.Add("перелом по висоті крутіший за радіус " + Gauge.MinRadius.ToString("0.0"));
+            bool vertical = MinVerticalRadius < Gauge.VerticalRadius - Gauge.RadiusTolerance;
+            if (vertical) reasons.Add("ухил змінюється швидше за " + (100 / Gauge.VerticalRadius).ToString("0.##") + "% на блок");
             if (MinRadius < limit && !vertical) reasons.Add("поворот крутіший за радіус " + Gauge.MinRadius.ToString("0.0"));
+            if (MaxSlope > Gauge.MaxSlope + RouteRules.SlopeTolerance) reasons.Add("ухил крутіший за " + (Gauge.MaxSlope * 100).ToString("0.#") + "%");
             if (CrossesItself) reasons.Add("маршрут перетинає сам себе");
             return reasons;
         }
@@ -45,6 +48,8 @@ namespace RailWorld.src.RailWay
         private const int RadiusWindow = 4;
         // Між сусідніми точками нарізки ухил, крутіший за це, означає розрив рейок, а не підйом, градуси
         public const double BreakSlopeDeg = 60;
+        // Наскільки ухил може бути крутішим за найбільший, частка: висоти маршруту рахуються з похибкою
+        internal const double SlopeTolerance = 0.002;
 
         /// <summary>Скільки точок може мати маршрут і на скільки блоків щонайбільше відстоять сусідні.</summary>
         public const int MaxPoints = 64;
@@ -76,10 +81,6 @@ namespace RailWorld.src.RailWay
             return reasons.Count == 0 ? null : reasons[0];
         }
 
-        /// <summary>
-        /// Перевіряє нарізаний маршрут: вигин колії або перелом по висоті крутіший за найменший радіус,
-        /// сходинка між сусідніми точками, інший виток маршруту ближче за просвіт.
-        /// </summary>
         // Кут між двома напрямками в просторі, радіани; довжина напрямків будь-яка
         private static double Angle(double ax, double ay, double az, double bx, double by, double bz)
         {
@@ -87,10 +88,15 @@ namespace RailWorld.src.RailWay
             return Math.Atan2(Math.Sqrt(cx * cx + cy * cy + cz * cz), ax * bx + ay * by + az * bz);
         }
 
+        /// <summary>
+        /// Перевіряє нарізаний маршрут: вигин колії або перелом по висоті крутіший за найменший радіус,
+        /// сходинка між сусідніми точками, інший виток маршруту ближче за просвіт.
+        /// </summary>
         public static RouteCheck Check(List<PointOnBezierCurve> points, TrackGauge gauge = null)
         {
             gauge = gauge ?? TrackGauge.Narrow;
             double limit = gauge.MinRadius - gauge.RadiusTolerance;
+            double verticalLimit = gauge.VerticalRadius - gauge.RadiusTolerance;
             int count = points.Count;
             bool[] problems = new bool[count];
             double minRadius = double.MaxValue;
@@ -149,7 +155,7 @@ namespace RailWorld.src.RailWay
 
                 if (radius < minRadius) minRadius = radius;
                 if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                if (radius < limit || verticalRadius < limit) problems[i] = true;
+                if (radius < limit || verticalRadius < verticalLimit) problems[i] = true;
             }
 
             // Злам між сусідніми секціями. Попередня перевірка порівнює напрямок на кінцях відрізка
@@ -186,8 +192,19 @@ namespace RailWorld.src.RailWay
                     // Від середини однієї секції до середини наступної
                     double verticalRadius = (run[i + 2] - run[i - 2]) / 2 / bend;
                     if (verticalRadius < minVerticalRadius) minVerticalRadius = verticalRadius;
-                    if (verticalRadius < limit) problems[i] = true;
+                    if (verticalRadius < verticalLimit) problems[i] = true;
                 }
+            }
+
+            // Ухил по осі колії: на відрізку в секцію, щоб окрема точка нарізки не давала шуму
+            double maxSlope = 0;
+            for (int i = 0; i + 2 < count; i++)
+            {
+                double slope = Math.Abs(Math.Tan(ChordPitch(points[i], points[i + 2], 0)));
+                if (slope > maxSlope) maxSlope = slope;
+                if (slope <= gauge.MaxSlope + SlopeTolerance) continue;
+                problems[i] = true;
+                problems[i + 2] = true;
             }
 
             // Перетин із собою. Точки розкладені по клітинках, щоб не порівнювати кожну з кожною. Клітинка
@@ -233,6 +250,7 @@ namespace RailWorld.src.RailWay
 
             check.MinRadius = minRadius;
             check.MinVerticalRadius = minVerticalRadius;
+            check.MaxSlope = maxSlope;
             check.CrossesItself = crossesItself;
             check.Broken = broken;
             return check;

@@ -54,7 +54,8 @@ namespace RailWorld.src.RailWay
     /// </summary>
     public static class RouteCurve
     {
-        // Вага середніх точок кривої: та сама, що й у старих режимів укладання
+        // Вага двох середніх керівних точок кривої (раціональна крива Безьє); з нею рахується довжина керівного
+        // вектора (HandleFactor)
         public const double Weight = 0.8;
 
         // На відрізки якої довжини нарізається крива. Секція це два таких відрізки
@@ -998,7 +999,7 @@ namespace RailWorld.src.RailWay
         /// </summary>
         internal static double RampRoom(double lift, TrackGauge gauge)
         {
-            return Math.Sqrt(6 * lift * gauge.MinRadius);
+            return Math.Sqrt(6 * lift * gauge.VerticalRadius);
         }
 
         /// <summary>
@@ -1516,7 +1517,7 @@ namespace RailWorld.src.RailWay
             double span = run[to] - run[from];
             if (span < 1e-6) return;
 
-            var ramp = new MonotoneRamp(span, points[from].position.Y, fromSlope, points[to].position.Y, toSlope, 2 * shape.Gauge.MinRadius);
+            var ramp = new MonotoneRamp(span, points[from].position.Y, fromSlope, points[to].position.Y, toSlope, 2 * shape.Gauge.VerticalRadius);
             double fromCant = shape.TrackCant[from], toCant = shape.TrackCant[to];
 
             for (int i = from + 1; i < to; i++)

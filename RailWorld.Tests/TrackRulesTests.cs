@@ -23,7 +23,8 @@ namespace RailWorld.Tests
             var config = new TreeAttribute();
             TrackRules.Load(config, true);
 
-            Assert.Equal(TrackRules.DefaultMinRadiusGauges, config.GetDecimal(TrackRules.MinRadiusCode), 6);
+            Assert.Equal(TrackRules.DefaultMinRadiusNarrow, config.GetDecimal(TrackRules.MinRadiusNarrowCode), 6);
+            Assert.Equal(TrackRules.DefaultMinRadiusBroad, config.GetDecimal(TrackRules.MinRadiusBroadCode), 6);
             Assert.Equal(TrackRules.DefaultClearance, config.GetDecimal(TrackRules.ClearanceCode), 6);
             Assert.Equal(TrackRules.DefaultMarkerReach, config.GetDecimal(TrackRules.MarkerReachCode), 6);
         }
@@ -35,11 +36,13 @@ namespace RailWorld.Tests
             {
                 // Так їх пише і екран налаштувань світу (рядком), і команда /worldconfig (числом)
                 var config = new TreeAttribute();
-                config.SetString(TrackRules.MinRadiusCode, "6");
+                config.SetString(TrackRules.MinRadiusNarrowCode, "6");
+                config.SetDouble(TrackRules.MinRadiusBroadCode, 30);
                 config.SetDouble(TrackRules.ClearanceCode, 3.5);
                 TrackRules.Load(config, false);
 
-                Assert.Equal(6 * TrackGauge.Narrow.Width, TrackGauge.Narrow.MinRadius, 6);
+                Assert.Equal(6, TrackGauge.Narrow.MinRadius, 6);
+                Assert.Equal(30, TrackGauge.Broad.MinRadius, 6);
                 Assert.Equal(3.5, TrackRules.Clearance, 6);
                 Assert.Equal(3.5 / 2, TrackLevel.Limit, 6);
                 Assert.Equal(TrackRules.DefaultMarkerReach, TrackRules.MarkerReach, 6);
