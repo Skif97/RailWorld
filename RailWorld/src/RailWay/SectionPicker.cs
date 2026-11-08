@@ -13,14 +13,14 @@ namespace RailWorld.src.RailWay
     public sealed class TrackGauge
     {
         /// <summary>Вузька колія, 750 мм. Шпала трохи більша за блок, тому колія займає смугу в три блоки.</summary>
-        public static readonly TrackGauge Narrow = new TrackGauge("narrow", 0.78f, 1.75f, SectionBox.SleeperHalfWidth * 2, SectionBox.SleeperDepth);
+        public static readonly TrackGauge Narrow = new TrackGauge("narrow", 0.78f, 1.75f, SectionBox.SleeperHalfWidth * 2, SectionBox.SleeperDepth, 0);
 
         /// <summary>
         /// Широка колія, 1520 мм, шпала як справжня під неї: 2.75 м, переріз 0.25 на 0.2. Крок шпал той самий, пів
         /// блока, як і справжній під 1520 (близько 0.54 м), тож проміжок між шпалами дорівнює ширині шпали, як на
         /// справжній колії.
         /// </summary>
-        public static readonly TrackGauge Broad = new TrackGauge("broad", 1.52f, 2.75f, 0.25, 0.2);
+        public static readonly TrackGauge Broad = new TrackGauge("broad", 1.52f, 2.75f, 0.25, 0.2, 1);
 
         public static readonly TrackGauge[] All = { Narrow, Broad };
 
@@ -48,13 +48,21 @@ namespace RailWorld.src.RailWay
         /// </summary>
         public readonly double SleeperWidth, SleeperDepth;
 
-        private TrackGauge(string code, float width, float sleeperLength, double sleeperWidth, double sleeperDepth)
+        /// <summary>
+        /// На скільки блоків контррейка стрілки може зайти в бік стрілки на ділянку гостряка (SwitchGeometry.CheckRail).
+        /// На вузькій ні: там у цьому місці до зовнішньої рейки вже прилягає гостряк сусідньої гілки. На широкій між
+        /// ними ще досить місця.
+        /// </summary>
+        public readonly double CheckRailOverBlade;
+
+        private TrackGauge(string code, float width, float sleeperLength, double sleeperWidth, double sleeperDepth, double checkRailOverBlade)
         {
             Code = code;
             Width = width;
             SleeperLength = sleeperLength;
             SleeperWidth = sleeperWidth;
             SleeperDepth = sleeperDepth;
+            CheckRailOverBlade = checkRailOverBlade;
         }
 
         /// <summary>Найменший радіус повороту в плані і перелому по висоті, блоків.</summary>

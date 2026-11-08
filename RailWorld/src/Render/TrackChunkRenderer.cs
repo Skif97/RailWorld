@@ -153,7 +153,9 @@ namespace RailWorld
                     foreach (Timber timber in timbers) AddTimber(chunkCoord, timber);
 
                     List<Section>[] branches = SwitchBranches(chunkCoord, record, out _);
-                    if (branches != null) AddNodeFastenings(chunkCoord, timbers, branches, (rail, at) => CheckRailBeside(rail.Section, rail.Part == SectionPart.FirstRail), null);
+                    if (branches == null) continue;
+                    CheckRailLine[] checkRails = CheckRails(record, branches);
+                    AddNodeFastenings(chunkCoord, timbers, branches, (rail, at) => CheckRailBeside(checkRails, at), null);
                 }
                 foreach (RailCrossing record in data.Crossings.Values)
                 {
@@ -485,24 +487,31 @@ namespace RailWorld
             renderer.AddOutward(chunkCoord, RailWayRendererSystem.SpikePairPart, metal, at, away, along);
         }
 
-        // Чи біля цієї рейки секції стоїть контррейка стрілки (навпроти хрестовини, біля зовнішньої рейки гілки),
-        // і як тоді кріпити рейку. На першій і останній секції контррейки лежать її відігнуті кінці: вони до
-        // бруса не кріпляться, костилі там лише із зовнішнього боку ходової рейки. null, якщо контррейки немає
-        private FasteningKind? CheckRailBeside(Section section, bool left)
+        // Контррейки обох гілок стрілки (SwitchGeometry.CheckRail), тими самими лініями, якими їх малює
+        // SwitchPartsBuilder; null на місці гілки, у якої контррейки немає
+        private CheckRailLine[] CheckRails(RailSwitch record, List<Section>[] branches)
         {
-            for (int end = 0; end < 2; end++)
+            var lines = new CheckRailLine[2];
+            for (int k = 0; k < 2; k++)
             {
-                if (!track.FindSwitch(section, end == 0, out RailSwitch record, out SwitchRef place) || !record.Complete) continue;
+                SwitchBranch branch = record.Branches[k], other = record.Branches[1 - k];
+                bool? mine = branch.InnerIsFirst(1), theirs = other.InnerIsFirst(1);
+                if (mine == null || theirs == null || branch.Members.Count == 0 || other.Members.Count == 0) continue;
+                Section first = branches[k][0], partner = branches[1 - k][0];
+                BranchGeometry own = SwitchGeometry.Branch(first, branch.Members[0].AtStart, mine.Value, partner, other.Members[0].AtStart, theirs.Value, track.FindSection);
+                lines[k] = SwitchGeometry.CheckRail(own, TrackGauge.Of(first), branch.BladeSections);
+            }
+            return lines;
+        }
 
-                SwitchBranch branch = record.BranchOf(place);
-                if (branch.FrogFrom <= 0 || place.Number < branch.FrogFrom || place.Number > branch.FrogTo) continue;
-
-                // Зовнішня рейка це та, що не з боку сусідньої гілки
-                bool? innerFirst = branch.InnerIsFirst(place.Number);
-                if (innerFirst == null || left == innerFirst.Value) continue;
-
-                bool flared = place.Number == branch.FrogFrom || place.Number == branch.FrogTo;
-                return flared ? FasteningKind.OuterSpikes : FasteningKind.GuardSpikes;
+        // Чи біля рейки в точці at її осі стоїть контррейка стрілки, і як тоді кріпити рейку (CheckRailLine.Beside):
+        // костилі з боку контррейки лише там, де вона справді лежить, а біля відігнутих кінців лише ззовні
+        private static FasteningKind? CheckRailBeside(CheckRailLine[] lines, Vec3d at)
+        {
+            foreach (CheckRailLine line in lines)
+            {
+                FasteningKind? kind = line?.Beside(at);
+                if (kind != null) return kind;
             }
             return null;
         }

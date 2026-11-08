@@ -71,6 +71,40 @@ namespace RailWorld.src.RailWay
     }
 
     /// <summary>
+    /// Контррейка гілки стрілки: коротка рейка навпроти хрестовини біля зовнішньої рейки колії, з боку її осі
+    /// (SwitchGeometry.CheckRail). Inner це внутрішня рейка своєї колії в кожному перерізі контррейки, Axis вісь
+    /// контррейки там само; крайні перерізи це відігнуті кінці.
+    /// </summary>
+    public class CheckRailLine
+    {
+        public readonly List<RailFrame> Inner = new List<RailFrame>();
+        public readonly List<Vec3d> Axis = new List<Vec3d>();
+
+        /// <summary>
+        /// Як кріпити ходову рейку в точці point на її осі: GuardSpikes, якщо поруч лежить контррейка, і костилі
+        /// потрібні і з її боку; OuterSpikes біля відігнутого кінця, який до бруса не кріпиться, тож лише ззовні;
+        /// null, якщо контррейки поруч немає. Поруч це там, де вісь контррейки за CrossingGeometry.GuardAxis від
+        /// осі рейки, з точністю до половини підошви.
+        /// </summary>
+        public FasteningKind? Beside(Vec3d point)
+        {
+            for (int i = 0; i + 1 < Axis.Count; i++)
+            {
+                Vec3d a = Axis[i], b = Axis[i + 1];
+                double dx = b.X - a.X, dz = b.Z - a.Z, length = dx * dx + dz * dz;
+                if (length < 1e-12) continue;
+                double t = ((point.X - a.X) * dx + (point.Z - a.Z) * dz) / length;
+                if (t < 0 || t > 1) continue;
+                double qx = a.X + dx * t - point.X, qz = a.Z + dz * t - point.Z;
+                if (Math.Abs(Math.Sqrt(qx * qx + qz * qz) - CrossingGeometry.GuardAxis) > RailProfile.FootHalfWidth) continue;
+                bool flared = i == 0 || i == Axis.Count - 2;
+                return flared ? FasteningKind.OuterSpikes : FasteningKind.GuardSpikes;
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Геометрія стрілки: де йдуть внутрішні рейки двох її гілок, де вони сходяться в хрестовину і скільки
     /// секцій займає гостряк. Чиста геометрія з даних секцій: нею однаково користуються сервер і клієнт,
     /// від рендеру вона не залежить. Сусідні секції дістає через resolve.
@@ -170,6 +204,50 @@ namespace RailWorld.src.RailWay
         // Хрестовина. Розміри зі справжніх стрілок, перераховані на нашу рейку.
         // Жолоб для гребеня колеса між вусовиком і осердям, блоків
         public const double FrogFlangeway = 0.05;
+
+        // На скільки кінці контррейки відігнуті від ходової рейки, блоків
+        private const double CheckRailFlare = 0.04;
+
+        /// <summary>
+        /// Контррейка гілки own колії ширини gauge. Вона притримує колесо з протилежного боку осі, поки інше
+        /// проходить розрив хрестовини, де під ним немає опори: від місця, де рейка підійшла до сусідньої на жолоб
+        /// (Throat), до вістря осердя (Tip). Тож стоїть навпроти цього розриву, симетрично, з запасом з кожного боку
+        /// на ширину колії, щоб колесо входило в жолоб до розриву і виходило вже за ним. На ділянку гостряка
+        /// (bladeSections) запас заходить не далі, ніж на TrackGauge.CheckRailOverBlade: там до зовнішньої рейки
+        /// прилягає гостряк сусідньої гілки, і на вузькій колії місця для контррейки немає зовсім.
+        /// Навпроти хрестовини вона через спільні перерізи двох колій, як і сама хрестовина: колії порізані на секції
+        /// кожна по-своєму, і за номерами дві контррейки з'їхали б уздовж колії одна відносно одної і відносно
+        /// хрестовини. Але від своєї внутрішньої рейки в такому перерізі вона відкладена перпендикулярно до своєї колії,
+        /// там, де стоїть друге колесо тієї самої осі: спільний переріз стоїть до кожної колії навскіс, і на ширину колії
+        /// вбік точка на ньому від'їхала б уздовж колії, тим далі, що ширша колія і гостріша хрестовина. null, якщо
+        /// хрестовини немає або перерізів не вистачає.
+        /// </summary>
+        public static CheckRailLine CheckRail(BranchGeometry own, TrackGauge gauge, int bladeSections)
+        {
+            if (own.Throat < 0 || own.Across == null || own.Other == null) return null;
+            double trackWidth = gauge.Width;
+            int margin = Math.Max(1, (int)Math.Round(trackWidth / RouteCurve.PieceLength));
+            int overBlade = (int)Math.Round(gauge.CheckRailOverBlade / RouteCurve.PieceLength);
+            int from = Math.Max(own.Throat - margin, Math.Max(bladeSections * 2 + 1 - overBlade, 1));
+            int to = Math.Min(own.Across.Length - 1, own.Tip + margin);
+            if (to - from < 2) return null;
+
+            // Перерізи стоять на внутрішній рейці, бік дивиться від осі колії до неї. Зовнішня рейка лежить за ширину
+            // колії в протилежний бік, контррейка ближче до осі на головку рейки і жолоб
+            double offset = -trackWidth + CrossingGeometry.GuardAxis;
+            var line = new CheckRailLine();
+            for (int q = from; q <= to; q++)
+            {
+                RailFrame station = CommonStation(own.Frames[q], own.Other[q]);
+                RailFrame at = station == null ? null : RailLine.Cross(own.Frames, 0, station, q);
+                if (at == null) return null;
+                // Бік перерізу своєї рейки перпендикулярний до своєї колії
+                double x = offset + (q == from || q == to ? CheckRailFlare : 0);
+                line.Inner.Add(at);
+                line.Axis.Add(new Vec3d(at.Center.X + at.Side.X * x, at.Center.Y + at.Side.Y * x, at.Center.Z + at.Side.Z * x));
+            }
+            return line;
+        }
 
         // Ширина головки гостряка, блоків, від якої рахується його початок, і на скільки перерізів колії
         // ближче до стрілки він починається насправді. Два перерізи це одна секція

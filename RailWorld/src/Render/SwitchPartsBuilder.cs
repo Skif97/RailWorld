@@ -85,7 +85,7 @@ namespace RailWorld
             if (primary && own.Throat >= 0) AddFrog(chunkCoord, section, left, material, own, wood?.Invoke(switchChunk, record));
 
             // Контррейка в кожної колії своя
-            if (own.Throat >= 0) AddCheckRail(chunkCoord, section, left, own);
+            if (own.Throat >= 0) AddCheckRail(chunkCoord, section, left, own, record.BranchOf(place).BladeSections);
         }
 
         // Що потрібно, щоб поставити гостряк гілки в будь-якому положенні стрілки. Геометрія гілки від положення не
@@ -240,56 +240,33 @@ namespace RailWorld
             return parts;
         }
 
-        // На скільки кінці контррейки відігнуті від ходової рейки, блоків
-        private const double CheckRailFlare = 0.04;
         // Вкладиш між шийками ходової рейки й контррейки: довжина вздовж колії і висота верху над підошвою, блоків.
         // Верх нижчий за головку рейки, щоб гребінь колеса проходив над ним
         private const double SpacerLength = 0.1;
         private const double SpacerTop = RailProfile.SpacerTop;
 
         /// <summary>
-        /// Ставить контррейку: коротку рейку навпроти хрестовини, біля зовнішньої рейки колії, з боку її осі.
-        /// Між нею і ходовою рейкою лишається жолоб для гребеня колеса. Вона притримує колесо з протилежного
-        /// боку осі, поки інше проходить розрив біля вістря осердя. Кінці трохи відігнуті, щоб гребінь
-        /// заходив у жолоб плавно. Між шийками двох рейок стоять вкладиші, що тримають ширину жолоба.
+        /// Ставить контррейку (SwitchGeometry.CheckRail): коротку рейку навпроти хрестовини, біля зовнішньої рейки
+        /// колії, з боку її осі. Між нею і ходовою рейкою лишається жолоб для гребеня колеса. Кінці трохи відігнуті,
+        /// щоб гребінь заходив у жолоб плавно. Між шийками двох рейок стоять вкладиші, що тримають ширину жолоба.
         /// Усе це один меш, зібраний так само, як хрестовина: повний профіль рейки в кожному перерізі,
-        /// два торці і вкладиші окремими частинами.
-        /// Стоїть вона на тих самих спільних перерізах двох колій, що й хрестовина, а не на перерізах своєї
-        /// колії з тими самими номерами: колії порізані на секції кожна по-своєму, і за номерами дві
-        /// контррейки з'їхали б уздовж колії одна відносно одної і відносно хрестовини.
+        /// два торці і вкладиші окремими частинами. Кріплення ходової рейки біля неї ставляться за тією самою лінією
+        /// (TrackChunkRenderer), тож костилі з боку контррейки є рівно там, де вона лежить.
         /// inner каже, з якого боку секції внутрішня рейка колії; контррейка стоїть біля протилежної.
         /// </summary>
-        private void AddCheckRail(Vec3i chunkCoord, Section section, bool inner, BranchGeometry own)
+        private void AddCheckRail(Vec3i chunkCoord, Section section, bool inner, BranchGeometry own, int bladeSections)
         {
             SectionPart part = inner ? SectionPart.SecondRail : SectionPart.FirstRail;
             if (!section.IsInstalled(part)) return;
             string material = section.GetMaterial(part) ?? "iron";
 
-            int from = (own.HideFrom - 1) * 2;
-            int to = Math.Min(own.Across.Length - 1, own.HideTo * 2);
-            if (to - from < 2) return;
-
+            CheckRailLine line = SwitchGeometry.CheckRail(own, TrackGauge.Of(section), bladeSections);
+            if (line == null) return;
             double half = BladeMesh.HeadHalfWidth;
-            // Перерізи стоять на внутрішній рейці, бік дивиться від осі колії до неї. Зовнішня рейка лежить
-            // за ширину колії в протилежний бік, контррейка ближче до осі на головку рейки і жолоб
-            double gap = half * 2 + SwitchGeometry.FrogFlangeway;
             double running = -section.TrackWidth;
-            double offset = running + gap;
-
-            // Внутрішня рейка своєї колії в кожному спільному перерізі хрестовини і вісь контррейки там само
-            var innerRail = new List<RailFrame>();
-            var axis = new List<Vec3d>();
-            for (int q = from; q <= to; q++)
-            {
-                RailFrame station = SwitchGeometry.CommonStation(own.Frames[q], own.Other[q]);
-                double x = offset + (q == from || q == to ? CheckRailFlare : 0);
-                RailFrame at = station == null ? null : RailLine.Cross(own.Frames, 0, station, q);
-                RailFrame shifted = station == null ? null : RailLine.Cross(own.Frames, x, station, q);
-                if (at == null || shifted == null) return;
-
-                innerRail.Add(at);
-                axis.Add(shifted.Center);
-            }
+            double offset = running + CrossingGeometry.GuardAxis;
+            List<RailFrame> innerRail = line.Inner;
+            List<Vec3d> axis = line.Axis;
 
             var rail = new LoftPart();
             for (int i = 0; i < axis.Count; i++)
@@ -315,9 +292,9 @@ namespace RailWorld
             var parts = new List<LoftPart> { rail };
 
             // Вкладиші: посередині кожної секції, тобто між шпалами, крім відігнутих кінців
-            for (int q = from + 1; q < to; q += 2)
+            for (int q = 1; q + 1 < axis.Count; q += 2)
             {
-                RailFrame frame = innerRail[q - from];
+                RailFrame frame = innerRail[q];
                 var spacer = new LoftPart();
                 for (int end = -1; end <= 1; end += 2)
                 {
