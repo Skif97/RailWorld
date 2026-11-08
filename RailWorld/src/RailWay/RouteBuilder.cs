@@ -353,22 +353,110 @@ namespace RailWorld.src.RailWay
             return new Vec3d(2 * along * cx - ox, 0, 2 * along * cz - oz).Normalize();
         }
 
-        // Скільки прямої ділянка ламаної лишає між кривими під перехідні криві другого проходу, блоків: щонайменше, завжди
-        // (6 секцій), і щонайбільше (20 секцій)
-        private const double MinStraight = 3;
-        private const double MaxStraight = 10;
+        // Скільки прямої лишається під перехідну криву другого проходу там, де крива сходиться з тим, що не рухається,
+        // блоків: половина найкоротшої перехідної кривої (RouteCurve.MinTransition), бо перехід лягає посередині стику
+        private const double StraightPerTransition = RouteCurve.MinTransition / 2;
+        // Найменший поворот, з якого від кінця маршруту чи точки з Ctrl колія вже вигинається, рад
+        private const double NoBend = 0.01;
+
+        // Кінець прямого підходу від кінця маршруту end (direction 1 для початку, -1 для кінця), якщо від нього колія
+        // одразу вигинається до сусідньої точки маршруту toward; null, якщо вона й так іде прямо, або кінець біля стрілки
+        // (там перехідних кривих немає: гілка одразу йде своєю кривою, і від неї залежить, чи вміщається гостряк), або
+        // кінець на колії, що сама вигинається: тоді маршрут продовжує її кривизну, і пряма на стику її б зламала
+        private static Node ApproachOf(RouteMarker marker, Node end, Vec3d toward, int direction)
+        {
+            if (marker.Track != null || !Flat(end.Tangent, out double tx, out double tz)) return null;
+            if (marker.Snapped && (marker.Joint == null || !Straight(marker.Joint))) return null;
+            double cx = (toward.X - end.Position.X) * direction, cz = (toward.Z - end.Position.Z) * direction;
+            double chord = Math.Sqrt(cx * cx + cz * cz);
+            if (chord < 1e-6 || Math.Acos(GameMath.Clamp((tx * cx + tz * cz) / chord, -1, 1)) < NoBend) return null;
+            var at = new Vec3d(end.Position.X + tx * StraightPerTransition * direction, end.Position.Y, end.Position.Z + tz * StraightPerTransition * direction);
+            return new Node
+            {
+                Position = at, Tangent = end.Tangent, Marker = end.Marker, Approach = true,
+                Point = new RoutePoint { Position = at.Clone(), Tangent = end.Tangent.Clone(), Exact = false }
+            };
+        }
+
+        // Чи секція покладеної колії пряма в плані: напрямок від початку до середини той самий, що від середини до кінця
+        private static bool Straight(Section section)
+        {
+            Vec3d start = section.FullStartPosition, middle = section.GetGlobalPos(), end = section.FullEndPosition;
+            double ax = middle.X - start.X, az = middle.Z - start.Z, bx = end.X - middle.X, bz = end.Z - middle.Z;
+            return Math.Abs(Math.Atan2(ax * bz - az * bx, ax * bx + az * bz)) < NoBend;
+        }
+
+        // Маршрут з двох точок, від яких колія одразу вигинається: прямі підходи від обох кінців (ApproachOf), а між ними
+        // крива. null, якщо підходи не потрібні. Висота й ухил у кінцях підходів з кубічної кривої між кінцями
+        private static List<RoutePoint> Approaches(List<RouteMarker> markers, RoutePoint a, RoutePoint b, List<int> sources)
+        {
+            var start = new Node { Position = a.Position, Tangent = a.Tangent, Point = a, Marker = 0 };
+            var end = new Node { Position = b.Position, Tangent = b.Tangent, Point = b, Marker = 1 };
+            Node first = ApproachOf(markers[0], start, b.Position, 1), last = ApproachOf(markers[1], end, a.Position, -1);
+            if (first == null && last == null) return null;
+
+            double span = HorizontalDistance(a.Position, b.Position);
+            if (span < 2 * StraightPerTransition + RouteCurve.MinSpan) return null;
+            double fromSlope = Slope(a.Tangent), toSlope = Slope(b.Tangent);
+            RoutePoint Lift(Node node, double share)
+            {
+                double u = share, u2 = u * u, u3 = u2 * u;
+                double y = (2 * u3 - 3 * u2 + 1) * a.Position.Y + (u3 - 2 * u2 + u) * span * fromSlope + (-2 * u3 + 3 * u2) * b.Position.Y + (u3 - u2) * span * toSlope;
+                double slope = ((6 * u2 - 6 * u) * a.Position.Y + (3 * u2 - 4 * u + 1) * span * fromSlope + (-6 * u2 + 6 * u) * b.Position.Y + (3 * u2 - 2 * u) * span * toSlope) / span;
+                node.Point.Position = new Vec3d(node.Position.X, y, node.Position.Z);
+                node.Point.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, slope);
+                return node.Point;
+            }
+
+            var result = new List<RoutePoint> { a };
+            sources?.Add(0);
+            if (first != null) { result.Add(Lift(first, StraightPerTransition / span)); sources?.Add(0); }
+            if (last != null) { result.Add(Lift(last, 1 - StraightPerTransition / span)); sources?.Add(1); }
+            result.Add(b);
+            sources?.Add(1);
+            return result;
+        }
+
+        /// <summary>
+        /// На скільки від точки з Ctrl p уздовж її напрямку (tx, tz) у бік sign ставити кут її прямого шматка: якнайближче
+        /// до точки, щоб маршрут ішов майже так, як ішов би через неї вигином, але так, щоб дуга кута вмістилася з радіусом
+        /// не меншим за smallest. Ближче до точки на кут лишається мало прямої (пряма до точки щонайменше
+        /// StraightPerTransition), далі менше місця з боку сусіда neighbour і крутіший поворот. Перебираються відстані
+        /// через чверть блока; якщо такого радіуса не дає жодна, береться та, з якою дуга найпросторіша (тісну відхилять
+        /// правила). 0, якщо до сусіда надто близько.
+        /// </summary>
+        private static double CtrlReach(Vec3d p, double tx, double tz, Node neighbour, int sign, double smallest)
+        {
+            double distance = HorizontalDistance(p, neighbour.Position);
+            double best = 0, widest = -1;
+            for (double reach = StraightPerTransition + RouteCurve.MinSpan; reach <= distance - RouteCurve.MinSpan; reach += RouteCurve.PieceLength)
+            {
+                double vx = p.X + tx * reach * sign, vz = p.Z + tz * reach * sign;
+                double ox = (neighbour.Position.X - vx) * sign, oz = (neighbour.Position.Z - vz) * sign;
+                double other = Math.Sqrt(ox * ox + oz * oz);
+                if (other < RouteCurve.MinSpan) break;
+                // Поворот у куті: від прямої з боку сусіда до прямого шматка
+                double turn = Math.Acos(GameMath.Clamp(-(ox * tx + oz * tz) / other, -1, 1));
+                // Місце на дугу з кожного боку кута: до точки за вирахуванням прямої під перехід, до сусіда половина, якщо
+                // там теж крива, інакше все за вирахуванням його прямої
+                double toPoint = reach - StraightPerTransition;
+                double toNeighbour = neighbour.Corner || neighbour.Lead ? other / 2 : other - StraightPerTransition;
+                double radius = turn < NoBend ? double.MaxValue : Math.Min(toPoint, toNeighbour) / Math.Tan(turn / 2);
+                if (radius >= smallest) return reach;
+                if (radius > widest + 1e-9) { widest = radius; best = reach; }
+            }
+            return best;
+        }
 
         /// <summary>
         /// Яку пряму лишить планувальник з кожного боку кута на повороті turn радіан, якщо дуга має бути радіуса radius
         /// і на прямій до кута більше нічого немає: готова форма (RouteTemplate) додає її до своїх прямих, щоб дуга
-        /// вийшла саме того радіуса, а перехідним кривим було місце. Половина вільного понад дугу найменшого радіуса,
-        /// від MinStraight до MaxStraight, як у RoundCorners: з прямою R · tan(turn / 2) + S вільного там
-        /// (R - Rmin) · tan(turn / 2) + S, і його половина дорівнює S саме тоді, коли S = (R - Rmin) · tan(turn / 2).
+        /// вийшла саме того радіуса, а перехідним кривим було місце. Між кутом і кінцем форми планувальник лишає
+        /// StraightPerTransition (RoundCorners), решту прямої бере дуга.
         /// </summary>
         public static double StraightFor(double radius, double turn, TrackGauge gauge = null)
         {
-            double smallest = (gauge ?? TrackGauge.Narrow).MinRadius * CornerRadiusFactor;
-            return GameMath.Clamp((radius - smallest) * Math.Tan(turn / 2), MinStraight, MaxStraight);
+            return StraightPerTransition;
         }
 
         // Дуга, якою маршрут скруглює кут, не тісніша за найменший радіус із невеликим запасом: крива Безьє
@@ -392,6 +480,9 @@ namespace RailWorld.src.RailWay
             // Дуга сходу вийшла надто короткою, щоб стати окремою ділянкою. Точка лише задає пряму до кута,
             // а в маршрут не потрапляє: кут з'єднується з крайньою точкою однією кривою
             public bool Hidden;
+            // Кінець прямого підходу від кінця маршруту (Approach): крива від кінця починається лише за ним, щоб на стику
+            // з колією чи з напрямком кінця перехідній кривій було місце. Висоти не задає
+            public bool Approach;
             public RoutePoint Point;
             // З якої точки гравця вузол: її номер. Кінець дуги сходу належить крайній точці, від якої вона
             public int Marker;
@@ -426,6 +517,8 @@ namespace RailWorld.src.RailWay
             int count = route.Count;
             if (count < 3)
             {
+                List<RoutePoint> straightened = count == 2 ? Approaches(markers, route[0], route[1], sources) : null;
+                if (straightened != null) return straightened;
                 for (int i = 0; i < count; i++) sources?.Add(i);
                 return route;
             }
@@ -440,23 +533,77 @@ namespace RailWorld.src.RailWay
                 });
             }
 
-            // Схід із напрямку першої точки і захід у напрямок останньої
-            if (nodes[1].Corner)
+            // Точка з Ctrl: маршрут іде через неї точно. Якби колія вигиналася в самій точці, перехідній кривій біля неї
+            // не було б місця, а зсунути вигин заради неї не можна, бо він мусить пройти через точку. Тож через точку
+            // лягає прямий шматок уздовж її напрямку, а вигини до неї й від неї стають звичайними кутами на його кінцях
+            // (CtrlReach): вони скруглюються дугами, другий прохід дає їм перехідні криві, а сама точка лишається на
+            // прямій точно там, де її поставили
+            for (int i = nodes.Count - 2; i >= 1; i--)
             {
-                Node lead = LeadIn(nodes[0], nodes[1].Position, 1, gauge);
+                Node node = nodes[i];
+                RouteMarker marker = markers[node.Marker];
+                if (node.Corner || !marker.Exact || marker.Snapped || !Flat(node.Tangent, out double tx, out double tz)) continue;
+                double smallest = gauge.MinRadius * CornerRadiusFactor;
+                double before = CtrlReach(node.Position, tx, tz, nodes[i - 1], -1, smallest), after = CtrlReach(node.Position, tx, tz, nodes[i + 1], 1, smallest);
+                if (before <= 0 || after <= 0) continue;
+
+                Node Around(int sign)
+                {
+                    double reach = sign < 0 ? before : after;
+                    var at = new Vec3d(node.Position.X + tx * reach * sign, node.Position.Y, node.Position.Z + tz * reach * sign);
+                    return new Node
+                    {
+                        Position = at, Tangent = node.Tangent, Corner = true, Marker = node.Marker,
+                        Point = new RoutePoint { Position = at.Clone(), Tangent = node.Tangent.Clone(), Exact = false }
+                    };
+                }
+                nodes.Insert(i + 1, Around(1));
+                nodes.Insert(i, Around(-1));
+            }
+            // Вільний кінець (напрямок не задано) дивиться вздовж хорди до сусідньої точки маршруту (EndsOf). Якщо
+            // сусідньою стала точка з Ctrl, перед нею тепер кут її прямого шматка: кінець дивиться на нього, і крайня
+            // ділянка лишається прямою
+            for (int end = 0; end < 2; end++)
+            {
+                int index = end == 0 ? 0 : nodes.Count - 1, neighbour = end == 0 ? 1 : nodes.Count - 2;
+                RouteMarker marker = markers[nodes[index].Marker];
+                // Кут прямого шматка має номер точки з Ctrl, від якої він
+                bool ctrlCorner = nodes[neighbour].Corner && markers[nodes[neighbour].Marker].Exact;
+                if (marker.Snapped || marker.Aimed || !ctrlCorner) continue;
+                Vec3d near = nodes[neighbour].Position, here = nodes[index].Position;
+                double dx = end == 0 ? near.X - here.X : here.X - near.X, dz = end == 0 ? near.Z - here.Z : here.Z - near.Z;
+                double flat = Math.Sqrt(dx * dx + dz * dz);
+                if (flat < 1e-6) continue;
+                nodes[index].Tangent = new Vec3d(dx / flat, nodes[index].Tangent.Y, dz / flat).Normalize();
+                nodes[index].Point.Tangent = nodes[index].Tangent;
+            }
+
+            // Кінець, від якого колія одразу вигинається, спершу йде прямо (Approach): перехідна крива на стику бере
+            // половину своєї довжини з прямої
+            Node startApproach = ApproachOf(markers[0], nodes[0], nodes[1].Position, 1);
+            if (startApproach != null) nodes.Insert(1, startApproach);
+            Node endApproach = ApproachOf(markers[count - 1], nodes[nodes.Count - 1], nodes[nodes.Count - 2].Position, -1);
+            if (endApproach != null) nodes.Insert(nodes.Count - 1, endApproach);
+
+            // Схід із напрямку першої точки і захід у напрямок останньої, від кінця прямого підходу, якщо він є
+            int first = startApproach != null ? 1 : 0;
+            if (nodes[first + 1].Corner)
+            {
+                Node lead = LeadIn(nodes[first], nodes[first + 1].Position, 1, gauge);
                 if (lead != null)
                 {
                     lead.Marker = 0;
-                    nodes.Insert(1, lead);
+                    nodes.Insert(first + 1, lead);
                 }
             }
-            if (nodes[nodes.Count - 2].Corner)
+            int last = nodes.Count - 1 - (endApproach != null ? 1 : 0);
+            if (nodes[last - 1].Corner)
             {
-                Node lead = LeadIn(nodes[nodes.Count - 1], nodes[nodes.Count - 2].Position, -1, gauge);
+                Node lead = LeadIn(nodes[last], nodes[last - 1].Position, -1, gauge);
                 if (lead != null)
                 {
                     lead.Marker = count - 1;
-                    nodes.Insert(nodes.Count - 1, lead);
+                    nodes.Insert(last, lead);
                 }
             }
 
@@ -468,7 +615,8 @@ namespace RailWorld.src.RailWay
             // на цій прямій, усю; до точної точки трохи менше, їй потрібне місце на власний вигин
             double Limit(int neighbour, double length)
             {
-                return nodes[neighbour].Corner || nodes[neighbour].Lead ? length : Math.Max(length - 1, length / 2);
+                Node near = nodes[neighbour];
+                return near.Corner || near.Lead || near.Approach ? length : Math.Max(length - 1, length / 2);
             }
 
             // Потреба кожного кута: дуга найменшого радіуса
@@ -502,16 +650,18 @@ namespace RailWorld.src.RailWay
                 nodes[i + 1].Cut *= scale;
             }
 
-            // Пряма, яку кожна ділянка ламаної лишає між кривими (чи кривою і точкою, через яку маршрут іде точно): за її
-            // рахунок другий прохід (RouteCurve.SmoothCurves) вставляє перехідні криві, не міняючи кривизни дуг. Половина
-            // вільного після дуг найменшого радіуса, від MinStraight до MaxStraight. MinStraight є завжди: якщо з ним дуги
-            // найменшого радіуса не вміщаються, кути поступаються прямій, дуги стають тіснішими за дозволене, і правила
-            // такий маршрут відхиляють: гравець зсуває точку
+            // Пряма, яку ділянка ламаної лишає під перехідну криву: там, де крива (кут з дугою чи дуга сходу) сходиться з
+            // точкою, що не рухається (кінець маршруту, точка з Ctrl, точка на колії), StraightPerTransition. Між двома
+            // кривими прямої не треба: другий прохід (RouteCurve.SmoothCurves) згладжує криві, що йдуть одна за одною,
+            // разом, як одну. Запас є завжди: якщо з ним дуги найменшого радіуса не вміщаються, кути поступаються прямій,
+            // дуги стають тіснішими за дозволене, і правила такий маршрут відхиляють: гравець зсуває точку
+            bool Curved(int index) => nodes[index].Lead || nodes[index].Corner && need[index] > 0;
+            bool Fixed(int index) => !nodes[index].Corner && !nodes[index].Lead && !nodes[index].Approach;
             double[] reserve = new double[n];
             for (int i = 0; i + 1 < n; i++)
             {
-                double free = Math.Max(0, leg[i] - Cut(nodes[i]) - Cut(nodes[i + 1]));
-                reserve[i] = Math.Min(leg[i], GameMath.Clamp(free / 2, MinStraight, MaxStraight));
+                bool meets = Curved(i) && Fixed(i + 1) || Fixed(i) && Curved(i + 1);
+                reserve[i] = Math.Min(leg[i], meets ? StraightPerTransition : 0);
                 double room = leg[i] - reserve[i], taken = Cut(nodes[i]) + Cut(nodes[i + 1]);
                 if (taken <= room || taken < 1e-9) continue;
                 double scale = room / taken;
@@ -556,7 +706,7 @@ namespace RailWorld.src.RailWay
             var knots = new List<int>();
             for (int i = 0; i < n; i++)
             {
-                if (!nodes[i].Lead && !nodes[i].Corner) knots.Add(i);
+                if (!nodes[i].Lead && !nodes[i].Corner && !nodes[i].Approach) knots.Add(i);
             }
             // Підйом на блок шляху між двома вузлами
             double Secant(int a, int b)
@@ -578,12 +728,9 @@ namespace RailWorld.src.RailWay
                 int a = knots[k - 1], i = knots[k], b = knots[k + 1];
                 double wanted = Secant(a, b);
                 knotSlope[k] = ModMath.MonotoneSlope(wanted, Secant(a, i), Secant(i, b));
-                if (!node.Corner)
-                {
-                    // Точна точка входить у маршрут як є, тож обмежений ухил іде і в її напрямок
-                    node.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, knotSlope[k]);
-                    if (node.Point != null) node.Point.Tangent = node.Tangent;
-                }
+                // Точна точка входить у маршрут як є, тож обмежений ухил іде і в її напрямок
+                node.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, knotSlope[k]);
+                if (node.Point != null) node.Point.Tangent = node.Tangent;
             }
 
             // Висота й ухил кривої за run блоків від початку маршруту: кубічна крива між двома сусідніми вузлами
@@ -609,10 +756,15 @@ namespace RailWorld.src.RailWay
             for (int i = 0; i < n; i++)
             {
                 Node node = nodes[i];
-                if (!node.Lead) continue;
+                if (!node.Lead && !node.Approach) continue;
                 double y = Height(at[i], out double slope);
                 node.Position = new Vec3d(node.Position.X, y, node.Position.Z);
                 node.Tangent = WithSlope(node.Tangent.X, node.Tangent.Z, slope);
+                if (node.Point != null)
+                {
+                    node.Point.Position = node.Position.Clone();
+                    node.Point.Tangent = node.Tangent.Clone();
+                }
             }
 
             var result = new List<RoutePoint>();

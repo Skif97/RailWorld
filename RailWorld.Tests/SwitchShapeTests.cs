@@ -52,7 +52,20 @@ namespace RailWorld.Tests
         // розходяться
         private Vec3d LayAlongThenAway(Section trunkEnd, List<RouteMarker> markers, bool atEnd = false)
         {
-            List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(markers));
+            // Маршрут, яким його бачитиме стрілка: стику ще немає, але біля стрілки прямого підходу немає (RouteBuilder),
+            // тож точка на колії вже позначена як стрілка
+            var asSwitch = new List<RouteMarker>(markers);
+            for (int i = 0; i < asSwitch.Count; i++)
+            {
+                RouteMarker marker = asSwitch[i];
+                if (!marker.Snapped || marker.Track != null) continue;
+                asSwitch[i] = new RouteMarker
+                {
+                    Block = marker.Block, Position = marker.Position, Heading = marker.Heading, Snapped = true, Exact = marker.Exact, Aimed = marker.Aimed,
+                    Cant = marker.Cant, Track = marker.Joint, TrackJointAtStart = marker.JointAtStart, Joint = marker.Joint, JointAtStart = marker.JointAtStart, Sign = marker.Sign
+                };
+            }
+            List<PointOnBezierCurve> route = RouteCurve.BuildPoints(RouteBuilder.Build(asSwitch));
             if (atEnd) route.Reverse();
             // Ті самі секції, на які маршрут поріже планувальник
             var shared = new List<Section>();

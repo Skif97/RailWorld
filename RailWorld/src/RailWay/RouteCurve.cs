@@ -40,8 +40,9 @@ namespace RailWorld.src.RailWay
 
         /// <summary>
         /// Маршрут проходить через цю точку точно: кінці, точки з Ctrl і точки на колії. Другий прохід у плані
-        /// (RouteCurve.SmoothCurves) її не зсуває. Так за замовчуванням, тож маршрут з голих точок іде через кожну;
-        /// RouteBuilder знімає це з точок, які додає сам (кінці дуг кутів, кінці дуг сходу, стики біарка).
+        /// (RouteCurve.SmoothCurves) її не зсуває; щоб біля точки з Ctrl теж були перехідні криві, планувальник кладе
+        /// через неї прямий шматок (RouteBuilder.RoundCorners). Так за замовчуванням, тож маршрут з голих точок іде через
+        /// кожну; RouteBuilder знімає це з точок, які додає сам (кінці дуг кутів, кінці дуг сходу, стики біарка).
         /// </summary>
         public bool Exact = true;
     }
@@ -171,7 +172,7 @@ namespace RailWorld.src.RailWay
                     if (!a.ArcJoint) joints.Add(all.Count);
                     if (a.Exact && !a.ArcJoint) exact.Add(all.Count);
                 }
-                if (i == route.Count - 2) lastLegStart = Math.Max(all.Count - 1, 0);
+                if (i == route.Count - 2) lastLegStart = joined ? all.Count - 1 : all.Count;
                 all.AddRange(points);
                 if (!b.ArcJoint) joints.Add(all.Count - 1);
                 if (b.Exact && !b.ArcJoint) exact.Add(all.Count - 1);
@@ -189,7 +190,7 @@ namespace RailWorld.src.RailWay
             var blocked = new bool[all.Count];
             if (route[0].Track != null) for (int i = 0; i <= firstLegEnd && i < all.Count; i++) blocked[i] = true;
             if (route[route.Count - 1].Track != null && lastLegStart >= 0) for (int i = lastLegStart; i < all.Count; i++) blocked[i] = true;
-            SmoothCurves(all, exactAt, blocked);
+            conflict = conflict ?? SmoothCurves(all, exactAt, blocked, gauge.MinRadius);
 
             // Там, де маршрут починається або закінчується стрілкою, він спершу йде поверх основної колії:
             // на цій ділянці бере її висоту і нахил полотна, а зійшовши з неї, плавно переходить на свої
@@ -207,32 +208,46 @@ namespace RailWorld.src.RailWay
             return all;
         }
 
+        /// <summary>
+        /// Найкоротша перехідна крива з прямої в дугу, блоків (6 секцій). Лягає посередині стику: половина на прямій,
+        /// половина на місці колишнього початку дуги. Тож з прямої бере половину своєї довжини, і саме стільки прямої
+        /// планувальник (RouteBuilder) лишає на кожен перехід.
+        /// </summary>
+        public const double MinTransition = 3;
         // Найдовша перехідна крива другого проходу, блоків (20 секцій)
         private const double MaxTransition = 10;
         // Поворот у точці, менший за це, рад, вважається прямою
         private const double StraightTurn = 1e-6;
-        // Синус кута між прямими до і після кривої, менший за це: прямі майже паралельні (крива майже пряма чи розворот),
-        // і зсув уздовж першої прямої не наведе колію на другу
+        // Синус кута між прямими до і після кривої, менший за це: прямі майже паралельні (розворот чи S-подібна крива між
+        // прямими в один бік), і зсув уздовж першої прямої колію на другу не наведе
         private const double ParallelLines = 0.02;
+        // У скільки разів щонайбільше стиснути чи розтягнути криву між паралельними прямими, і скільки разів ділити навпіл
+        private const double ParallelSqueeze = 3;
+        private const int ParallelHalvings = 40;
+        // Точка далі за це від прямої, блоків, на ній уже не лежить
+        private const double OnLine = 1e-6;
 
         /// <summary>
         /// Другий прохід у плані: перехідні криві за рахунок прямих. Планувальник (RouteBuilder) лишає між кривими
         /// прямі; на стику прямої з кривою кривина стрибає з нуля одразу до повної, і тут цей стрибок розкладається на
-        /// перехідну криву. Для кожної кривої між двома прямими кривина згладжується вікном завдовжки до MaxTransition:
-        /// на стиках вона наростає рівно, а всередині дуги лишається тією самою, найбільша не росте. Колія з такою
-        /// кривиною, зібрана від попередньої прямої, відходить від старої дуги всередину (на справжній залізниці так
-        /// само, приблизно на L² / 24R); тоді вся крива зсувається вздовж першої прямої настільки, щоб лягти точно на
-        /// другу пряму, а точки на прямих між кривою і серединами прямих розставляються наново рівномірно. Дуги від
-        /// цього не тісніють, прямі лишаються тими самими лініями, і змінюється лише шматок колії між серединами двох
-        /// прямих довкола однієї кривої.
-        /// Крива лишається як є, якщо не має прямої з обох боків, якщо всередині неї точка, через яку маршрут іде
-        /// точно (exact), чи ділянка біля стрілки (blocked), і якщо прямих не вистачає навіть на коротку перехідну
-        /// криву. Вікно, якому не вистачає прямої, меншає вдвічі.
+        /// перехідну криву. Для кожної кривої між двома прямими кривина згладжується вікном завдовжки від MinTransition
+        /// до MaxTransition, скільки дозволяють прямі: на стиках вона наростає рівно, а всередині дуги лишається тією
+        /// самою, найбільша не росте. Колія з такою кривиною, зібрана від попередньої прямої, відходить від старої дуги
+        /// всередину (на справжній залізниці так само, приблизно на L² / 24R); тоді вся крива зсувається вздовж першої
+        /// прямої настільки, щоб лягти точно на другу пряму, а точки між серединами прямих розставляються наново
+        /// рівномірно. Дуги від цього не тісніють, прямі лишаються тими самими лініями, і змінюється лише шматок колії
+        /// між серединами двох прямих довкола однієї кривої. Коли прямі паралельні (розворот чи S-подібна крива), зсув
+        /// уздовж першої не наближає колію до другої; там крива стискається чи розтягується рівно настільки, щоб з
+        /// перехідними кривими лягти між тими самими прямими, але не тісніше за limit.
+        /// Перехідна крива обов'язкова: якщо крива між двома прямими не отримує й найкоротшої, повертає причину
+        /// відмови. Крива лишається як є без відмови, якщо прямої з якогось боку немає за самим задумом (крива
+        /// починається від кінця маршруту чи від іншої кривої), якщо всередині неї точка, через яку маршрут іде точно
+        /// (exact), чи ділянка біля стрілки (blocked).
         /// </summary>
-        private static void SmoothCurves(List<PointOnBezierCurve> points, bool[] exact, bool[] blocked)
+        private static string SmoothCurves(List<PointOnBezierCurve> points, bool[] exact, bool[] blocked, double limit)
         {
             int count = points.Count;
-            if (count < 5) return;
+            if (count < 5) return null;
             var heading = new double[count - 1];
             var length = new double[count - 1];
             var run = new double[count];
@@ -265,6 +280,7 @@ namespace RailWorld.src.RailWay
                 regions.Add((j, last));
                 j = last;
             }
+            string conflict = null;
             for (int r = 0; r < regions.Count; r++)
             {
                 (int first, int last) = regions[r];
@@ -279,34 +295,49 @@ namespace RailWorld.src.RailWay
 
                 bool locked = false;
                 for (int k = from + 1; k < to && !locked; k++) locked = exact[k] || blocked[k];
-                if (locked || blocked[from] && blocked[to]) continue;
-                SmoothCurve(points, heading, length, turn, run, from, first, last, to);
+                if (locked) continue;
+                string problem = SmoothCurve(points, heading, length, turn, run, from, first, last, to, limit);
+                conflict = conflict ?? problem;
             }
+            return conflict;
         }
 
-        // Одна крива: ряд точок first..last, що повертають, між прямими from..first і last..to
-        private static void SmoothCurve(List<PointOnBezierCurve> points, double[] heading, double[] length, double[] turn, double[] run,
-            int from, int first, int last, int to)
+        // Одна крива: ряд точок first..last, що повертають, між прямими from..first і last..to. Причина відмови, якщо
+        // перехідна крива не вміщається, або null
+        private static string SmoothCurve(List<PointOnBezierCurve> points, double[] heading, double[] length, double[] turn, double[] run,
+            int from, int first, int last, int to, double limit)
         {
             double d1x = Math.Cos(heading[from]), d1z = Math.Sin(heading[from]);
             double d2x = Math.Cos(heading[to - 1]), d2z = Math.Sin(heading[to - 1]);
             double cross = d2x * d1z - d2z * d1x;
-            if (Math.Abs(cross) < ParallelLines) return;
+            bool uTurn = Math.Abs(cross) < ParallelLines;
 
             // Половина перехідної кривої лягає на пряму перед стиком
             double room = Math.Min(run[first] - run[from], run[to] - run[last]);
-            for (double window = Math.Min(MaxTransition, 2 * room); window >= 2 * PieceLength; window /= 2)
+            double longest = Math.Min(MaxTransition, 2 * room);
+            if (longest < MinTransition - 1e-9) return "перехідній кривій не вистачає прямої: між кривими має бути щонайменше " + MinTransition.ToString("0.#") + " блока прямої";
+
+            bool tooTight = false;
+            for (double window = longest; ; window = Math.Max(window / 2, MinTransition))
             {
-                if (TryCurve(points, heading, length, turn, run, from, to, window, d1x, d1z, d2x, d2z, cross)) return;
+                if (TryCurve(points, heading, length, turn, run, from, to, window, d1x, d1z, d2x, d2z, cross, uTurn, limit, out bool tight)) return null;
+                tooTight |= tight;
+                if (window <= MinTransition + 1e-9) break;
             }
+            return tooTight
+                ? "крива між паралельними прямими з перехідними кривими тісніша за радіус " + limit.ToString("0.0")
+                : "перехідній кривій не вистачає прямої: зсуньте точку";
         }
 
-        // Спроба з перехідною кривою завдовжки window; false, якщо прямих не вистачає на зсув
+        // Спроба з перехідною кривою завдовжки window; false, якщо прямих не вистачає на зсув, або крива між паралельними
+        // прямими, стиснута під перехідні криві, вийшла тіснішою за limit (тоді tight)
         private static bool TryCurve(List<PointOnBezierCurve> points, double[] heading, double[] length, double[] turn, double[] run,
-            int from, int to, double window, double d1x, double d1z, double d2x, double d2z, double cross)
+            int from, int to, double window, double d1x, double d1z, double d2x, double d2z, double cross, bool uTurn, double limit, out bool tight)
         {
+            tight = false;
             // Кривина, згладжена вікном: кожен поворот порівну на точки в межах половини вікна, не далі за межі
-            var spread = new double[to - from + 1];
+            int n = to - from + 1;
+            var spread = new double[n];
             for (int j = from + 1; j < to; j++)
             {
                 if (turn[j] == 0) continue;
@@ -317,37 +348,71 @@ namespace RailWorld.src.RailWay
                 for (int k = a; k <= b; k++) spread[k - from] += share;
             }
 
-            // Колія наново від from уздовж першої прямої
-            int n = to - from + 1;
+            Vec3d end = points[to].position;
             var x = new double[n];
             var z = new double[n];
-            x[0] = points[from].position.X;
-            z[0] = points[from].position.Z;
-            double direction = heading[from];
-            for (int k = from; k < to; k++)
+            // Колія наново від from уздовж першої прямої; шматки, де вона повертає, коротшають у squeeze разів: поворот
+            // той самий, а дуга тісніша. Наскільки кінець лежить убік від другої прямої
+            double Side(double squeeze)
             {
-                if (k > from) direction += spread[k - from];
-                x[k - from + 1] = x[k - from] + Math.Cos(direction) * length[k];
-                z[k - from + 1] = z[k - from] + Math.Sin(direction) * length[k];
+                x[0] = points[from].position.X;
+                z[0] = points[from].position.Z;
+                double direction = heading[from];
+                for (int k = from; k < to; k++)
+                {
+                    bool turning = k > from && spread[k - from] != 0 || k + 1 < to && spread[k + 1 - from] != 0;
+                    if (k > from) direction += spread[k - from];
+                    double step = length[k] * (turning ? squeeze : 1);
+                    x[k - from + 1] = x[k - from] + Math.Cos(direction) * step;
+                    z[k - from + 1] = z[k - from] + Math.Sin(direction) * step;
+                }
+                return d2x * (z[n - 1] - end.Z) - d2z * (x[n - 1] - end.X);
             }
 
-            // Зсув уздовж першої прямої, з яким кінець ляже на другу пряму (через to з напрямком d2)
-            Vec3d end = points[to].position;
-            double side = d2x * (z[n - 1] - end.Z) - d2z * (x[n - 1] - end.X);
-            double shift = -side / cross;
+            double shift = 0, squeezed = 1;
+            if (!uTurn)
+            {
+                // Зсув уздовж першої прямої, з яким кінець ляже на другу пряму (через to з напрямком d2)
+                shift = -Side(1) / cross;
+            }
+            else
+            {
+                // Прямі паралельні: крива стискається чи розтягується, доки кінець не ляже на другу пряму. Спершу з якого
+                // боку від 1 корінь, тоді поділ навпіл між 1 і краєм
+                double atOne = Side(1);
+                double edge = 1 / ParallelSqueeze, atEdge = Side(edge);
+                if (Math.Sign(atEdge) == Math.Sign(atOne)) { edge = ParallelSqueeze; atEdge = Side(edge); }
+                if (Math.Abs(atOne) < 1e-9) edge = 1;
+                else if (Math.Sign(atEdge) == Math.Sign(atOne)) return false;
+                double near = 1, far = edge, atNear = atOne;
+                for (int i = 0; i < ParallelHalvings && Math.Abs(far - near) > 1e-9; i++)
+                {
+                    double middle = (near + far) / 2, atMiddle = Side(middle);
+                    if (Math.Sign(atMiddle) == Math.Sign(atNear)) { near = middle; atNear = atMiddle; }
+                    else far = middle;
+                }
+                squeezed = (near + far) / 2;
+                Side(squeezed);
+                // Найтісніше місце: поворот на шматку, стиснутому разом із дугою
+                for (int k = from + 1; k < to; k++)
+                {
+                    double bend = Math.Abs(spread[k - from]);
+                    if (bend > 1e-12 && length[k] * squeezed / bend < limit) { tight = true; return false; }
+                }
+            }
 
-            // Нова ламана: від from, далі зсунуті точки, що не лежать позаду from, до to
+            // Нова ламана: від from, далі зсунуті точки до to. Віраж, зсунутий назад, виносить кілька точок першої прямої
+            // позаду from: вони відкидаються. Лише ті, що ще на першій прямій, до першого повороту: далі колія може й
+            // законно повернути назад, як на розвороті
             var line = new List<(double x, double z)> { (x[0], z[0]) };
+            bool turned = false;
             for (int k = 1; k < n; k++)
             {
+                turned |= spread[k - 1] != 0;
                 double px = x[k] + d1x * shift, pz = z[k] + d1z * shift;
                 double along = (px - x[0]) * d1x + (pz - z[0]) * d1z;
-                if (along <= 1e-9)
-                {
-                    // Позаду початку може бути лише точка ще на першій прямій: до неї колія не повертала
-                    for (int m = 1; m < k; m++) if (spread[m] != 0) return false;
-                    continue;
-                }
+                if (!turned && along <= 1e-9) continue;
+                if (turned && line.Count == 1 && along <= 1e-9) return false;
                 line.Add((px, pz));
             }
             // Кінець: точки за to на другій прямій відкидаються, і ламана закінчується точно в to
@@ -359,11 +424,12 @@ namespace RailWorld.src.RailWay
                 line.RemoveAt(line.Count - 1);
             }
             if (line.Count < 2) return false;
-            // Відкинуті точки мусять лежати на другій прямій: від останньої лишеної до to напрямок той самий, що d2
+            // Відкинуті точки мусять лежати на другій прямій, тож і остання лишена: її відстань убік від прямої через to.
+            // Саме відстань, не кут до to: остання лишена буває за соті частки блока від to, і там кут від найменшої
+            // похибки поділу навпіл виходить завеликим
             {
                 (double px, double pz) = line[line.Count - 1];
-                double ex = end.X - px, ez = end.Z - pz, gap = Math.Sqrt(ex * ex + ez * ez);
-                if (gap > 1e-9 && Math.Abs(ex * d2z - ez * d2x) / gap > 1e-6) return false;
+                if (Math.Abs((end.X - px) * d2z - (end.Z - pz) * d2x) > OnLine) return false;
             }
             line.Add((end.X, end.Z));
 
