@@ -37,6 +37,13 @@ namespace RailWorld.src.RailWay
 
         /// <summary>Котрим кінцем секція Track лежить у цій точці: true початком, false кінцем.</summary>
         public bool TrackJointAtStart;
+
+        /// <summary>
+        /// Маршрут проходить через цю точку точно: кінці, точки з Ctrl і точки на колії. Другий прохід у плані
+        /// (RouteCurve.SmoothCurves) її не зсуває. Так за замовчуванням, тож маршрут з голих точок іде через кожну;
+        /// RouteBuilder знімає це з точок, які додає сам (кінці дуг кутів, кінці дуг сходу, стики біарка).
+        /// </summary>
+        public bool Exact = true;
     }
 
     /// <summary>
@@ -135,8 +142,11 @@ namespace RailWorld.src.RailWay
             if (route == null) return all;
             cache?.Begin();
 
-            // На яких місцях у нарізці стоять точки маршруту, що задають свою висоту
+            // На яких місцях у нарізці стоять точки маршруту, що задають свою висоту, і ті, через які маршрут іде точно
             var joints = new List<int>();
+            var exact = new List<int>();
+            // Де в нарізці кінчається перша ділянка і починається остання
+            int firstLegEnd = -1, lastLegStart = -1;
 
             for (int i = 0; i + 1 < route.Count; i++)
             {
@@ -156,12 +166,30 @@ namespace RailWorld.src.RailWay
                 // то вже ні, і початок цієї лишається
                 bool joined = all.Count > 0 && all[all.Count - 1].position.DistanceTo(points[0].position) < 1e-6;
                 if (joined) points.RemoveAt(0);
-                else if (!a.ArcJoint) joints.Add(all.Count);
+                else
+                {
+                    if (!a.ArcJoint) joints.Add(all.Count);
+                    if (a.Exact && !a.ArcJoint) exact.Add(all.Count);
+                }
+                if (i == route.Count - 2) lastLegStart = Math.Max(all.Count - 1, 0);
                 all.AddRange(points);
                 if (!b.ArcJoint) joints.Add(all.Count - 1);
+                if (b.Exact && !b.ArcJoint) exact.Add(all.Count - 1);
+                if (i == 0) firstLegEnd = all.Count - 1;
             }
 
             if (all.Count < 3 || route.Count < 2) return all;
+
+            // Другий прохід у плані: перехідні криві за рахунок прямих. До стрілок і перетинів, бо вони спираються на
+            // план. Біля стрілки перехідних кривих немає: гілка одразу йде своєю кривою, і від неї залежить, чи вміщається
+            // гостряк, тож ділянка від стрілки і до стрілки лишається як є
+            var exactAt = new bool[all.Count];
+            exactAt[0] = exactAt[all.Count - 1] = true;
+            foreach (int index in exact) exactAt[index] = true;
+            var blocked = new bool[all.Count];
+            if (route[0].Track != null) for (int i = 0; i <= firstLegEnd && i < all.Count; i++) blocked[i] = true;
+            if (route[route.Count - 1].Track != null && lastLegStart >= 0) for (int i = lastLegStart; i < all.Count; i++) blocked[i] = true;
+            SmoothCurves(all, exactAt, blocked);
 
             // Там, де маршрут починається або закінчується стрілкою, він спершу йде поверх основної колії:
             // на цій ділянці бере її висоту і нахил полотна, а зійшовши з неї, плавно переходить на свої
@@ -177,6 +205,215 @@ namespace RailWorld.src.RailWay
             if (followed) BlendCant(all, shape);
             if (track != null) CheckAgainstLaidTrack(all, resolve, track, cache, conflictAt, gauge, ref conflict);
             return all;
+        }
+
+        // Найдовша перехідна крива другого проходу, блоків (20 секцій)
+        private const double MaxTransition = 10;
+        // Поворот у точці, менший за це, рад, вважається прямою
+        private const double StraightTurn = 1e-6;
+        // Синус кута між прямими до і після кривої, менший за це: прямі майже паралельні (крива майже пряма чи розворот),
+        // і зсув уздовж першої прямої не наведе колію на другу
+        private const double ParallelLines = 0.02;
+
+        /// <summary>
+        /// Другий прохід у плані: перехідні криві за рахунок прямих. Планувальник (RouteBuilder) лишає між кривими
+        /// прямі; на стику прямої з кривою кривина стрибає з нуля одразу до повної, і тут цей стрибок розкладається на
+        /// перехідну криву. Для кожної кривої між двома прямими кривина згладжується вікном завдовжки до MaxTransition:
+        /// на стиках вона наростає рівно, а всередині дуги лишається тією самою, найбільша не росте. Колія з такою
+        /// кривиною, зібрана від попередньої прямої, відходить від старої дуги всередину (на справжній залізниці так
+        /// само, приблизно на L² / 24R); тоді вся крива зсувається вздовж першої прямої настільки, щоб лягти точно на
+        /// другу пряму, а точки на прямих між кривою і серединами прямих розставляються наново рівномірно. Дуги від
+        /// цього не тісніють, прямі лишаються тими самими лініями, і змінюється лише шматок колії між серединами двох
+        /// прямих довкола однієї кривої.
+        /// Крива лишається як є, якщо не має прямої з обох боків, якщо всередині неї точка, через яку маршрут іде
+        /// точно (exact), чи ділянка біля стрілки (blocked), і якщо прямих не вистачає навіть на коротку перехідну
+        /// криву. Вікно, якому не вистачає прямої, меншає вдвічі.
+        /// </summary>
+        private static void SmoothCurves(List<PointOnBezierCurve> points, bool[] exact, bool[] blocked)
+        {
+            int count = points.Count;
+            if (count < 5) return;
+            var heading = new double[count - 1];
+            var length = new double[count - 1];
+            var run = new double[count];
+            for (int i = 0; i + 1 < count; i++)
+            {
+                double dx = points[i + 1].position.X - points[i].position.X, dz = points[i + 1].position.Z - points[i].position.Z;
+                heading[i] = Math.Atan2(dz, dx);
+                length[i] = Math.Sqrt(dx * dx + dz * dz);
+                run[i + 1] = run[i] + length[i];
+            }
+            var turn = new double[count];
+            var bent = new bool[count];
+            for (int j = 1; j + 1 < count; j++)
+            {
+                double change = heading[j] - heading[j - 1];
+                if (change > Math.PI) change -= 2 * Math.PI;
+                else if (change < -Math.PI) change += 2 * Math.PI;
+                turn[j] = change;
+                bent[j] = Math.Abs(change) >= StraightTurn;
+            }
+
+            // Криві: суцільні ряди точок, де колія повертає. Межа ліворуч від кривої: середина прямої, якщо перед нею
+            // інша крива, або початок прямої, якщо пряма йде від точки, через яку маршрут іде точно, чи від кінця
+            var regions = new List<(int first, int last)>();
+            for (int j = 1; j + 1 < count; j++)
+            {
+                if (!bent[j]) continue;
+                int last = j;
+                while (last + 2 < count && bent[last + 1]) last++;
+                regions.Add((j, last));
+                j = last;
+            }
+            for (int r = 0; r < regions.Count; r++)
+            {
+                (int first, int last) = regions[r];
+                int before = r > 0 ? regions[r - 1].last : 0, after = r + 1 < regions.Count ? regions[r + 1].first : count - 1;
+                // Прямої нема: крива починається одразу від попередньої чи від кінця
+                if (first - before < 2 || after - last < 2) continue;
+                int from = r > 0 ? (before + first) / 2 : before;
+                int to = r + 1 < regions.Count ? (last + after) / 2 : after;
+                // Точка, через яку маршрут іде точно, на прямій між серединою і кривою: межа там, де вона
+                for (int k = first - 1; k > from; k--) if (exact[k]) { from = k; break; }
+                for (int k = last + 1; k < to; k++) if (exact[k]) { to = k; break; }
+
+                bool locked = false;
+                for (int k = from + 1; k < to && !locked; k++) locked = exact[k] || blocked[k];
+                if (locked || blocked[from] && blocked[to]) continue;
+                SmoothCurve(points, heading, length, turn, run, from, first, last, to);
+            }
+        }
+
+        // Одна крива: ряд точок first..last, що повертають, між прямими from..first і last..to
+        private static void SmoothCurve(List<PointOnBezierCurve> points, double[] heading, double[] length, double[] turn, double[] run,
+            int from, int first, int last, int to)
+        {
+            double d1x = Math.Cos(heading[from]), d1z = Math.Sin(heading[from]);
+            double d2x = Math.Cos(heading[to - 1]), d2z = Math.Sin(heading[to - 1]);
+            double cross = d2x * d1z - d2z * d1x;
+            if (Math.Abs(cross) < ParallelLines) return;
+
+            // Половина перехідної кривої лягає на пряму перед стиком
+            double room = Math.Min(run[first] - run[from], run[to] - run[last]);
+            for (double window = Math.Min(MaxTransition, 2 * room); window >= 2 * PieceLength; window /= 2)
+            {
+                if (TryCurve(points, heading, length, turn, run, from, to, window, d1x, d1z, d2x, d2z, cross)) return;
+            }
+        }
+
+        // Спроба з перехідною кривою завдовжки window; false, якщо прямих не вистачає на зсув
+        private static bool TryCurve(List<PointOnBezierCurve> points, double[] heading, double[] length, double[] turn, double[] run,
+            int from, int to, double window, double d1x, double d1z, double d2x, double d2z, double cross)
+        {
+            // Кривина, згладжена вікном: кожен поворот порівну на точки в межах половини вікна, не далі за межі
+            var spread = new double[to - from + 1];
+            for (int j = from + 1; j < to; j++)
+            {
+                if (turn[j] == 0) continue;
+                int a = j, b = j;
+                while (a - 1 > from && run[j] - run[a - 1] <= window / 2) a--;
+                while (b + 1 < to && run[b + 1] - run[j] <= window / 2) b++;
+                double share = turn[j] / (b - a + 1);
+                for (int k = a; k <= b; k++) spread[k - from] += share;
+            }
+
+            // Колія наново від from уздовж першої прямої
+            int n = to - from + 1;
+            var x = new double[n];
+            var z = new double[n];
+            x[0] = points[from].position.X;
+            z[0] = points[from].position.Z;
+            double direction = heading[from];
+            for (int k = from; k < to; k++)
+            {
+                if (k > from) direction += spread[k - from];
+                x[k - from + 1] = x[k - from] + Math.Cos(direction) * length[k];
+                z[k - from + 1] = z[k - from] + Math.Sin(direction) * length[k];
+            }
+
+            // Зсув уздовж першої прямої, з яким кінець ляже на другу пряму (через to з напрямком d2)
+            Vec3d end = points[to].position;
+            double side = d2x * (z[n - 1] - end.Z) - d2z * (x[n - 1] - end.X);
+            double shift = -side / cross;
+
+            // Нова ламана: від from, далі зсунуті точки, що не лежать позаду from, до to
+            var line = new List<(double x, double z)> { (x[0], z[0]) };
+            for (int k = 1; k < n; k++)
+            {
+                double px = x[k] + d1x * shift, pz = z[k] + d1z * shift;
+                double along = (px - x[0]) * d1x + (pz - z[0]) * d1z;
+                if (along <= 1e-9)
+                {
+                    // Позаду початку може бути лише точка ще на першій прямій: до неї колія не повертала
+                    for (int m = 1; m < k; m++) if (spread[m] != 0) return false;
+                    continue;
+                }
+                line.Add((px, pz));
+            }
+            // Кінець: точки за to на другій прямій відкидаються, і ламана закінчується точно в to
+            while (line.Count > 1)
+            {
+                (double px, double pz) = line[line.Count - 1];
+                double beyond = (px - end.X) * d2x + (pz - end.Z) * d2z;
+                if (beyond < -1e-9) break;
+                line.RemoveAt(line.Count - 1);
+            }
+            if (line.Count < 2) return false;
+            // Відкинуті точки мусять лежати на другій прямій: від останньої лишеної до to напрямок той самий, що d2
+            {
+                (double px, double pz) = line[line.Count - 1];
+                double ex = end.X - px, ez = end.Z - pz, gap = Math.Sqrt(ex * ex + ez * ez);
+                if (gap > 1e-9 && Math.Abs(ex * d2z - ez * d2x) / gap > 1e-6) return false;
+            }
+            line.Add((end.X, end.Z));
+
+            // Точки from..to рівномірно по новій ламаній; висота за тією самою часткою шляху, що й була
+            var walked = new double[line.Count];
+            for (int k = 1; k < line.Count; k++)
+            {
+                double dx = line[k].x - line[k - 1].x, dz = line[k].z - line[k - 1].z;
+                walked[k] = walked[k - 1] + Math.Sqrt(dx * dx + dz * dz);
+            }
+            double total = walked[line.Count - 1], oldTotal = run[to] - run[from];
+            if (total < 1e-9 || oldTotal < 1e-9) return false;
+            var heights = new double[n];
+            for (int k = 0; k < n; k++) heights[k] = points[from + k].position.Y;
+
+            int at = 0;
+            for (int k = 1; k + 1 < n; k++)
+            {
+                double target = total * k / (n - 1);
+                while (at + 2 < line.Count && walked[at + 1] < target) at++;
+                double step = walked[at + 1] - walked[at];
+                double t = step < 1e-12 ? 0 : (target - walked[at]) / step;
+                double px = line[at].x + (line[at + 1].x - line[at].x) * t, pz = line[at].z + (line[at + 1].z - line[at].z) * t;
+
+                // Висота: місце на старому шляху за тією самою часткою
+                double oldTarget = run[from] + oldTotal * k / (n - 1);
+                int o = from;
+                while (o + 1 < to && run[o + 1] < oldTarget) o++;
+                double os = run[o + 1] - run[o];
+                double ot = os < 1e-12 ? 0 : (oldTarget - run[o]) / os;
+                double py = heights[o - from] + (heights[o + 1 - from] - heights[o - from]) * ot;
+
+                PointOnBezierCurve point = points[from + k];
+                point.position = new Vec3d(px, py, pz);
+                points[from + k] = point;
+            }
+
+            // Напрямки точок усередині наново з сусідніх; на межах вони лежать на прямих і не міняються
+            for (int k = from + 1; k < to; k++)
+            {
+                Vec3d a = points[k - 1].position, b = points[k + 1].position;
+                double dx = b.X - a.X, dz = b.Z - a.Z, flat = Math.Sqrt(dx * dx + dz * dz);
+                if (flat < 1e-9) continue;
+                PointOnBezierCurve point = points[k];
+                var tangent = new Vec3f((float)(dx / flat), (float)((b.Y - a.Y) / flat), (float)(dz / flat)).Normalize();
+                point.tangent = tangent;
+                point.normal = new Vec3f(-tangent.Z, 0, tangent.X).Normalize();
+                points[k] = point;
+            }
+            return true;
         }
 
         /// <summary>

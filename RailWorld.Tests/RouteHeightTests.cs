@@ -60,11 +60,13 @@ namespace RailWorld.Tests
         [Fact]
         public void SteadyClimbKeepsItsSlopeThroughTheMiddlePoint()
         {
-            // Рівний підйом через три точки не ламається в середній: ухил там той самий, що на обох ділянках
+            // Рівний підйом через три точки не ламається в середній: ухил до неї і після неї той самий
             List<PointOnBezierCurve> points = Cut(Block(0, 10, 0), Block(20, 14, 0), Block(40, 18, 0));
             int middle = points.Count / 2;
-            Vec3d a = points[middle - 2].position, b = points[middle + 2].position;
-            Assert.Equal(0.2, (b.Y - a.Y) / RouteBuilder.HorizontalDistance(a, b), 2);
+            Vec3d a = points[middle - 2].position, b = points[middle].position, c = points[middle + 2].position;
+            double before = (b.Y - a.Y) / RouteBuilder.HorizontalDistance(a, b), after = (c.Y - b.Y) / RouteBuilder.HorizontalDistance(b, c);
+            Assert.True(Math.Abs(after - before) < 0.01, "ухил у середній точці ламається: " + before.ToString("0.000") + " і " + after.ToString("0.000"));
+            Assert.InRange(before, 0.15, 0.3);
         }
 
         [Theory]

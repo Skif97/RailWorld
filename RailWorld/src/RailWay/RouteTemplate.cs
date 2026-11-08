@@ -37,10 +37,12 @@ namespace RailWorld.src.RailWay
                 int turned = GameMath.Mod(direction + (left ? eighths : -eighths), 8);
 
                 // Поворот це кут ламаної, який маршрут сам скруглює дугою. Дуга радіуса R забирає від кожної
-                // з двох прямих R * tan(кут / 2); прямі беремо такі, щоб цього вистачило. Кут стоїть на блоці,
-                // тому прямі виходять трохи довші, а радіус трохи більший за заданий, але не менший
+                // з двох прямих R * tan(кут / 2), і ще стільки прямої з кожного боку планувальник лишає під перехідні
+                // криві (RouteBuilder.StraightFor); прямі беремо такі, щоб вистачило і на те, і на те. Кут стоїть на
+                // блоці, тому прямі виходять трохи довші, а радіус трохи більший за заданий, але не менший
                 double radius = Math.Max(lengthOrRadius, Math.Ceiling((gauge ?? TrackGauge.Narrow).MinRadius));
-                double cut = radius * Math.Tan(eighths * Math.PI / 8);
+                double turn = eighths * Math.PI / 4;
+                double cut = radius * Math.Tan(turn / 2) + RouteBuilder.StraightFor(radius, turn, gauge);
 
                 BlockPos corner = Along(start, direction, Steps(cut, direction), (int)Math.Round(climb / 2.0));
                 BlockPos end = Along(corner, turned, Steps(cut, turned), climb - (int)Math.Round(climb / 2.0));

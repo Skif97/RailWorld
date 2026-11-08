@@ -197,6 +197,7 @@ namespace RailWorld.src.RailWay
 
                 route.Add(new RoutePoint
                 {
+                    Exact = i == 0 || i == count - 1 || marker.Exact || marker.Snapped,
                     Position = position, Tangent = tangent, Cant = marker.Cant,
                     Track = marker.Track, TrackJointAtStart = marker.TrackJointAtStart
                 });
@@ -269,7 +270,7 @@ namespace RailWorld.src.RailWay
             double slope = ((6 * u2 - 6 * u) * fromY + (3 * u2 - 4 * u + 1) * span * fromSlope
                 + (-6 * u2 + 6 * u) * toY + (3 * u2 - 2 * u) * span * toSlope) / span;
 
-            return new RoutePoint { Position = new Vec3d(jx, y, jz), Tangent = WithSlope(q1x - q0x, q1z - q0z, slope), ArcJoint = true };
+            return new RoutePoint { Position = new Vec3d(jx, y, jz), Tangent = WithSlope(q1x - q0x, q1z - q0z, slope), ArcJoint = true, Exact = false };
         }
 
         // Одиничний напрямок у плані; false, якщо напрямок вертикальний
@@ -350,6 +351,24 @@ namespace RailWorld.src.RailWay
             oz /= flat;
             double along = ox * cx + oz * cz;
             return new Vec3d(2 * along * cx - ox, 0, 2 * along * cz - oz).Normalize();
+        }
+
+        // Скільки прямої ділянка ламаної лишає між кривими під перехідні криві другого проходу, блоків: щонайменше, завжди
+        // (6 секцій), і щонайбільше (20 секцій)
+        private const double MinStraight = 3;
+        private const double MaxStraight = 10;
+
+        /// <summary>
+        /// Яку пряму лишить планувальник з кожного боку кута на повороті turn радіан, якщо дуга має бути радіуса radius
+        /// і на прямій до кута більше нічого немає: готова форма (RouteTemplate) додає її до своїх прямих, щоб дуга
+        /// вийшла саме того радіуса, а перехідним кривим було місце. Половина вільного понад дугу найменшого радіуса,
+        /// від MinStraight до MaxStraight, як у RoundCorners: з прямою R · tan(turn / 2) + S вільного там
+        /// (R - Rmin) · tan(turn / 2) + S, і його половина дорівнює S саме тоді, коли S = (R - Rmin) · tan(turn / 2).
+        /// </summary>
+        public static double StraightFor(double radius, double turn, TrackGauge gauge = null)
+        {
+            double smallest = (gauge ?? TrackGauge.Narrow).MinRadius * CornerRadiusFactor;
+            return GameMath.Clamp((radius - smallest) * Math.Tan(turn / 2), MinStraight, MaxStraight);
         }
 
         // Дуга, якою маршрут скруглює кут, не тісніша за найменший радіус із невеликим запасом: крива Безьє
@@ -483,14 +502,37 @@ namespace RailWorld.src.RailWay
                 nodes[i + 1].Cut *= scale;
             }
 
-            // Решту місця кути розбирають порівну: кожен бере половину того, що ще вільне з тіснішого боку
+            // Пряма, яку кожна ділянка ламаної лишає між кривими (чи кривою і точкою, через яку маршрут іде точно): за її
+            // рахунок другий прохід (RouteCurve.SmoothCurves) вставляє перехідні криві, не міняючи кривизни дуг. Половина
+            // вільного після дуг найменшого радіуса, від MinStraight до MaxStraight. MinStraight є завжди: якщо з ним дуги
+            // найменшого радіуса не вміщаються, кути поступаються прямій, дуги стають тіснішими за дозволене, і правила
+            // такий маршрут відхиляють: гравець зсуває точку
+            double[] reserve = new double[n];
+            for (int i = 0; i + 1 < n; i++)
+            {
+                double free = Math.Max(0, leg[i] - Cut(nodes[i]) - Cut(nodes[i + 1]));
+                reserve[i] = Math.Min(leg[i], GameMath.Clamp(free / 2, MinStraight, MaxStraight));
+                double room = leg[i] - reserve[i], taken = Cut(nodes[i]) + Cut(nodes[i + 1]);
+                if (taken <= room || taken < 1e-9) continue;
+                double scale = room / taken;
+                if (nodes[i].Corner) nodes[i].Cut *= scale;
+                if (nodes[i + 1].Corner) nodes[i + 1].Cut *= scale;
+            }
+
+            // Решту місця кути розбирають порівну: кожен бере половину того, що ще вільне з тіснішого боку, не чіпаючи
+            // запасу прямої
+            double Room(int neighbour, int legIndex)
+            {
+                double length = leg[legIndex] - reserve[legIndex];
+                return nodes[neighbour].Corner ? length - nodes[neighbour].Cut : Math.Min(Limit(neighbour, leg[legIndex]), length);
+            }
             for (int pass = 0; pass < 12; pass++)
             {
                 for (int i = 1; i + 1 < n; i++)
                 {
                     if (!nodes[i].Corner || need[i] <= 0) continue;
-                    double inFree = (nodes[i - 1].Corner ? leg[i - 1] - nodes[i - 1].Cut : Limit(i - 1, leg[i - 1])) - nodes[i].Cut;
-                    double outFree = (nodes[i + 1].Corner ? leg[i] - nodes[i + 1].Cut : Limit(i + 1, leg[i])) - nodes[i].Cut;
+                    double inFree = Room(i - 1, i - 1) - nodes[i].Cut;
+                    double outFree = Room(i + 1, i) - nodes[i].Cut;
                     double free = Math.Min(inFree, outFree);
                     if (free > 1e-6) nodes[i].Cut += free / 2;
                 }
@@ -509,10 +551,12 @@ namespace RailWorld.src.RailWay
             double[] at = new double[n];
             for (int i = 1; i < n; i++) at[i] = at[i - 1] + leg[i - 1] - Cut(nodes[i - 1]) - Cut(nodes[i]) + arc[i - 1] / 2 + arc[i] / 2;
 
+            // Вузли кривої висоти: кінці, точні точки і точки на колії. Кут задає лише поворот: якби крива висоти
+            // проходила висоту кожного кута, то там, де кути стоять не на одній лінії, ухил ішов би хвилею
             var knots = new List<int>();
             for (int i = 0; i < n; i++)
             {
-                if (!nodes[i].Lead) knots.Add(i);
+                if (!nodes[i].Lead && !nodes[i].Corner) knots.Add(i);
             }
             // Підйом на блок шляху між двома вузлами
             double Secant(int a, int b)
@@ -532,7 +576,7 @@ namespace RailWorld.src.RailWay
                     continue;
                 }
                 int a = knots[k - 1], i = knots[k], b = knots[k + 1];
-                double wanted = node.Corner ? Secant(a, b) : Slope(node.Tangent);
+                double wanted = Secant(a, b);
                 knotSlope[k] = ModMath.MonotoneSlope(wanted, Secant(a, i), Secant(i, b));
                 if (!node.Corner)
                 {
@@ -582,15 +626,15 @@ namespace RailWorld.src.RailWay
                 if (node.Hidden) continue;
                 if (!node.Corner)
                 {
-                    RoutePoint point = node.Point ?? new RoutePoint { Position = node.Position, Tangent = node.Tangent };
+                    RoutePoint point = node.Point ?? new RoutePoint { Position = node.Position, Tangent = node.Tangent, Exact = false };
                     result.Add(point);
                     from.Add(node.Marker);
                     keep.Add(point);
                     continue;
                 }
 
-                // Точка на прямій: кута немає, і дуги теж. Сама точка лишається: її висота це вузол кривої висоти,
-                // і без неї крива між сусідами пройшла б повз цю висоту. Напрямок уздовж прямої, ухил з кривої
+                // Точка на прямій: кута немає, і дуги теж. Сама точка лишається, але висоти не задає: висота й ухил з
+                // кривої висоти. Напрямок уздовж прямої
                 if (node.Turn < 0.01)
                 {
                     Vec3d next = nodes[i + 1].Position;
@@ -601,15 +645,20 @@ namespace RailWorld.src.RailWay
                         alongX = node.Position.X - nodes[i - 1].Position.X;
                         alongZ = node.Position.Z - nodes[i - 1].Position.Z;
                     }
-                    Height(at[i], out double slope);
-                    result.Add(new RoutePoint { Position = node.Position, Tangent = WithSlope(alongX, alongZ, slope) });
+                    double y = Height(at[i], out double slope);
+                    result.Add(new RoutePoint { Position = new Vec3d(node.Position.X, y, node.Position.Z), Tangent = WithSlope(alongX, alongZ, slope), Exact = false });
                     from.Add(node.Marker);
                     continue;
                 }
-                // Розворот назад, або дуга виходить надто короткою для нарізки: точка лишається як є
+                // Розворот назад, або дуга виходить надто короткою для нарізки: точка лишається в плані як є, а висоту й
+                // ухил бере з кривої висоти
                 double cut = node.Cut;
                 if (need[i] <= 0 || 2 * cut / Math.Tan(node.Turn / 2) * Math.Sin(node.Turn / 2) < RouteCurve.MinSpan)
                 {
+                    double y = Height(at[i], out double slope);
+                    node.Point.Position = new Vec3d(node.Point.Position.X, y, node.Point.Position.Z);
+                    node.Point.Tangent = WithSlope(node.Point.Tangent.X, node.Point.Tangent.Z, slope);
+                    node.Point.Exact = false;
                     result.Add(node.Point);
                     from.Add(node.Marker);
                     continue;
@@ -626,12 +675,14 @@ namespace RailWorld.src.RailWay
                 result.Add(new RoutePoint
                 {
                     Position = new Vec3d(corner.X - inX * inPart, inY, corner.Z - inZ * inPart),
-                    Tangent = WithSlope(inX, inZ, inSlope)
+                    Tangent = WithSlope(inX, inZ, inSlope),
+                    Exact = false
                 });
                 result.Add(new RoutePoint
                 {
                     Position = new Vec3d(corner.X + outX * outPart, outY, corner.Z + outZ * outPart),
-                    Tangent = WithSlope(outX, outZ, outSlope)
+                    Tangent = WithSlope(outX, outZ, outSlope),
+                    Exact = false
                 });
                 from.Add(node.Marker);
                 from.Add(node.Marker);
@@ -662,7 +713,8 @@ namespace RailWorld.src.RailWay
                     result[k] = new RoutePoint
                     {
                         Position = new Vec3d((a.Position.X + b.Position.X) / 2, (a.Position.Y + b.Position.Y) / 2, (a.Position.Z + b.Position.Z) / 2),
-                        Tangent = new Vec3d(a.Tangent.X + b.Tangent.X, a.Tangent.Y + b.Tangent.Y, a.Tangent.Z + b.Tangent.Z).Normalize()
+                        Tangent = new Vec3d(a.Tangent.X + b.Tangent.X, a.Tangent.Y + b.Tangent.Y, a.Tangent.Z + b.Tangent.Z).Normalize(),
+                        Exact = false
                     };
                     from[k] = from[k + 1];
                     result.RemoveAt(k + 1);
