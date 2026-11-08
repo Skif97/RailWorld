@@ -1,12 +1,12 @@
 {
     "type": "code",
-    "modid": "RailWorld",
+    "modid": "railworld",
     "name": "RailWorld",
-    "description": "Rails and train",
-    "author": "Skif_97",
-    "version": "1.0.0",
-    "dependency": {
-        "game": "1.22.3"
-    },
-    "website": ""
+    "description": "Railways: narrow and broad gauge track laid along planned routes with switches and level crossings, trolleys and bogie cars, a tunnelling car.",
+    "authors": [ "Skif_97" ],
+    "version": "0.1.0",
+    "website": "https://github.com/Skif97/RailWorld",
+    "dependencies": {
+        "game": "1.22.7"
+    }
 }

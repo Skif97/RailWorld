@@ -4,7 +4,9 @@
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<GameVersion>1.22.3</GameVersion>
+		<GameVersion>1.22.7</GameVersion>
+		<!-- Та сама, що в modinfo.json: з неї назва теки збірки -->
+		<Version>0.1.0</Version>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -49,6 +51,10 @@
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 		<None Update="worldconfig.json">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</None>
+		<!-- Іконка мода: гра бере modicon.png з кореня мода (ModInfo.IconPath) -->
+		<None Update="modicon.png">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
