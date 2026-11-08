@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.GameContent;
 
 namespace RailWorld.src.RailWay
 {
@@ -366,20 +367,90 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
-        /// Ламає чужі блоки в клітинках, які потрібні секції, ніби їх зламав гравець: з випадінням предметів
-        /// і з перевіркою його прав на цю територію. Блоки, які ламати не можна, лишаються.
+        /// Прибирає чужі блоки з клітинок, які потрібні секції (AllCells), і з габариту над нею (ClearanceCells), щоб
+        /// пройшов вагон: з перевіркою прав гравця byPlayer на цю територію, без випадіння предметів. Рідини і блоки,
+        /// яких не зламати (мантія), лишаються. Повертає, скільки блоків прибрано.
         /// </summary>
-        public static void ClearObstructions(IWorldAccessor world, Section section, IPlayer byPlayer)
+        public static int ClearObstructions(IWorldAccessor world, Section section, IPlayer byPlayer)
         {
             Block bed = GetBedBlock(world);
-            if (bed == null) return;
+            if (bed == null) return 0;
 
+            int cleared = 0;
             foreach (BlockPos pos in AllCells(section))
             {
-                if (IsFree(world.BlockAccessor.GetBlock(pos), bed)) continue;
-                if (!world.Claims.TryAccess(byPlayer, pos, EnumBlockAccessFlags.BuildOrBreak)) continue;
-                world.BlockAccessor.BreakBlock(pos, byPlayer);
+                if (!IsFree(world.BlockAccessor.GetBlock(pos), bed)) cleared += ClearBlock(world, pos, byPlayer);
             }
+            foreach (BlockPos pos in ClearanceCells(section))
+            {
+                if (!IsFree(world.BlockAccessor.GetBlock(pos), bed)) cleared += ClearBlock(world, pos, byPlayer);
+            }
+            return cleared;
+        }
+
+        // Скільки сипких блоків над прибраним щонайбільше прибирається разом із ним
+        private const int MaxLooseAbove = 32;
+
+        /// <summary>
+        /// Прибирає блок з клітинки без випадіння предметів, з перевіркою прав гравця byPlayer: 1, якщо прибрав. Рідини,
+        /// блоки колії і блоки, яких не зламати (мантія), лишаються. Сипкі блоки над ним (гравій, пісок: поведінка
+        /// UnstableFalling) прибираються теж, стовпом доти, доки сипкі: інакше вони впали б у прибране місце.
+        /// </summary>
+        public static int ClearBlock(IWorldAccessor world, BlockPos pos, IPlayer byPlayer)
+        {
+            if (!Removable(world, pos, byPlayer)) return 0;
+            world.BlockAccessor.BreakBlock(pos, byPlayer, 0);
+            BlockPos above = pos.UpCopy();
+            for (int i = 0; i < MaxLooseAbove && world.BlockAccessor.GetBlock(above).HasBehavior<BlockBehaviorUnstableFalling>() && Removable(world, above, byPlayer); i++)
+            {
+                world.BlockAccessor.BreakBlock(above, byPlayer, 0);
+                above.Up();
+            }
+            return 1;
+        }
+
+        private static bool Removable(IWorldAccessor world, BlockPos pos, IPlayer byPlayer)
+        {
+            Block block = world.BlockAccessor.GetBlock(pos);
+            if (block.Id == 0 || block is BlockTrackBed || block.IsLiquid() || block.BlockMaterial == EnumBlockMaterial.Mantle) return false;
+            return world.Claims.TryAccess(byPlayer, pos, EnumBlockAccessFlags.BuildOrBreak);
+        }
+
+        /// <summary>
+        /// Клітинки габариту над секцією: стовпчики, що зачіпають смугу TrackGauge.ClearanceHalfWidth обабіч осі
+        /// секції, від клітинки над полотном угору на TrackGauge.ClearanceHeight. Полотно в кожному стовпчику на
+        /// висоті осі в найближчій до нього точці.
+        /// </summary>
+        public static List<BlockPos> ClearanceCells(Section section)
+        {
+            TrackGauge gauge = TrackGauge.Of(section);
+            FastVec3d a = section.Start, m = section.Center, b = section.End;
+            // Стовпчик зачіпає смугу, якщо його середина не далі за пів клітинки від її краю
+            double reach = gauge.ClearanceHalfWidth + 0.5;
+            int minX = (int)Math.Floor(Math.Min(a.X, Math.Min(m.X, b.X)) - reach), maxX = (int)Math.Floor(Math.Max(a.X, Math.Max(m.X, b.X)) + reach);
+            int minZ = (int)Math.Floor(Math.Min(a.Z, Math.Min(m.Z, b.Z)) - reach), maxZ = (int)Math.Floor(Math.Max(a.Z, Math.Max(m.Z, b.Z)) + reach);
+            var cells = new List<BlockPos>();
+            for (int x = minX; x <= maxX; x++)
+                for (int z = minZ; z <= maxZ; z++)
+                {
+                    double cx = x + 0.5, cz = z + 0.5;
+                    double d1 = DistanceToAxis(a, m, cx, cz, out double y1), d2 = DistanceToAxis(m, b, cx, cz, out double y2);
+                    double distance = Math.Min(d1, d2), y = d1 <= d2 ? y1 : y2;
+                    if (distance > reach) continue;
+                    int floor = (int)Math.Floor(y);
+                    for (int k = 1; k <= gauge.ClearanceHeight; k++) cells.Add(new BlockPos(x, floor + k, z, 0));
+                }
+            return cells;
+        }
+
+        // Відстань у плані від точки до відрізка осі p-q і висота осі в найближчій точці
+        private static double DistanceToAxis(FastVec3d p, FastVec3d q, double x, double z, out double y)
+        {
+            double dx = q.X - p.X, dz = q.Z - p.Z, length = dx * dx + dz * dz;
+            double t = length < 1e-12 ? 0 : GameMath.Clamp(((x - p.X) * dx + (z - p.Z) * dz) / length, 0, 1);
+            y = p.Y + (q.Y - p.Y) * t;
+            double ex = p.X + dx * t - x, ez = p.Z + dz * t - z;
+            return Math.Sqrt(ex * ex + ez * ez);
         }
 
         /// <summary>

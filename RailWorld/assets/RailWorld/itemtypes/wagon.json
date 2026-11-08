@@ -1,0 +1,138 @@
+{
+	"code": "wagon",
+	"variantgroups": [
+		{
+			"code": "type",
+			"states": [
+				"passenger",
+				"tunneler"
+			]
+		}
+	],
+	"class": "ItemTrolley",
+	"maxstacksize": 1,
+	"shape": {
+		"base": "entity/wagon-passenger"
+	},
+	"textures": {
+		"body": {
+			"base": "game:block/liquid/dye/blue"
+		},
+		"roof": {
+			"base": "game:block/stone/plaster/plain"
+		},
+		"stripe": {
+			"base": "game:block/cloth/linen/white"
+		},
+		"glass": {
+			"base": "game:block/clay/hardened/gray"
+		},
+		"door": {
+			"base": "game:block/cloth/linen/white"
+		},
+		"doorframe": {
+			"base": "game:block/clay/hardened/black"
+		},
+		"doorglass": {
+			"base": "game:block/clay/hardened/gray"
+		},
+		"handrail": {
+			"base": "game:block/clay/hardened/black"
+		},
+		"bellows": {
+			"base": "game:block/clay/hardened/black"
+		},
+		"frame": {
+			"base": "game:block/metal/plate/lead"
+		},
+		"spring": {
+			"base": "game:block/metal/plate/steel"
+		},
+		"wheel": {
+			"base": "game:block/metal/plate/steel"
+		}
+	},
+	"creativeinventory": {
+		"general": [
+			"*"
+		],
+		"items": [
+			"*"
+		],
+		"creatures": [
+			"*"
+		]
+	},
+	"guiTransform": {
+		"translation": {
+			"x": 0,
+			"y": 3,
+			"z": 0
+		},
+		"rotation": {
+			"x": -20,
+			"y": 45,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.15,
+			"z": 0.5
+		},
+		"scale": 0.22
+	},
+	"fpHandTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"rotation": {
+			"x": 0,
+			"y": 70,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.1,
+			"z": 0.5
+		},
+		"scale": 0.1
+	},
+	"tpHandTransform": {
+		"translation": {
+			"x": -0.5,
+			"y": -0.3,
+			"z": -0.3
+		},
+		"rotation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0.1,
+			"z": 0.5
+		},
+		"scale": 0.05
+	},
+	"groundTransform": {
+		"translation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"rotation": {
+			"x": 0,
+			"y": 0,
+			"z": 0
+		},
+		"origin": {
+			"x": 0.5,
+			"y": 0,
+			"z": 0.5
+		},
+		"scale": 0.2
+	}
+}

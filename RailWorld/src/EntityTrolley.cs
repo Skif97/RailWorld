@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Datastructures;
 using RailWorld.src.RailWay;
 using RailWorld.src.Items;
 using Vintagestory.GameContent;
@@ -110,6 +111,10 @@ namespace RailWorld
             get { return false; }
         }
 
+        // Гра не малює сутність, якщо сфера цього радіуса навколо її середини поза кадром, а радіус бере з рамки
+        // виділення (Entity.FrustumSphereRadius). Довгий вагон тоді зникав, щойно середина виходила з кадру
+        public override double FrustumSphereRadius => Math.Max(base.FrustumSphereRadius, HalfLength + 1);
+
         public override float MaterialDensity
         {
             get { return 30000f; }
@@ -124,6 +129,17 @@ namespace RailWorld
             if (api is ICoreClientAPI clientApi) clientApi.Event.RegisterRenderer(this, EnumRenderStage.Before, "railworld-trolley");
 
             airDrag = properties.Attributes?["airDragFactor"].AsDouble(DefaultAirDrag) ?? DefaultAirDrag;
+            // Габарити: за замовчуванням вагонетки, вагон задає свої у властивостях сутності
+            JsonObject body = properties.Attributes?["body"];
+            bodyLength = body?["length"].AsDouble(BodyLength) ?? BodyLength;
+            bodyWidth = body?["width"].AsDouble(BodyWidth) ?? BodyWidth;
+            bodyHeight = body?["height"].AsDouble(BodyHeight) ?? BodyHeight;
+            bodyLift = body?["lift"].AsDouble(BodyLift) ?? BodyLift;
+            HalfLength = (body?["couplerLength"].AsDouble(CouplerLength) ?? CouplerLength) / 2;
+            digs = properties.Attributes?["digs"].AsBool(false) ?? false;
+            // На якій відстані від гравця сервер ще надсилає й рахує сутність: гра бере більшу з власної і своєї
+            // (PhysicsManager.UpdateTrackedEntityState, 4 чанки). Довгі вагони видно далеко
+            SimulationRange = properties.Attributes?["trackingRange"].AsInt(SimulationRange) ?? SimulationRange;
             motorGears = properties.Attributes?["motorGears"].AsArray<double>(null) ?? new double[0];
 
             spawnedAtMs = World.ElapsedMilliseconds;
@@ -137,10 +153,13 @@ namespace RailWorld
         // Для ударів вагонеток одна об одну (TrolleyCollisions): точка на осі колії під вагонеткою і напрямок колії
         // там, у світі. Поля, а не нові об'єкти: оновлюються щотіку
         internal readonly Vec3d RailCenter = new Vec3d(), RailAlong = new Vec3d();
+        // Кінці вагонетки на осі колії: за половину довжини (HalfLength) уздовж рейок вперед і назад від середини
+        internal readonly Vec3d RailEndA = new Vec3d(), RailEndB = new Vec3d();
+        private readonly TrackChain endsChain = new TrackChain();
 
         /// <summary>
-        /// Сервер: оновлює RailCenter і RailAlong і дає швидкість уздовж колії (зі знаком відносно напрямку RailAlong).
-        /// false, якщо вагонетка не на колії або її секції зараз не прочитати.
+        /// Сервер: оновлює RailCenter, RailAlong, кінці RailEndA і RailEndB і дає швидкість уздовж колії (зі знаком
+        /// відносно напрямку RailAlong). false, якщо вагонетка не на колії або її секції зараз не прочитати.
         /// </summary>
         internal bool UpdateRailMotion(out double velocity)
         {
@@ -151,7 +170,19 @@ namespace RailWorld
             if (!chord.Valid) return false;
             RailCenter.Set(chord.StartX + chord.AlongX * railS, chord.StartY + chord.AlongY * railS, chord.StartZ + chord.AlongZ * railS);
             RailAlong.Set(chord.AlongX, chord.AlongY, chord.AlongZ);
+
+            // Кінці вздовж колії: ланцюжок від своєї секції, координата середини в ньому railS (своя секція в ланцюжку
+            // від 0 і не розвернута). Де колія раніше закінчується, кінець на її краю
+            endsChain.Build(section, HalfLength + 1, findServerSection ?? (findServerSection = ServerSection));
+            RailEnd(railS + HalfLength, RailEndA);
+            RailEnd(railS - HalfLength, RailEndB);
             return true;
+        }
+
+        private void RailEnd(double at, Vec3d into)
+        {
+            if (!endsChain.At(at, out _, out SectionChord chord, out double s, out _)) { into.Set(RailCenter); return; }
+            into.Set(chord.StartX + chord.AlongX * s, chord.StartY + chord.AlongY * s, chord.StartZ + chord.AlongZ * s);
         }
 
         /// <summary>Сервер: нова швидкість уздовж колії після удару, у тих самих знаках, що й UpdateRailMotion.</summary>
@@ -259,6 +290,12 @@ namespace RailWorld
         // На скільки блоків у кожен бік від своєї секції клієнт бере колію: з запасом більше, ніж намальована
         // вагонетка відстає від присланої і ніж вона проїжджає між двома положеннями
         private const double ChainReach = 6;
+
+        /// <summary>На скільки блоків у кожен бік від своєї секції клієнт бере колію. Вагон бере більше: його візки далеко від центру.</summary>
+        protected virtual double TrackReach => ChainReach;
+
+        /// <summary>Ланцюжок колії клієнта навколо вагонетки, за яким вона ставиться на екрані.</summary>
+        protected TrackChain Chain => chain;
         // Прислане положення, далі за це від колії, вже не на ній, блоків
         private const double OnTrackDistance = 0.5;
 
@@ -303,8 +340,18 @@ namespace RailWorld
 
             // Перед дивиться в бік кінця своєї секції або початку; на секції, якою ланцюжок іде назустріч, навпаки
             int facing = WatchedAttributes.GetInt(TrackFacing, 1) < 0 ? -1 : 1;
-            RailPose.PlaceSmooth(Pos, here, chord, s, halfHeight, reversed ? -facing : facing, out cant);
+            PlaceBody(atFrom + (atTo - atFrom) * done, here, chord, s, reversed ? -facing : facing, halfHeight, out cant);
             return true;
+        }
+
+        /// <summary>
+        /// Клієнт: ставить вагонетку на екрані в місце ланцюжка at, де під нею секція here (хорда chord, s від
+        /// її початку). facing каже, куди дивиться перед відносно here. Вагонетка стоїть на одній точці колії;
+        /// вагон перевизначає це, щоб стати на два візки.
+        /// </summary>
+        protected virtual void PlaceBody(double at, Section here, in SectionChord chord, double s, int facing, double halfHeight, out float cant)
+        {
+            RailPose.PlaceSmooth(Pos, here, chord, s, halfHeight, facing, out cant);
         }
 
         // Ланцюжок колії від секції, яку назвав сервер. Будується заново, лише коли сервер назвав іншу секцію
@@ -324,7 +371,7 @@ namespace RailWorld
             DataInChunk data = DataInChunk.GetClient(new Vec3i(chunkX, chunkY, chunkZ));
             Section section = null;
             chainBuilt = data != null && data.RailWaySections.TryGetValue(index, out section);
-            if (chainBuilt) chain.Build(section, ChainReach, findClientSection);
+            if (chainBuilt) chain.Build(section, TrackReach, findClientSection);
             return chainBuilt;
         }
 
@@ -618,6 +665,18 @@ namespace RailWorld
             foreach (Section section in snowToClear) TrackBed.ClearSnow(World, section, TrackBed.SnowAfterTrolley);
             snowToClear.Clear();
 
+            if (digRequested)
+            {
+                digRequested = false;
+                DigThrough(digSection, digS);
+            }
+            else if (digs && onRail && railVelocity != 0 && Api.Side == EnumAppSide.Server)
+            {
+                // Наперед, поки їде: туди, де кузов буде за DigAheadTime
+                Section section = GetSection(railChunk, railIndex, out _);
+                if (section != null) DigThrough(section, railS + Math.Sign(railVelocity) * (Math.Abs(railVelocity) * DigAheadTime + DigAheadMargin));
+            }
+
             if (TrackRules.TrolleysUnattended && Api is ICoreServerAPI sapi) RunUnattended(sapi);
 
             if (awaitedChunk == null) return;
@@ -880,9 +939,20 @@ namespace RailWorld
             // Кузов у новому місці вліз би в блок: доїжджаємо до блока і трохи відскакуємо назад, як від стіни. Якщо
             // кузов уже стояв у блоці (блок поставили на вагонетку), не тримаємо: хай виїде
             bool moved = section != startSection || railS != startS;
-            if (moved && BodyHitsBlock(section, railS) && !BodyHitsBlock(startSection, startS))
+            bool hits = moved && BodyHitsBlock(section, railS) && !BodyHitsBlock(startSection, startS);
+            if (moved && !hits) digFailed = false;
+            // Тунельний вагон з пасажиром копає: швидкість лишається, а місце біля блока
+            bool dig = hits && digs && !digFailed && HasPassenger();
+            if (dig)
+            {
+                digRequested = true;
+                digSection = section;
+                digS = railS;
+            }
+            if (hits)
             {
                 double speed = Math.Abs(railVelocity);
+                double kept = railVelocity;
                 // Звідки в останній секції кроку її проїхали: з початку кроку, якщо секція та сама, інакше з того
                 // кінця, яким у неї заїхали. Якщо кузов не влазить уже там, до блока доїжджаємо поділом навпіл
                 int along = Math.Sign(railVelocity) != 0 ? Math.Sign(railVelocity) : Math.Sign(startVelocity);
@@ -897,7 +967,7 @@ namespace RailWorld
                         else from = middle;
                     }
                     railS = from;
-                    railVelocity = speed > MinBounceSpeed ? -along * BlockRestitution * speed : 0;
+                    railVelocity = dig ? kept : speed > MinBounceSpeed ? -along * BlockRestitution * speed : 0;
                 }
                 else
                 {
@@ -908,7 +978,7 @@ namespace RailWorld
                     railFacing = startFacing;
                     sectionsWithoutSleeper = startNoSleeper;
                     railS = startS;
-                    railVelocity = speed > MinBounceSpeed ? -Math.Sign(startVelocity) * BlockRestitution * speed : 0;
+                    railVelocity = dig ? startVelocity : speed > MinBounceSpeed ? -Math.Sign(startVelocity) * BlockRestitution * speed : 0;
                     SyncTrackPlace();
                 }
             }
@@ -923,6 +993,26 @@ namespace RailWorld
         // на 12; ширина й висота трохи менші, щоб вона не чіпляла стіни впритул. Низ піднято над полотном, щоб не
         // чіпляти землю обабіч колії і краї схилу; сам блок колії не рахується
         private const double BodyLength = 1.6, BodyWidth = 1.1, BodyHeight = 0.8, BodyLift = 0.25;
+        // Довжина вагонетки від буфера до буфера (shapes/entity/trolley.json, 30/16): на такій відстані між
+        // центрами дві вагонетки торкаються (TrolleyCollisions)
+        private const double CouplerLength = 30.0 / 16;
+        private double bodyLength = BodyLength, bodyWidth = BodyWidth, bodyHeight = BodyHeight, bodyLift = BodyLift;
+
+        /// <summary>Половина довжини по буферах чи автозчепах: дві вагонетки торкаються, коли між центрами сума їхніх половин.</summary>
+        public double HalfLength { get; private set; } = CouplerLength / 2;
+
+        // Тунельний вагон (властивість digs сутності): упершись у блоки, не відскакує, а зупиняється біля них і
+        // просить основний потік розчистити габарит колії під собою (DigThrough). Копає лише з пасажиром, з його
+        // правами на територію. Якщо минулого разу прибрати не вдалося нічого (чужий приват, мантія), поводиться як
+        // звичайний вагон, доки не рушить вільно
+        private bool digs;
+        private bool digRequested, digFailed;
+        // Де кузов уліз у блоки: їх тунельний вагон і прибирає
+        private Section digSection;
+        private double digS;
+        // Наскільки наперед тунельний вагон прибирає блоки, поки їде: секунд руху і ще запас, блоків. Тоді він не
+        // впирається і не їде ривками
+        private const double DigAheadTime = 0.5, DigAheadMargin = 1;
         // Як точно вагонетка доїжджає до блока, блоків, і запобіжник на кількість поділів навпіл
         private const double ContactPrecision = 0.01;
         private const int ContactSteps = 12;
@@ -936,17 +1026,28 @@ namespace RailWorld
         // фізики: лише читає блоки, як і фізика гри
         private bool BodyHitsBlock(Section section, double s)
         {
+            return BlocksInBody(section, s, null);
+        }
+
+        /// <summary>
+        /// Тверді блоки, у які заходить кузов вагонетки, що стоїть на секції за s від її початку (s може виходити за
+        /// секцію: тоді кузов на продовженні її хорди). Якщо into не задано, лише чи є хоч один; інакше всі вони в into.
+        /// Блоки колії не рахуються.
+        /// </summary>
+        private bool BlocksInBody(Section section, double s, List<BlockPos> into)
+        {
             var chord = new SectionChord(section);
             if (!chord.Valid) return false;
+            bool found = false;
 
-            double up = BodyLift + BodyHeight / 2;
+            double up = bodyLift + bodyHeight / 2;
             var body = new OrientedBox(
                 chord.StartX + chord.AlongX * s + chord.UpX * up,
                 chord.StartY + chord.AlongY * s + chord.UpY * up,
                 chord.StartZ + chord.AlongZ * s + chord.UpZ * up,
-                chord.AlongX, chord.AlongY, chord.AlongZ, BodyLength / 2,
-                chord.SideX, chord.SideY, chord.SideZ, BodyWidth / 2,
-                chord.UpX, chord.UpY, chord.UpZ, BodyHeight / 2);
+                chord.AlongX, chord.AlongY, chord.AlongZ, bodyLength / 2,
+                chord.SideX, chord.SideY, chord.SideZ, bodyWidth / 2,
+                chord.UpX, chord.UpY, chord.UpZ, bodyHeight / 2);
 
             IBlockAccessor blocks = World.BlockAccessor;
             int minX = (int)Math.Floor(body.CX - body.Reach(0)), maxX = (int)Math.Floor(body.CX + body.Reach(0));
@@ -964,10 +1065,14 @@ namespace RailWorld
                         if (boxes == null) continue;
                         foreach (Cuboidf box in boxes)
                         {
-                            if (body.Overlaps(x + box.X1, y + box.Y1, z + box.Z1, x + box.X2, y + box.Y2, z + box.Z2)) return true;
+                            if (!body.Overlaps(x + box.X1, y + box.Y1, z + box.Z1, x + box.X2, y + box.Y2, z + box.Z2)) continue;
+                            if (into == null) return true;
+                            found = true;
+                            into.Add(bodyBlockPos.Copy());
+                            break;
                         }
                     }
-            return false;
+            return found;
         }
 
         // Читає керування пасажира моторизованої вагонетки і повертає швидкість, яку мотор має тримати.
@@ -975,6 +1080,39 @@ namespace RailWorld
         // вмикає вищу передачу. «Назад» це гальмо: кожне натискання скидає передачу, а з першої зупиняє
         // вагонетку і тримає її на місці, навіть на ухилі. Напрямок вибирається лише при рушанні: далі
         // погляд ні на що не впливає. Без пасажира мотор вимкнений, і вагонетка котиться сама
+        // Гравець, що сидить у вагонетці, або null
+        private IPlayer Passenger()
+        {
+            EntityBehaviorSeatable seatable = GetBehavior<EntityBehaviorSeatable>();
+            if (seatable?.Seats == null) return null;
+            foreach (IMountableSeat seat in seatable.Seats)
+            {
+                if (seat?.Passenger is EntityPlayer player && player.Player != null) return player.Player;
+            }
+            return null;
+        }
+
+        private bool HasPassenger() => Passenger() != null;
+
+        // Тунельний вагон, основний потік: прибирає блоки, у які заходить кузов на секції section за s від її
+        // початку, з правами пасажира, а якщо там щось було, ще й габарит колії під усім кузовом (TrackBed.ClearObstructions),
+        // щоб тунель був рівний. Якщо в кузові були блоки, а прибрати не вдалося жодного, далі вагон від них відскакує
+        private void DigThrough(Section section, double s)
+        {
+            IPlayer player = Passenger();
+            if (player == null || section == null) return;
+
+            var inBody = new List<BlockPos>();
+            if (!BlocksInBody(section, s, inBody)) return;
+            int cleared = 0;
+            foreach (BlockPos pos in inBody) cleared += TrackBed.ClearBlock(World, pos, player);
+
+            var around = new TrackChain();
+            around.Build(section, bodyLength / 2 + 1, findServerSection ?? (findServerSection = ServerSection));
+            for (int i = 0; i < around.Count; i++) cleared += TrackBed.ClearObstructions(World, around.SectionAt(i), player);
+            digFailed = cleared == 0;
+        }
+
         private double UpdateMotor(Section section)
         {
             EntityBehaviorSeatable seatable = GetBehavior<EntityBehaviorSeatable>();

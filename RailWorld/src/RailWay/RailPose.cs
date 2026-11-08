@@ -135,6 +135,33 @@ namespace RailWorld.src.RailWay
         }
 
         /// <summary>
+        /// Ставить кузов вагона на два візки: back і front це точки на осі колії під заднім і переднім візком, up
+        /// напрямок угору від полотна. Кузов лежить на хорді між візками: перед дивиться від back до front, а на
+        /// кривій середина кузова виходить усередину від колії, як у справжнього вагона.
+        /// </summary>
+        public static void PlaceOnBogies(EntityPos pos, double bx, double by, double bz, double fx, double fy, double fz,
+            double ux, double uy, double uz, double halfHeight, out float cant)
+        {
+            cant = 0;
+            double ax = fx - bx, ay = fy - by, az = fz - bz;
+            double length = Math.Sqrt(ax * ax + ay * ay + az * az);
+            if (length < 1e-6) return;
+            ax /= length; ay /= length; az /= length;
+            // Верх перпендикулярно до кузова
+            double dot = ux * ax + uy * ay + uz * az;
+            ux -= ax * dot; uy -= ay * dot; uz -= az * dot;
+            double upLength = Math.Sqrt(ux * ux + uy * uy + uz * uz);
+            if (upLength < 1e-6) return;
+            ux /= upLength; uy /= upLength; uz /= upLength;
+
+            SetAngles(pos, ax, ay, az, ux, uy, uz, 1, out cant);
+            double lift = Lift(halfHeight);
+            pos.X = (bx + fx) / 2 + ux * lift;
+            pos.Y = (by + fy) / 2 + uy * lift - halfHeight;
+            pos.Z = (bz + fz) / 2 + uz * lift;
+        }
+
+        /// <summary>
         /// Зворотне до Place: на якій відстані s від початку секції стоїть вагонетка з місцем (x, y, z), і як
         /// далеко це місце від секції. s обрізається до самої секції. chord це хорда секції.
         /// </summary>

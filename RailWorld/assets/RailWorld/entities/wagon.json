@@ -1,0 +1,187 @@
+{
+	"code": "wagon",
+	"variantgroups": [
+		{
+			"code": "type",
+			"states": [
+				"passenger",
+				"tunneler"
+			]
+		}
+	],
+	"class": "EntityWagon",
+	"collisionBoxSize": {
+		"x": 3.0,
+		"y": 4.3
+	},
+	"selectionBoxSize": {
+		"x": 3.0,
+		"y": 4.3
+	},
+	"attributesByType": {
+		"*-passenger": {
+			"airDragFactor": 0.003,
+			"shouldSwivelFromMotion": false,
+			"motorGears": [
+				2,
+				5,
+				10,
+				15,
+				20,
+				30
+			],
+			"bogieBase": 12.6,
+			"body": {
+				"length": 18.6,
+				"width": 2.95,
+				"height": 3.1,
+				"lift": 1.15,
+				"couplerLength": 19.2
+			},
+			"trackingRange": 320
+		},
+		"*-tunneler": {
+			"airDragFactor": 0.003,
+			"shouldSwivelFromMotion": false,
+			"motorGears": [
+				2,
+				5,
+				10,
+				15,
+				20,
+				30
+			],
+			"bogieBase": 12.6,
+			"body": {
+				"length": 18.6,
+				"width": 2.95,
+				"height": 3.1,
+				"lift": 1.15,
+				"couplerLength": 19.2
+			},
+			"digs": true,
+			"trackingRange": 320
+		}
+	},
+	"behaviorConfigs": {
+		"seatable": {
+			"seats": [
+				{
+					"seatId": "wagon",
+					"controllable": false,
+					"bodyYawLimit": null,
+					"eyeHeight": 1.6,
+					"riderOffset": {
+						"x": 0,
+						"y": 1.25,
+						"z": 0
+					},
+					"angleMode": "PushYaw",
+					"animation": "sneakidle"
+				}
+			]
+		}
+	},
+	"client": {
+		"PitchStep": false,
+		"renderer": "Shape",
+		"shape": {
+			"base": "entity/wagon-passenger"
+		},
+		"textures": {
+			"body": {
+				"base": "game:block/liquid/dye/blue"
+			},
+			"roof": {
+				"base": "game:block/stone/plaster/plain"
+			},
+			"stripe": {
+				"base": "game:block/cloth/linen/white"
+			},
+			"glass": {
+				"base": "game:block/clay/hardened/gray"
+			},
+			"door": {
+				"base": "game:block/cloth/linen/white"
+			},
+			"doorframe": {
+				"base": "game:block/clay/hardened/black"
+			},
+			"doorglass": {
+				"base": "game:block/clay/hardened/gray"
+			},
+			"handrail": {
+				"base": "game:block/clay/hardened/black"
+			},
+			"bellows": {
+				"base": "game:block/clay/hardened/black"
+			},
+			"frame": {
+				"base": "game:block/metal/plate/lead"
+			},
+			"spring": {
+				"base": "game:block/metal/plate/steel"
+			},
+			"wheel": {
+				"base": "game:block/metal/plate/steel"
+			}
+		},
+		"animations": [
+			{
+				"code": "bogiea",
+				"animation": "bogiea",
+				"animationSpeed": 0,
+				"weight": 1,
+				"blendMode": "Add",
+				"clientSide": true
+			},
+			{
+				"code": "bogieb",
+				"animation": "bogieb",
+				"animationSpeed": 0,
+				"weight": 1,
+				"blendMode": "Add",
+				"clientSide": true
+			},
+			{
+				"code": "bogieapitch",
+				"animation": "bogieapitch",
+				"animationSpeed": 0,
+				"weight": 1,
+				"blendMode": "Add",
+				"clientSide": true
+			},
+			{
+				"code": "bogiebpitch",
+				"animation": "bogiebpitch",
+				"animationSpeed": 0,
+				"weight": 1,
+				"blendMode": "Add",
+				"clientSide": true
+			}
+		],
+		"behaviors": [
+			{
+				"code": "trolleyphysics",
+				"stepHeight": 0.2
+			},
+			{
+				"code": "interpolateposition"
+			},
+			{
+				"code": "seatable"
+			}
+		]
+	},
+	"server": {
+		"behaviors": [
+			{
+				"code": "trolleyphysics",
+				"stepHeight": 0.2
+			},
+			{
+				"code": "seatable"
+			}
+		]
+	}
+}

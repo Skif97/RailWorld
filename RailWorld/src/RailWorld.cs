@@ -108,6 +108,7 @@ namespace RailWorld
             api.RegisterBlockEntityBehaviorClass("TrackBedSnowCover", typeof(BEBehaviorTrackBedSnowCover));
             api.RegisterItemClass("ItemTrolley", typeof(ItemTrolley));
             api.RegisterEntity("EntityTrolley", typeof(EntityTrolley));
+            api.RegisterEntity("EntityWagon", typeof(EntityWagon));
             api.RegisterEntityBehaviorClass("trolleyphysics", typeof(EntityBehaviorTrolleyPhysics));
             api.RegisterItemClass("ItemSleeper", typeof(ItemSleeper));
             api.RegisterItemClass("ItemRail", typeof(ItemRail));

@@ -34,6 +34,9 @@ namespace RailWorld.src.RailWay
         /// <summary>Скільки секцій у ланцюжку.</summary>
         public int Count => pieces.Count;
 
+        /// <summary>Секція ланцюжка за номером, по порядку вздовж нього.</summary>
+        public Section SectionAt(int index) => pieces[index].Section;
+
         /// <summary>
         /// Будує ланцюжок навколо секції middle, на reach блоків у кожен бік від неї, або менше, якщо колія
         /// раніше закінчується чи її сусідніх чанків немає.

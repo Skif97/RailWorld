@@ -19,10 +19,19 @@ namespace RailWorld
         public const double RestitutionCoefficient = 0.9;
 
         /// <summary>
-        /// Відстань між центрами, на якій вагонетки торкаються буферами, блоків: довжина моделі від буфера до буфера
-        /// (shapes/entity/trolley.json, 30/16), і зазор, на якому стоячі впритул ще вважаються сусідами.
+        /// Зазор, на якому стоячі впритул вагонетки ще вважаються сусідами, блоків. Торкаються вони, коли між центрами
+        /// сума їхніх половин довжини по буферах (EntityTrolley.HalfLength) і цей зазор.
         /// </summary>
-        public const double ContactDistance = 30.0 / 16 + 0.02;
+        public const double ContactGap = 0.02;
+
+        /// <summary>
+        /// Як близько мають зійтися осі двох вагонеток, щоб удар рахувався, блоків. Вісь це ламана від кінця до кінця
+        /// через середину на осі колії (EntityTrolley.RailEndA, RailCenter, RailEndB). Відстань між центрами довгих
+        /// вагонів буває меншою за суму їхніх половин і тоді, коли вони стоять поруч на паралельних коліях; осі ж там
+        /// щонайменше за міжколійя. На своїй колії осі сходяться, і коли вагонетки торкаються, і коли вже заїхали одна
+        /// в одну, тож швидкі вагонетки удару не проскочать.
+        /// </summary>
+        public const double AxisReach = 1.0;
 
         // Запобіжник на кількість проходів за тік на кожну вагонетку
         private const int PassesPerTrolley = 2;
@@ -38,6 +47,33 @@ namespace RailWorld
         }
 
         public void Add(EntityTrolley trolley) => trolleys.Add(trolley);
+
+        // Чи осі двох вагонеток ближчі одна до одної, ніж на AxisReach
+        private static bool AxesMeet(EntityTrolley a, EntityTrolley b)
+        {
+            double reachSq = AxisReach * AxisReach;
+            return SegmentsSq(a.RailEndA, a.RailCenter, b.RailEndA, b.RailCenter) < reachSq
+                || SegmentsSq(a.RailEndA, a.RailCenter, b.RailCenter, b.RailEndB) < reachSq
+                || SegmentsSq(a.RailCenter, a.RailEndB, b.RailEndA, b.RailCenter) < reachSq
+                || SegmentsSq(a.RailCenter, a.RailEndB, b.RailCenter, b.RailEndB) < reachSq;
+        }
+
+        // Квадрат найменшої відстані між відрізками p0-p1 і q0-q1
+        private static double SegmentsSq(Vec3d p0, Vec3d p1, Vec3d q0, Vec3d q1)
+        {
+            double ux = p1.X - p0.X, uy = p1.Y - p0.Y, uz = p1.Z - p0.Z;
+            double vx = q1.X - q0.X, vy = q1.Y - q0.Y, vz = q1.Z - q0.Z;
+            double wx = p0.X - q0.X, wy = p0.Y - q0.Y, wz = p0.Z - q0.Z;
+            double a = ux * ux + uy * uy + uz * uz, b = ux * vx + uy * vy + uz * vz, c = vx * vx + vy * vy + vz * vz;
+            double d = ux * wx + uy * wy + uz * wz, e = vx * wx + vy * wy + vz * wz;
+            double denominator = a * c - b * b;
+            double s = a < 1e-12 ? 0 : denominator > 1e-12 ? GameMath.Clamp((b * e - c * d) / denominator, 0, 1) : 0;
+            double t = c < 1e-12 ? 0 : GameMath.Clamp((b * s + e) / c, 0, 1);
+            // Найближча точка другого відрізка могла впертися в його край: тоді перераховуємо точку першого
+            s = a < 1e-12 ? 0 : GameMath.Clamp((b * t - d) / a, 0, 1);
+            double dx = wx + ux * s - vx * t, dy = wy + uy * s - vy * t, dz = wz + uz * s - vz * t;
+            return dx * dx + dy * dy + dz * dz;
+        }
         public void Remove(EntityTrolley trolley) => trolleys.Remove(trolley);
 
         private void Resolve()
@@ -55,7 +91,6 @@ namespace RailWorld
             int count = onRail.Count;
             if (count < 2) return;
 
-            double contactSq = ContactDistance * ContactDistance;
             for (int pass = 0, limit = count * PassesPerTrolley; pass < limit; pass++)
             {
                 bool any = false;
@@ -65,7 +100,9 @@ namespace RailWorld
                         Vec3d a = onRail[i].RailCenter, b = onRail[j].RailCenter;
                         double nx = b.X - a.X, ny = b.Y - a.Y, nz = b.Z - a.Z;
                         double distSq = nx * nx + ny * ny + nz * nz;
-                        if (distSq > contactSq || distSq < 1e-12) continue;
+                        double contact = onRail[i].HalfLength + onRail[j].HalfLength + ContactGap;
+                        if (distSq > contact * contact || distSq < 1e-12) continue;
+                        if (!AxesMeet(onRail[i], onRail[j])) continue;
 
                         double dist = Math.Sqrt(distSq);
                         nx /= dist; ny /= dist; nz /= dist;
